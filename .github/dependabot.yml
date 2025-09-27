@@ -1,0 +1,42 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "chore"]
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "area:web"]
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      dev-deps:
+        dependency-type: "development"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "npm"
+    directory: "/contracts"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "area:contracts"]
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      dev-deps:
+        dependency-type: "development"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "area:api"]
+
+  - package-ecosystem: "docker"
+    directory: "/infra"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "area:infra"]

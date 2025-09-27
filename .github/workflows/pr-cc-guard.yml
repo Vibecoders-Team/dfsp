@@ -1,0 +1,110 @@
+name: PR Guard - Conventional Commits
+
+on:
+  pull_request:
+    branches: ["main", "backend/main", "frontend/main", "blockchain/main"]
+    types: [opened, synchronize, edited, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  titlecheck:
+    name: Check PR title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR title (Conventional Commits)
+        id: prtitle
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+          requireScope: false
+          allowBreakingChanges: true
+          subjectPattern: ".+"
+          subjectPatternError: "Use '<type>(<scope>): <summary>' — non-empty summary required."
+        continue-on-error: true
+
+      - name: Fail if invalid title
+        if: steps.prtitle.outcome == 'failure'
+        run: exit 1
+
+  commits:
+    name: Check commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Validate commits in PR
+        id: commitcheck
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const commits = await github.paginate(
+              github.rest.pulls.listCommits,
+              { owner: context.repo.owner, repo: context.repo.repo, pull_number: pr.number }
+            );
+            const headerRe = new RegExp(
+              '^(feat|fix|docs|refactor|perf|test|build|ci|chore|revert)(\\([^)]+\\))?(!)?: .+'
+            );
+            const errors = [];
+            for (const c of commits) {
+              const msg = c.commit.message || "";
+              const [header, ...rest] = msg.split('\n');
+              const body = rest.join('\n');
+              if (!headerRe.test(header)) {
+                errors.push(`Commit ${c.sha.slice(0,7)}: invalid header -> "${header}"`);
+              } else if (header.length > 100) {
+                errors.push(`Commit ${c.sha.slice(0,7)}: header > 100 chars`);
+              }
+              if (header.includes('!') && !/^BREAKING CHANGE:\s+.+/m.test(body)) {
+                errors.push(`Commit ${c.sha.slice(0,7)}: '!' but no 'BREAKING CHANGE:' block`);
+              }
+            }
+            core.setOutput('errors', JSON.stringify(errors));
+            if (errors.length) core.setFailed(`Found ${errors.length} violations.`);
+        continue-on-error: true
+
+      - name: Fail if invalid commits
+        if: steps.commitcheck.outcome == 'failure'
+        run: exit 1
+
+  close:
+    name: Close PR on violation
+    runs-on: ubuntu-latest
+    needs: [titlecheck, commits]
+    if: always() && (needs.titlecheck.result == 'failure' || needs.commits.result == 'failure')
+    steps:
+      - name: Comment & close
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const failedTitle = '${{ needs.titlecheck.result }}' === 'failure';
+            let commitErrors = [];
+            try { commitErrors = JSON.parse('${{ needs.commits.outputs.errors || '[]' }}') } catch(e) {}
+            let body = '❌ PR does not meet Conventional Commits requirements.\n';
+            if (failedTitle) body += '- Invalid PR title. Use `<type>(<scope>): <summary>`\n';
+            if (commitErrors.length) {
+              body += '- Commit message errors:\n' + commitErrors.map(e => `  - ${e}`).join('\n') + '\n';
+            }
+            body += '\nExamples:\n' +
+                    '- `feat(api): add rate limiting for POST /orders`\n' +
+                    '- `feat(api)!: switch auth to JWT` with body:\n' +
+                    '```\nBREAKING CHANGE: OAuth tokens are no longer supported; migrate to JWT by 2025-10-01.\n```';
+            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, body });
+            await github.rest.pulls.update({ owner: context.repo.owner, repo: context.repo.repo, pull_number: pr.number, state: 'closed' });
