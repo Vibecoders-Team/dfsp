@@ -50,7 +50,7 @@ jobs:
         with: { fetch-depth: 0 }
       - name: Validate commits in PR
         id: commitcheck
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const pr = context.payload.pull_request;
@@ -90,7 +90,7 @@ jobs:
     if: always() && (needs.titlecheck.result == 'failure' || needs.commits.result == 'failure')
     steps:
       - name: Comment & close
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const pr = context.payload.pull_request;
