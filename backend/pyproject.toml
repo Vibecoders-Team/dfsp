@@ -1,0 +1,46 @@
+[project]
+name = "dfsp-backend"
+version = "0.1.0"
+description = "DFSP backend (FastAPI)"
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+dev = ["ruff>=0.6.0", "pytest>=8.2", "pyright>=1.1.380"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["alembic/*", "migrations/*", ".venv/*"]
+
+[tool.ruff.lint]
+select = ["E","F","W","I","UP","B","ANN","N","C4","T20","Q","S","RUF"]
+ignore = [
+  "ANN101","ANN102",   # self/cls annotations aren't required
+  "S101"               # allow assert in tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "S"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+reportMissingTypeStubs = "warning"
+reportUnknownVariableType = "warning"
+reportUnknownParameterType = "warning"
+reportUnknownMemberType = "warning"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
