@@ -1,0 +1,10 @@
+version: "3.9"
+services:
+  api:
+    build: ./backend          # тут лежит Dockerfile
+    container_name: dfsp-api
+    env_file:
+      - ./.env                # лежит в корне репо
+    ports:
+      - "8000:8000"           # localhost:8000 -> контейнер:8000
+    restart: unless-stopped
