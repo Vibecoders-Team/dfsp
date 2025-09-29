@@ -3,6 +3,11 @@ name = "dfsp-backend"
 version = "0.1.0"
 description = "DFSP backend (FastAPI)"
 requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic-settings",
+]
 
 [project.optional-dependencies]
 dev = ["ruff>=0.6.0", "pytest>=8.2", "pyright>=1.1.380"]
@@ -41,6 +46,19 @@ venvPath = "."
 venv = ".venv"
 
 [tool.pytest.ini_options]
-addopts = "-q"
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=8.4.2",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest",
+    "httpx",        # нужен fastapi.testclient
+    "ruff",
+    "pyright",
+]

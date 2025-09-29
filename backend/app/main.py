@@ -1,9 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .config import settings
-from .routers import api_router
+import logging
 
-app = FastAPI(title=settings.app_name, version="0.1.0")
+from .config import settings
+
+log = logging.getLogger("dfsp.api")
+logging.basicConfig(level=logging.INFO)
+
+app = FastAPI(title="DFSP API", version="0.1.0")
 
 # CORS
 app.add_middleware(
@@ -14,5 +18,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# корневой префикс API: /api
-app.include_router(api_router, prefix="/api")
+# --- system routes ---
+from .routers.system import router as system_router  # noqa: E402
+app.include_router(system_router, prefix="/api", tags=["system"])
+
+
+@app.on_event("startup")
+async def _on_startup():
+    log.info("Loaded settings: %s", settings.debug_dump())
+
