@@ -1,10 +1,27 @@
-version: "3.9"
+# docker-compose.yml
 services:
-  api:
-    build: ./backend          # тут лежит Dockerfile
-    container_name: dfsp-api
-    env_file:
-      - ./.env                # лежит в корне репо
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: dfsp
+      POSTGRES_PASSWORD: dfsp
+      POSTGRES_DB: dfsp
     ports:
-      - "8000:8000"           # localhost:8000 -> контейнер:8000
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build: ./backend          # Dockerfile рядом (в backend/)
+    env_file:
+      - ./backend/.env
+    environment:
+      PYTHONPATH: /app
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
     restart: unless-stopped
+
+volumes:
+  pgdata: {}

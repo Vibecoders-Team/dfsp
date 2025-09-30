@@ -20,6 +20,7 @@ __pycache__
 pytest-report
 .ipynb_checkpoints
 recordings
+.env
 
 *.log
 *.zip

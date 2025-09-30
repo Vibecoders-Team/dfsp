@@ -14,11 +14,16 @@ WORKDIR /app
 COPY . /app
 
 # 4) создаём виртуальное окружение и ставим зависимости
-RUN uv venv && \
-    . .venv/bin/activate && \
-    uv pip install fastapi "uvicorn[standard]" pydantic-settings && \
-    uv pip install ruff pytest pyright
+RUN python -m venv /app/.venv \
+ && /app/.venv/bin/python -m pip install -U pip \
+ && /app/.venv/bin/pip install \
+      fastapi "uvicorn[standard]" pydantic-settings \
+      sqlalchemy alembic asyncpg psycopg[binary] \
+      ruff pytest pyright
 
-# 5) пробрасываем порт и команда запуска uvicorn
-EXPOSE 8000
-CMD ["/bin/sh", "-lc", ". .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# чтобы не "активировать" venv — добавим его в PATH
+ENV PATH="/app/.venv/bin:${PATH}"
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+
+# стандартный старт без ". .venv/bin/activate"
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -4,10 +4,19 @@ version = "0.1.0"
 description = "DFSP backend (FastAPI)"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi",
-    "uvicorn[standard]",
-    "pydantic-settings",
+  "fastapi",
+  "uvicorn[standard]",
+  "pydantic-settings",
+  "sqlalchemy==2.0.43",
+  "alembic==1.13.3",
+  "asyncpg==0.29.0",
+  "pytest",
+  "ruff",
+  "pyright",
 ]
+sqlalchemy=2.0
+alembic=1.13
+asyncpg=0.29
 
 [project.optional-dependencies]
 dev = ["ruff>=0.6.0", "pytest>=8.2", "pyright>=1.1.380"]
