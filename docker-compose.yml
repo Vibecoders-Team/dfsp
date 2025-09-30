@@ -1,27 +1,42 @@
-# docker-compose.yml
-services:
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: dfsp
-      POSTGRES_PASSWORD: dfsp
-      POSTGRES_DB: dfsp
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+version: '3.8'
 
-  api:
-    build: ./backend          # Dockerfile рядом (в backend/)
+services:
+  # 1. Сервис для миграций (запускается один раз и завершается)
+  migrator:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dfsp_migrator
     env_file:
       - ./backend/.env
     environment:
-      PYTHONPATH: /app
-    depends_on:
-      - db
+      PYTHONPATH: /app/backend
+      # DSN для удаленной БД берется из .env
+      POSTGRES_DSN: ${POSTGRES_DSN}
+    # Команда выполняет миграцию и завершается
+    command: ["alembic", "upgrade", "head"]
+    # Гарантирует, что контейнер не будет пытаться перезапуститься после завершения
+    restart: 'no'
+
+  # 2. Сервис API (запускается только после миграции)
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dfsp_backend
+    env_file:
+      - ./backend/.env
+    environment:
+      PYTHONPATH: /app/backend
+      POSTGRES_DSN: ${POSTGRES_DSN}
     ports:
       - "8000:8000"
-    restart: unless-stopped
 
-volumes:
-  pgdata: {}
+    # Запуск API только после успешного завершения мигратора
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+
+    restart: unless-stopped
+    # Основная команда запускает только Uvicorn
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
