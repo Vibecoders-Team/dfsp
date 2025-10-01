@@ -2,7 +2,7 @@
 name = "dfsp-backend"
 version = "0.1.0"
 description = "DFSP backend (FastAPI)"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 dependencies = [
   "fastapi",
   "uvicorn[standard]",
@@ -13,10 +13,13 @@ dependencies = [
   "pytest",
   "ruff",
   "pyright",
+  "python-jose[cryptography]>=3.5.0",
+  "passlib[bcrypt]>=1.7.4",
+  "redis>=6.4.0",
+  "web3>=7.13.0",
+  "python-dotenv>=1.1.1",
+  "psycopg>=3.2.10",
 ]
-sqlalchemy=2.0
-alembic=1.13
-asyncpg=0.29
 
 [project.optional-dependencies]
 dev = ["ruff>=0.6.0", "pytest>=8.2", "pyright>=1.1.380"]
@@ -65,9 +68,5 @@ dev = [
 ]
 
 [tool.uv]
-dev-dependencies = [
-    "pytest",
-    "httpx",        # нужен fastapi.testclient
-    "ruff",
-    "pyright",
-]
+index-url = "https://pypi.org/simple"
+managed = true

@@ -21,6 +21,7 @@ pytest-report
 .ipynb_checkpoints
 recordings
 .env
+.env.local
 
 *.log
 *.zip
