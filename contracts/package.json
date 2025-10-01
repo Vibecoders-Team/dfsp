@@ -1,0 +1,24 @@
+{
+  "name": "@dfsp/contracts",
+  "private": true,
+  "scripts": {
+    "clean": "hardhat clean",
+    "build": "hardhat compile",
+    "test": "hardhat test",
+    "node": "hardhat node",
+    "deploy:local": "hardhat run scripts/deploy-local.ts --network localhost",
+    "abi:export": "hardhat run scripts/export-abi.ts"
+  },
+
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.22.5",
+    "typescript": "^5.4.0",
+    "ts-node": "^10.9.2",
+    "rimraf": "^5.0.5",
+    "dotenv": "^16.4.5"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.9.6"
+  }
+}
