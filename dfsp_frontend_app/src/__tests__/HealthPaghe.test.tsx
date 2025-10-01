@@ -2,7 +2,7 @@ import '@testing-library/jest-dom';
 import { render, screen, within } from '@testing-library/react';
 import HealthPage from '../pages/HealthPage';
 import { vi, test, expect, afterEach } from 'vitest';
-import App from '../App'
+import App from '../app/App'
 
 
 vi.stubGlobal('fetch', vi.fn(async () => ({

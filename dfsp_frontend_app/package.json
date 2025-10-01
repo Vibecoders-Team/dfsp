@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest --run",
-    "mock:api": "json-server --watch mock/db.json --port 3001 --host 127.0.0.1"
+    "mock:api": "json-server --watch mock/db.json --port 3001 --host 127.0.0.1",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "react": "^19.1.1",
