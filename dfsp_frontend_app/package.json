@@ -9,7 +9,8 @@
     "lint": "eslint \"src/**/*.{ts,tsx,js,jsx}\" --max-warnings=0",
     "preview": "vite preview",
     "test": "vitest",
-    "test:run": "vitest --run"
+    "test:run": "vitest --run",
+    "mock:api": "json-server --watch mock/db.json --port 3001 --host 127.0.0.1"
   },
   "dependencies": {
     "react": "^19.1.1",
@@ -32,6 +33,7 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.4.0",
     "jsdom": "^27.0.0",
+    "json-server": "1.0.0-beta.3",
     "prettier": "^3.6.2",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.44.0",

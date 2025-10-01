@@ -9,7 +9,7 @@ export default function HealthPage(){
     (async () => {
       setS({ status: "loading" });
       try {
-        const api = import.meta.env.VITE_API_URL || "";
+        const api = import.meta.env.VITE_API_URL || 'http://localhost:3001';
         const res = await fetch(`${api}/health`);
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
