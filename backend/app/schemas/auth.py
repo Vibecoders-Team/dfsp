@@ -1,23 +1,57 @@
-# backend/app/schemas/auth.py
-
 from pydantic import BaseModel, Field
-from datetime import datetime
+from typing import Optional, Dict
+from typing import Optional, Dict, Any
 
-class ChallengeRequest(BaseModel):
-    eth_address: str = Field(..., pattern=r"^0x[a-fA-F0-9]{40}$")
 
-class ChallengeResponse(BaseModel):
-    nonce: str
-    exp: datetime
+class ChallengeOut(BaseModel):
+    challenge_id: str
+    nonce: str  # hex 32 bytes
+    exp_sec: int
 
-class RegisterRequest(BaseModel):
-    eth_address: str = Field(..., pattern=r"^0x[a-fA-F0-9]{40}$")
-    display_name: str = Field(..., min_length=1, max_length=50)
-    rsa_public_spki_pem: str
-    nonce: str
+class RegisterIn(BaseModel):
+    rsa_public: str
+    eth_address: str
+    display_name: Optional[str] = None
+    challenge_id: str
+    signature: str
+    typed_data: Optional[Dict[str, Any]] = None  # ← стало optional
+
+class LoginIn(BaseModel):
+    eth_address: str
+    challenge_id: str
+    signature: str
+    typed_data: Optional[Dict[str, Any]] = None  # ← стало optional
+
+class Tokens(BaseModel):
+    access: str
+    refresh: str
+
+class FileCreateIn(BaseModel):
+    fileId: str  # 0x...32
+    name: str
+    size: int
+    mime: str
+    cid: str
+    checksum: str  # 0x...32
+
+class TypedDataOut(BaseModel):
+    typedData: dict
+
+class MetaTxSubmitIn(BaseModel):
+    request_id: str
+    typed_data: dict
     signature: str
 
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
+class FileRow(BaseModel):
+    id: str
+    name: str
+    size: int
+    mime: str
+    cid: str
+    checksum: str
+    status: str
+
+class VerifyOut(BaseModel):
+    onchain: dict
+    offchain: dict
+    match: bool

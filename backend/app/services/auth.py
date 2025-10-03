@@ -11,20 +11,20 @@ from web3 import Web3
 
 from app.repos import user_repo
 from app.schemas.auth import RegisterRequest
-from ..settings import settings
+from ..config import settings
 from ..db import models as db_models
 
-redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+redis_client = redis.from_url(settings.redis_dsn, decode_responses=True)
 
 
 def create_auth_challenge(eth_address: str) -> tuple[str, datetime]:
     """Генерирует nonce, сохраняет в Redis и возвращает его."""
     nonce_bytes = uuid.uuid4().bytes
     nonce = base64.urlsafe_b64encode(nonce_bytes).decode().rstrip("=")
-    exp_time = datetime.now(timezone.utc) + settings.AUTH_NONCE_TTL
+    exp_time = datetime.now(timezone.utc) + settings.auth_nonce_ttl
 
     redis_key = f"auth:nonce:{eth_address.lower()}"
-    redis_client.set(redis_key, nonce, ex=settings.AUTH_NONCE_TTL)
+    redis_client.set(redis_key, nonce, ex=settings.auth_nonce_ttl)
 
     return nonce, exp_time
 

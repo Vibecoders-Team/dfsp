@@ -73,7 +73,6 @@ services:
     container_name: dfsp-migrator
     working_dir: /app
     <<: *env_files
-    # Собираем все вычисляемые переменные внутри контейнера и запускаем миграции
     command:
       - bash
       - -lc
@@ -82,11 +81,18 @@ services:
         export REDIS_URL="$${REDIS_URL:-redis://$${REDIS_HOST:-dfsp-redis}:$${REDIS_PORT:-6379}/$${REDIS_DB:-0}}";
         export WAIT_FOR_TIMEOUT="$${WAIT_FOR_TIMEOUT:-60}";
         ./docker/entrypoint.sh migrate
+    environment:
+      # DEV: автогенерация ревизий перед upgrade
+      ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
+    volumes:
+      - ../app:/app/app
+      - ../migrations:/app/migrations
+      - ../alembic.ini:/app/alembic.ini
     depends_on:
       redis:
         condition: service_healthy
-      #db:
-      #  condition: service_healthy
+      # db:
+      #   condition: service_healthy
     restart: "no"
     networks: [ dfsp ]
     #profiles: [ "migrate" ]
@@ -97,6 +103,9 @@ services:
       context: ..
       dockerfile: Dockerfile
     container_name: dfsp-api
+    environment:
+      API_AUTO_MIGRATE: "${API_AUTO_MIGRATE:-true}"   # dev-удобство
+      ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
     working_dir: /app
     <<: *env_files
     command:
@@ -117,7 +126,7 @@ services:
       - "${API_HOST_PORT:-8000}:8000"
     volumes:
       - ../app:/app/app
-      - ../alembic:/app/alembic
+      - ../migrations:/app/migrations
       - ../alembic.ini:/app/alembic.ini
     depends_on:
       redis:

@@ -16,7 +16,7 @@ def create(db: Session, request: auth_schemas.RegisterRequest) -> db_models.User
         id=uuid.uuid4(),
         eth_address=request.eth_address.lower(),
         display_name=request.display_name,
-        rsa_public_spki_pem=request.rsa_public_spki_pem,
+        rsa_public_spki_pem=request.rsa_public,
     )
     db.add(new_user)
     db.commit()

@@ -19,6 +19,11 @@ dependencies = [
   "web3>=7.13.0",
   "python-dotenv>=1.1.1",
   "psycopg>=3.2.10",
+  "eth-account>=0.13.7",
+  "jose>=1.0.0",
+  "celery>=5.5.3",
+  "pydantic>=2.11.9",
+  "mako>=1.3.10",
 ]
 
 [project.optional-dependencies]
@@ -27,7 +32,7 @@ dev = ["ruff>=0.6.0", "pytest>=8.2", "pyright>=1.1.380"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["alembic/*", "migrations/*", ".venv/*"]
+extend-exclude = [".venv/*"]
 
 [tool.ruff.lint]
 select = ["E","F","W","I","UP","B","ANN","N","C4","T20","Q","S","RUF"]
@@ -70,3 +75,7 @@ dev = [
 [tool.uv]
 index-url = "https://pypi.org/simple"
 managed = true
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"

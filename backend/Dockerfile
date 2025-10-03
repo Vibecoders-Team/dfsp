@@ -24,9 +24,13 @@ COPY pyproject.toml ./
 # --all-extras подтянет [project.optional-dependencies].dev когда понадобятся
 RUN uv sync
 
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:${PATH}"
+
+
 # затем — код проекта (в dev будет перекрыт volume-монтом)
 COPY app/ app/
-COPY alembic/ alembic/
+COPY migrations/ migrations/
 COPY alembic.ini .
 COPY docker/ docker/
 RUN chmod +x docker/entrypoint.sh
