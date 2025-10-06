@@ -1,0 +1,60 @@
+  #!/usr/bin/env bash
+# Runs Python style/type checks for backend before commit.
+# Soft on 'dev' and '*/*/dev' branches, strict otherwise.
+set -euo pipefail
+
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+
+is_dev_branch() {
+  case "$BRANCH" in
+    dev|*/dev) return 0 ;;
+    *)         return 1 ;;
+  esac
+}
+
+FAILED=0
+
+# Проверяем только если есть папка backend
+if [ -d "backend" ]; then
+  pushd backend >/dev/null
+
+  # Если нет uv — предупреждаем (на dev), фейлим (на остальных)
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "[warn] 'uv' not found. Install: https://github.com/astral-sh/uv"
+    if ! is_dev_branch; then
+      FAILED=1
+    fi
+  else
+    # Если нет .venv — предупреждаем (на dev), фейлим (на остальных)
+    if [ ! -d ".venv" ]; then
+      echo "[warn] backend/.venv not found. Run: 'make -C backend venv dev-deps'"
+      if ! is_dev_branch; then
+        FAILED=1
+      fi
+    else
+      # format check, lint, typecheck (pytest оставим в CI)
+      uv run ruff format --check . || FAILED=1
+      uv run ruff check . || FAILED=1
+      uv run pyright || FAILED=1
+    fi
+  fi
+
+  popd >/dev/null
+fi
+
+if is_dev_branch && [ $FAILED -ne 0 ]; then
+  echo "[warn] Python style checks failed on '$BRANCH' → allowed (soft)."
+  exit 0
+fi
+
+if [ $FAILED -ne 0 ]; then
+  echo "[error] Python style checks failed. See messages above."
+  echo "Hints:"
+  echo " - make -C backend venv dev-deps"
+  echo " - make -C backend fmt"
+  echo " - make -C backend lint"
+  echo " - make -C backend typecheck"
+  exit 1
+fi
+
+exit 0

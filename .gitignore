@@ -1,0 +1,30 @@
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### VS Code ###
+.vscode/
+
+### Local artifacts ###
+.venv
+version-info.json
+config-local.yml
+node_modules
+build
+dist
+__pycache__
+.~lock.*
+.coverage
+pytest-report
+.ipynb_checkpoints
+recordings
+.env
+.env.local
+
+*.log
+*.zip
+src/settings.json
+.aider*
+dummy.py
