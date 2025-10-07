@@ -95,7 +95,7 @@ services:
       #   condition: service_healthy
     restart: "no"
     networks: [ dfsp ]
-    #profiles: [ "migrate" ]
+    profiles: [ "migrate" ]
 
   # ----------------------------- API (uvicorn --reload) -------------------------
   api:
@@ -133,7 +133,7 @@ services:
         condition: service_healthy
       #db:
       #  condition: service_healthy
-      migrator:
-        condition: service_completed_successfully
+      #migrator:
+      #  condition: service_completed_successfully
     restart: unless-stopped
     networks: [ dfsp ]

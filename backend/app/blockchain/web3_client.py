@@ -3,6 +3,11 @@ from __future__ import annotations
 import json
 from web3 import Web3
 from web3.types import TxParams
+import json, os, logging
+from web3 import Web3, HTTPProvider
+from typing import Dict
+
+log = logging.getLogger(__name__)
 
 class Chain:
     def __init__(self, rpc_url: str, chain_id: int, deploy_json_path: str, contract_name: str, tx_from: str | None = None):
@@ -16,6 +21,13 @@ class Chain:
         self.tx_from = Web3.to_checksum_address(tx_from) if tx_from else self.w3.eth.accounts[0]
         self._fn = {f["name"]: f for f in self.abi if f.get("type") == "function"}
         self._events = {e["name"]: e for e in self.abi if e.get("type") == "event"}
+        self.rpc_url = rpc_url or os.getenv("CHAIN_RPC_URL", "http://chain:8545")
+        self.deployment_json = deploy_json_path or os.getenv(
+            "CONTRACTS_DEPLOYMENT_JSON", "/app/shared/deployment.localhost.json"
+        )
+        self.w3 = Web3(HTTPProvider(self.rpc_url))
+        self.contracts: Dict[str, any] = {}
+        self._load_contracts()
 
     def _tx(self) -> TxParams:
         return {"from": self.tx_from, "chainId": self.chain_id, "gas": 2_000_000}
@@ -205,3 +217,19 @@ class Chain:
         events.sort(key=lambda x: (x["blockNumber"], x["timestamp"]))
         return events
 
+    def _load_contracts(self):
+        self.contracts = {}
+        try:
+            with open(self.deployment_json, "r") as f:
+                j = json.load(f)
+            for name, info in j.get("contracts", {}).items():
+                addr = Web3.to_checksum_address(info["address"])
+                abi = info["abi"]
+                self.contracts[name] = self.w3.eth.contract(address=addr, abi=abi)
+            log.info("Loaded %d contracts from %s", len(self.contracts), self.deployment_json)
+        except Exception as e:
+            log.warning("Contracts load failed (%s): %s", self.deployment_json, e)
+
+    def reload_contracts(self):
+        """Явный перезахват контрактов с диска."""
+        self._load_contracts()

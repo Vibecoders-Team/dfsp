@@ -16,6 +16,27 @@ volumes:
   shared: {}   # для обмена deployment.json между контрактами и бэком (bind смонтируем ниже)
 
 services:
+  web:
+    image: node:20
+    container_name: dfsp-web
+    working_dir: /app
+    command: sh -lc "
+      corepack enable &&
+      corepack prepare pnpm@latest --activate &&
+      pnpm install && pnpm run dev -- --port 5170 --host 0.0.0.0"
+    environment:
+      CI: "true"
+      VITE_API_BASE: "http://localhost:${API_HOST_PORT:-8000}"
+      VITE_IPFS_PUBLIC_GATEWAY: "http://localhost:8080"
+      VITE_CHAIN_ID: "31337"
+    ports:
+      - "5170:5170"
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      api:
+        condition: service_started
+    networks: [ dfsp ]
   # -------------------- backend: db/redis/migrator/api --------------------
   db:
     extends:
@@ -56,6 +77,7 @@ services:
         condition: service_healthy
       # db:
       #   condition: service_healthy
+    profiles: [ "migrate" ]
 
   api:
     extends:
@@ -69,18 +91,18 @@ services:
       - ./backend/app:/app/app
       - ./backend/migrations:/app/migrations
       - ./backend/alembic.ini:/app/alembic.ini
-      - ./shared:/app/shared
+      - shared:/app/shared
     environment:
       API_AUTO_MIGRATE: "${API_AUTO_MIGRATE:-true}"
       ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
-
       # ---- wiring: chain & ipfs & deploy json ----
       CHAIN_RPC_URL: "http://chain:8545"
       CHAIN_ID: "31337"
       CONTRACTS_DEPLOYMENT_JSON: "/app/shared/deployment.localhost.json"
       REGISTRY_CONTRACT_NAME: "FileRegistry"
       IPFS_PUBLIC_GATEWAY_URL: "http://localhost:8080"
-      IPFS_API_URL: "http://ipfs:5001"
+      IPFS_API_URL: "http://ipfs:5001/api/v0"
+      CORS_ORIGINS: "http://localhost:5170,http://127.0.0.1:5170"
       IPFS_GATEWAY_URL: "http://ipfs:8080"
 
       # для hardhat dev можно оставить пустым (будет w3.eth.accounts[0])
@@ -88,8 +110,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      migrator:
-        condition: service_completed_successfully
+      #migrator:
+      #  condition: service_completed_successfully
       contracts:
         condition: service_completed_successfully
       ipfs:
@@ -116,7 +138,7 @@ services:
         condition: service_healthy
     volumes:
       - ./contracts:/app
-      - ./shared:/shared
+      - shared:/shared
     environment:
       HARDHAT_URL: http://chain:8545
       # КУДА писать адреса/ABI, чтобы API их увидел:

@@ -1,9 +1,8 @@
-// src/pages/Upload.tsx
 import { useState } from "react";
 import { storeFile, fetchMeta, fetchVersions, fetchHistory } from "../lib/api";
 
 export default function Upload() {
-  const [file, setFile] = useState<File| null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [idHex, setIdHex] = useState("");
   const [out, setOut] = useState<any>(null);
   const [meta, setMeta] = useState<any>(null);
@@ -29,19 +28,22 @@ export default function Upload() {
   }
 
   return (
-    <div className="container">
+    <div style={{ maxWidth: 900, margin: "2rem auto", fontFamily: "Inter, system-ui" }}>
       <h2>Upload</h2>
-      <input type="file" onChange={(e)=>setFile(e.target.files?.[0]||null)} />
-      <input placeholder="optional id_hex (0x + 64)" value={idHex} onChange={(e)=>setIdHex(e.target.value)} />
-      <button onClick={onUpload}>Store</button>
-      {err && <p style={{color:"crimson"}}>{err}</p>}
+      <div style={{ display: "grid", gap: 8 }}>
+        <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        <input placeholder="optional id_hex (0x + 64)" value={idHex} onChange={(e) => setIdHex(e.target.value)} />
+        <button onClick={onUpload}>Store</button>
+      </div>
+      {err && <p style={{ color: "crimson" }}>{err}</p>}
       {out && (<>
-        <pre>{JSON.stringify(out,null,2)}</pre>
-        <a href={out.url} target="_blank">Open in IPFS</a>
+        <h3>Result</h3>
+        <pre>{JSON.stringify(out, null, 2)}</pre>
+        <a href={out.url} target="_blank" rel="noreferrer">Open in IPFS</a>
       </>)}
-      {meta && (<><h3>Meta</h3><pre>{JSON.stringify(meta,null,2)}</pre></>)}
-      {versions && (<><h3>Versions</h3><pre>{JSON.stringify(versions,null,2)}</pre></>)}
-      {history && (<><h3>History</h3><pre>{JSON.stringify(history,null,2)}</pre></>)}
+      {meta && (<><h3>Meta</h3><pre>{JSON.stringify(meta, null, 2)}</pre></>)}
+      {versions && (<><h3>Versions</h3><pre>{JSON.stringify(versions, null, 2)}</pre></>)}
+      {history && (<><h3>History</h3><pre>{JSON.stringify(history, null, 2)}</pre></>)}
     </div>
   );
 }
