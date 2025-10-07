@@ -7,7 +7,7 @@ from eth_account import Account
 from eth_keys import keys
 from eth_utils import keccak, to_canonical_address
 
-from ..deps import get_db, rds
+from app.deps import get_db, rds
 from ..models import User
 from ..schemas.auth import ChallengeOut, RegisterIn, LoginIn, Tokens
 from app.security import make_token

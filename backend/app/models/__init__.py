@@ -4,7 +4,8 @@ from .grants import Grant
 from .events import Event
 from .anchors import Anchor
 from .meta_tx_requests import MetaTxRequest
+from .asset import Asset
 
 __all__ = [
-    "User", "File", "FileVersion", "Grant", "Event", "Anchor", "MetaTxRequest"
+    "User", "File", "FileVersion", "Grant", "Event", "Anchor", "MetaTxRequest", "Asset"
 ]

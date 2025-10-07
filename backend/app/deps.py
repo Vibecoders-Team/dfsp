@@ -2,7 +2,10 @@ from .config import settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import redis
+import os
 from .config import settings
+from app.blockchain.web3_client import Chain
+from app.ipfs.client import IpfsClient
 
 def get_settings():
     return settings
@@ -19,3 +22,19 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def get_chain() -> Chain:
+    return Chain(
+        rpc_url=os.getenv("CHAIN_RPC_URL", "http://chain:8545"),
+        chain_id=int(os.getenv("CHAIN_ID", "31337")),
+        deploy_json_path=os.getenv("CONTRACTS_DEPLOYMENT_JSON", "/app/shared/deployment.localhost.json"),
+        contract_name=os.getenv("REGISTRY_CONTRACT_NAME", "FileRegistry"),
+        tx_from=os.getenv("CHAIN_TX_FROM") or None,
+    )
+
+def get_ipfs() -> IpfsClient:
+    return IpfsClient(
+        api_url=os.getenv("IPFS_API_URL", "http://ipfs:5001"),
+        gateway_url=os.getenv("IPFS_GATEWAY_URL", "http://ipfs:8080"),
+        public_gateway_url=os.getenv("IPFS_PUBLIC_GATEWAY_URL", "http://localhost:8080"),
+    )

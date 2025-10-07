@@ -10,9 +10,6 @@ dependencies = [
   "sqlalchemy==2.0.43",
   "alembic==1.13.3",
   "asyncpg==0.29.0",
-  "pytest",
-  "ruff",
-  "pyright",
   "python-jose[cryptography]>=3.5.0",
   "passlib[bcrypt]>=1.7.4",
   "redis>=6.4.0",
@@ -20,14 +17,28 @@ dependencies = [
   "python-dotenv>=1.1.1",
   "psycopg>=3.2.10",
   "eth-account>=0.13.7",
-  "jose>=1.0.0",
   "celery>=5.5.3",
   "pydantic>=2.11.9",
   "mako>=1.3.10",
+  "requests>=2.32.5",
+  "python-multipart>=0.0.20",
 ]
 
 [project.optional-dependencies]
-dev = ["ruff>=0.6.0", "pytest>=8.2", "pyright>=1.1.380"]
+dev = [
+  "httpx>=0.28.1",
+  "pytest>=8.4.2",
+  "ruff>=0.6.0",
+  "pyright>=1.1.380",
+]
+
+[dependency-groups]  # для uv: uv sync --group dev
+dev = [
+  "httpx>=0.28.1",
+  "pytest>=8.4.2",
+  "ruff>=0.6.0",
+  "pyright>=1.1.380",
+]
 
 [tool.ruff]
 line-length = 100
@@ -36,10 +47,7 @@ extend-exclude = [".venv/*"]
 
 [tool.ruff.lint]
 select = ["E","F","W","I","UP","B","ANN","N","C4","T20","Q","S","RUF"]
-ignore = [
-  "ANN101","ANN102",   # self/cls annotations aren't required
-  "S101"               # allow assert in tests
-]
+ignore = ["ANN101","ANN102","S101"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN", "S"]
@@ -63,19 +71,24 @@ venvPath = "."
 venv = ".venv"
 
 [tool.pytest.ini_options]
-pythonpath = ["backend"]
 testpaths = ["backend/tests"]
-
-[dependency-groups]
-dev = [
-    "httpx>=0.28.1",
-    "pytest>=8.4.2",
-]
 
 [tool.uv]
 index-url = "https://pypi.org/simple"
 managed = true
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "ipfs*"]      # <- явный список ваших пакетов
+exclude = ["tests*", "docker*", "migrations*"]
+
+# Если в пакете есть шаблоны/статические файлы — включим их:
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+app = ["**/*.html", "**/*.jinja2", "templates/**", "static/**"]
+
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"

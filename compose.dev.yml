@@ -1,0 +1,138 @@
+name: dfsp-dev
+
+# общие env-файлы (dev → local override)
+x-env-files: &env_files
+  env_file:
+    #- ./deploy/.env.dev
+    - ./deploy/.env.local
+
+networks:
+  dfsp:
+    driver: bridge
+
+volumes:
+  pgdata: {}
+  ipfs: {}
+  shared: {}   # для обмена deployment.json между контрактами и бэком (bind смонтируем ниже)
+
+services:
+  # -------------------- backend: db/redis/migrator/api --------------------
+  db:
+    extends:
+      file: ./backend/docker/compose.backend.yml
+      service: db
+    <<: *env_files
+    networks: [ dfsp ]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${DB_HOST_PORT:-5432}:5432"
+    profiles: [ "localdb" ]
+
+  redis:
+    extends:
+      file: ./backend/docker/compose.backend.yml
+      service: redis
+    <<: *env_files
+    networks: [ dfsp ]
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+
+  migrator:
+    extends:
+      file: ./backend/docker/compose.backend.yml
+      service: migrator
+    <<: *env_files
+    networks: [ dfsp ]
+    # важное: переопределяем пути на корневые
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+      - ./backend/alembic.ini:/app/alembic.ini
+    environment:
+      ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
+    depends_on:
+      redis:
+        condition: service_healthy
+      # db:
+      #   condition: service_healthy
+
+  api:
+    extends:
+      file: ./backend/docker/compose.backend.yml
+      service: api
+    <<: *env_files
+    networks: [ dfsp ]
+    ports:
+      - "${API_HOST_PORT:-8000}:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+      - ./backend/alembic.ini:/app/alembic.ini
+      - ./shared:/app/shared
+    environment:
+      API_AUTO_MIGRATE: "${API_AUTO_MIGRATE:-true}"
+      ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
+
+      # ---- wiring: chain & ipfs & deploy json ----
+      CHAIN_RPC_URL: "http://chain:8545"
+      CHAIN_ID: "31337"
+      CONTRACTS_DEPLOYMENT_JSON: "/app/shared/deployment.localhost.json"
+      REGISTRY_CONTRACT_NAME: "FileRegistry"
+      IPFS_PUBLIC_GATEWAY_URL: "http://localhost:8080"
+      IPFS_API_URL: "http://ipfs:5001"
+      IPFS_GATEWAY_URL: "http://ipfs:8080"
+
+      # для hardhat dev можно оставить пустым (будет w3.eth.accounts[0])
+      CHAIN_TX_FROM: ""
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+      contracts:
+        condition: service_completed_successfully
+      ipfs:
+        condition: service_healthy
+
+  # ---------------------- contracts: chain/contracts/ipfs ----------------------
+  chain:
+    extends:
+      file: ./contracts/docker/compose.dev.yml
+      service: chain
+    networks: [ dfsp ]
+    ports:
+      - "8545:8545"
+    volumes:
+      - ./contracts:/app
+
+  contracts:
+    extends:
+      file: ./contracts/docker/compose.dev.yml
+      service: contracts
+    networks: [ dfsp ]
+    depends_on:
+      chain:
+        condition: service_healthy
+    volumes:
+      - ./contracts:/app
+      - ./shared:/shared
+    environment:
+      HARDHAT_URL: http://chain:8545
+      # КУДА писать адреса/ABI, чтобы API их увидел:
+      DEPLOY_OUT: /shared/deployment.localhost.json
+    command: >
+      sh -lc "npm ci &&
+              npx hardhat run scripts/deploy-local.ts --network docker &&
+              npm run abi:export"
+
+  ipfs:
+    extends:
+      file: ./contracts/docker/compose.dev.yml
+      service: ipfs
+    networks: [ dfsp ]
+    ports:
+      - "5001:5001"
+      - "8080:8080"
+    volumes:
+      - ipfs:/data/ipfs
