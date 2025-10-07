@@ -4,13 +4,23 @@ from sqlalchemy.orm import Session
 import json, secrets
 
 from eth_account import Account
+from eth_account.messages import encode_typed_data
 from eth_keys import keys
 from eth_utils import keccak, to_canonical_address
+import logging
 
 from app.deps import get_db, rds
 from ..models import User
 from ..schemas.auth import ChallengeOut, RegisterIn, LoginIn, Tokens
 from app.security import make_token
+from eth_account.messages import encode_typed_data
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -47,6 +57,16 @@ def _eip712_digest_login(eth_address: str, nonce_hex: str) -> bytes:
     struct_hash     = keccak(typehash_login + addr_word + nonce32)
 
     return keccak(b"\x19\x01" + domain_sep + struct_hash)
+
+def _verify_login_signature(typed_data: dict, signature: str) -> str:
+    try:
+        msg = encode_typed_data(full_message=typed_data)  # ВАЖНО: primitive=...
+    except Exception as e:
+        raise HTTPException(400, f"typed_data_invalid: {e}")
+    try:
+        return Account.recover_message(msg, signature=signature)
+    except Exception as e:
+        raise HTTPException(401, f"bad_signature: {e}")
 
 def _recover_login_with_nonce(eth_address: str, nonce_hex: str, signature: str) -> str:
     # Явная валидация ещё до вычисления дайджеста
@@ -90,9 +110,18 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
     raw = rds.get(f"auth:chal:{payload.challenge_id}")
     if not raw:
         raise HTTPException(400, "challenge_expired")
-    data = json.loads(raw)
 
-    signer = _recover_login_with_nonce(payload.eth_address, data.get("nonce", ""), payload.signature)
+    data = json.loads(raw)
+    # нормализуем typed_data к dict
+    td = payload.typed_data.model_dump() if hasattr(payload.typed_data, "model_dump") else payload.typed_data
+    expected = build_login_typed_data(data["nonce"], payload.eth_address)
+
+    if td != expected:
+        logger.warning("typed_data_mismatch\nexpected=%s\nprovided=%s", expected, td)
+        raise HTTPException(400, "typed_data_mismatch")
+
+    signer = _verify_login_signature(td, payload.signature)
+    logger.info("login verify: signer=%s provided=%s", signer, payload.eth_address)
     if signer.lower() != payload.eth_address.lower():
         raise HTTPException(401, "bad_signature")
 
@@ -115,9 +144,16 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
     raw = rds.get(f"auth:chal:{payload.challenge_id}")
     if not raw:
         raise HTTPException(400, "challenge_expired")
-    data = json.loads(raw)
 
-    signer = _recover_login_with_nonce(payload.eth_address, data.get("nonce", ""), payload.signature)
+    data = json.loads(raw)
+    td = payload.typed_data.model_dump() if hasattr(payload.typed_data, "model_dump") else payload.typed_data
+    expected = build_login_typed_data(data["nonce"], payload.eth_address)
+    if td != expected:
+        logger.warning("typed_data_mismatch (login)\nexpected=%s\nprovided=%s", expected, td)
+        raise HTTPException(400, "typed_data_mismatch")
+
+    signer = _verify_login_signature(td, payload.signature)
+    logger.info("login verify: signer=%s provided=%s", signer, payload.eth_address)
     if signer.lower() != payload.eth_address.lower():
         raise HTTPException(401, "bad_signature")
 
@@ -126,5 +162,5 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         raise HTTPException(401, "user_not_found")
 
     access = make_token(str(user.id), 30)
-    refresh = make_token(str(user.id), 24 * 60)
+    refresh = make_token(str(user.id), 24*60)
     return Tokens(access=access, refresh=refresh)

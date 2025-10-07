@@ -203,11 +203,12 @@ export async function restoreFromBackup(file: File, password: string): Promise<{
   return { address: addr };
 }
 
-/** Подпись EIP-712 локальным Wallet */
-export async function signLoginTyped(message: { address: string; nonce: `0x${string}` }) {
-  const w = await getEOA();
-  if (!w) throw new Error("EOA key not found locally");
-  // ethers v6: Wallet has signTypedData(domain, types, value)
-  const signature = await (w as any).signTypedData(LOGIN_DOMAIN, LOGIN_TYPES, message);
-  return signature as `0x${string}`;
+
+export type LoginMessage = { address: string; nonce: `0x${string}` };
+
+// ensureEOA() должен вернуть ethers.Wallet из твоего локального приватника,
+// и НИКОГДА не генерировать новый, если уже есть!
+export async function signLoginTyped(message: LoginMessage) {
+  const wallet = await ensureEOA(); // должен вернуть СУЩЕСТВУЮЩИЙ, а не сгенерить новый
+  return wallet.signTypedData(LOGIN_DOMAIN, LOGIN_TYPES, message); // EIP-712
 }

@@ -1,27 +1,32 @@
-import { useEffect, useState } from "react";
-import { getEOA, LOGIN_DOMAIN, LOGIN_TYPES, signLoginTyped } from "../lib/keychain";
+// src/pages/Login.tsx
+import { useState } from "react";
+import { ensureEOA, LOGIN_DOMAIN, LOGIN_TYPES, signLoginTyped } from "../lib/keychain";
 import { postChallenge, postLogin } from "../lib/api";
+import { ethers } from "ethers";
 
 export default function LoginPage() {
-  const [address, setAddress] = useState("");
   const [status, setStatus] = useState("");
-
-  useEffect(() => {
-    (async () => {
-      const w = await getEOA();
-      if (w) setAddress(w.address);
-    })();
-  }, []);
+  const [addr, setAddr] = useState("");
 
   async function doLogin() {
     try {
-      if (!address) return setStatus("No local DFSP EOA key. Generate/restore on Register page.");
       setStatus("Challenge…");
       const chal = await postChallenge();
+
+      const eoa = await ensureEOA();
+      const address = eoa.address;
+      setAddr(address);
+
       const message = { address, nonce: chal.nonce as `0x${string}` };
 
       setStatus("Signing…");
       const signature = await signLoginTyped(message);
+
+      // локально проверим подпись
+      const recovered = ethers.verifyTypedData(LOGIN_DOMAIN, LOGIN_TYPES, message, signature);
+      if (recovered.toLowerCase() !== address.toLowerCase()) {
+        throw new Error(`local verify failed: recovered ${recovered} ≠ ${address}`);
+      }
 
       const payload = {
         challenge_id: chal.challenge_id,
@@ -29,6 +34,7 @@ export default function LoginPage() {
         typed_data: { domain: LOGIN_DOMAIN, types: LOGIN_TYPES, primaryType: "LoginChallenge", message },
         signature,
       };
+
       setStatus("Login…");
       const tok = await postLogin(payload);
       localStorage.setItem("ACCESS_TOKEN", tok.access);
@@ -41,10 +47,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 520, margin: "2rem auto", fontFamily: "Inter, system-ui" }}>
-      <h2>Login (local EOA)</h2>
-      <p>Address: {address || "—"}</p>
-      <button onClick={doLogin} disabled={!address}>Login</button>
+    <div style={{ maxWidth: 600, margin: "2rem auto", fontFamily: "Inter, system-ui" }}>
+      <h2>Login</h2>
+      <p>Address: {addr || "—"}</p>
+      <button onClick={doLogin}>Login</button>
       <p>{status}</p>
     </div>
   );
