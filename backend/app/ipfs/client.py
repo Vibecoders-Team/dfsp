@@ -9,7 +9,7 @@ class IpfsClient:
 
     def add_bytes(self, data: bytes, filename: str = "blob") -> str:
         files = {'file': (filename, io.BytesIO(data))}
-        r = requests.post(f"{self.api}/api/v0/add", files=files, params={"pin":"true"})
+        r = requests.post(f"{self.api}/add", files=files, params={"pin":"true"})
         r.raise_for_status()
         return r.json()["Hash"]  # CID
 
