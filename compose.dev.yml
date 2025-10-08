@@ -3,36 +3,44 @@ name: dfsp-dev
 # общие env-файлы (dev → local override)
 x-env-files: &env_files
   env_file:
-    #- ./deploy/.env.dev
-    - ./deploy/.env.local
-
-networks:
-  dfsp:
-    driver: bridge
-
-volumes:
-  pgdata: {}
-  ipfs: {}
-  shared: {}   # для обмена deployment.json между контрактами и бэком (bind смонтируем ниже)
+    - path: ../../deploy/.env.dev
+      required: false
+    - path: ../../deploy/.env.local
+      required: false
 
 services:
   web:
-    image: node:20
-    container_name: dfsp-web
+    image: node:${NODE_VERSION:-20}
+    container_name: web
     working_dir: /app
-    command: sh -lc "
-      corepack enable &&
-      corepack prepare pnpm@latest --activate &&
-      pnpm install && pnpm run dev -- --port 5170 --host 0.0.0.0"
+    command: >
+      sh -lc "corepack enable &&
+              corepack prepare pnpm@${PNPM_VERSION:-latest} --activate &&
+              pnpm install --frozen-lockfile &&
+              pnpm run dev -- --host 0.0.0.0"
     environment:
-      CI: "true"
-      VITE_API_BASE: "http://localhost:${API_HOST_PORT:-8000}"
-      VITE_IPFS_PUBLIC_GATEWAY: "http://localhost:8080"
-      VITE_CHAIN_ID: "31337"
+      CI: "${CI:-true}"
+      VITE_API_BASE: "${VITE_API_BASE:-http://localhost:${API_HOST_PORT:-8000}}"
+      VITE_IPFS_PUBLIC_GATEWAY: "${VITE_IPFS_PUBLIC_GATEWAY:-http://localhost:8080}"
+      VITE_CHAIN_ID: "${VITE_CHAIN_ID:-${CHAIN_ID:-31337}}"
+      PNPM_STORE_DIR: /pnpm-store
     ports:
-      - "5170:5170"
+      - "${VITE_PORT:-5173}:5173"
+    # ВАЖНО: /app — это volume (держит node_modules и dist),
+    # а исходники точечно монтируются поверх
     volumes:
-      - ./frontend:/app
+      - web_app:/app
+      - web_pnpm_store:/pnpm-store
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/package.json:/app/package.json
+      - ./frontend/pnpm-lock.yaml:/app/pnpm-lock.yaml
+      - ./frontend/index.html:/app/index.html
+      # если у тебя конфиг Vite называется vite.config.ts — раскомментируй строку ниже
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      # если конфиг eslint/prettier нужен внутри контейнера — добавь аналогично:
+      - ./frontend/.eslintrc.cjs:/app/.eslintrc.cjs
+      - ./frontend/eslint.config.js:/app/eslint.config.js
     depends_on:
       api:
         condition: service_started
@@ -93,20 +101,17 @@ services:
       - ./backend/alembic.ini:/app/alembic.ini
       - shared:/app/shared
     environment:
-      API_AUTO_MIGRATE: "${API_AUTO_MIGRATE:-true}"
+      API_AUTO_MIGRATE: "${API_AUTO_MIGRATE:-false}"
       ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
-      # ---- wiring: chain & ipfs & deploy json ----
-      CHAIN_RPC_URL: "http://chain:8545"
-      CHAIN_ID: "31337"
-      CONTRACTS_DEPLOYMENT_JSON: "/app/shared/deployment.localhost.json"
-      REGISTRY_CONTRACT_NAME: "FileRegistry"
-      IPFS_PUBLIC_GATEWAY_URL: "http://localhost:8080"
-      IPFS_API_URL: "http://ipfs:5001/api/v0"
-      CORS_ORIGINS: "http://localhost:5170,http://127.0.0.1:5170"
-      IPFS_GATEWAY_URL: "http://ipfs:8080"
-
-      # для hardhat dev можно оставить пустым (будет w3.eth.accounts[0])
-      CHAIN_TX_FROM: ""
+      CHAIN_RPC_URL: "${CHAIN_RPC_URL:-http://chain:8545}"
+      CHAIN_ID: "${CHAIN_ID:-31337}"
+      CONTRACTS_DEPLOYMENT_JSON: "${CONTRACTS_DEPLOYMENT_JSON:-/app/shared/deployment.localhost.json}"
+      REGISTRY_CONTRACT_NAME: "${REGISTRY_CONTRACT_NAME:-FileRegistry}"
+      IPFS_PUBLIC_GATEWAY_URL: "${IPFS_PUBLIC_GATEWAY_URL:-http://localhost:8080}"
+      IPFS_API_URL: "${IPFS_API_URL:-http://ipfs:5001/api/v0}"
+      IPFS_GATEWAY_URL: "${IPFS_GATEWAY_URL:-http://ipfs:8080}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}"
+      CHAIN_TX_FROM: "${CHAIN_TX_FROM:-}"
     depends_on:
       redis:
         condition: service_healthy
@@ -122,27 +127,47 @@ services:
     extends:
       file: ./contracts/docker/compose.dev.yml
       service: chain
+    volumes:
+      - contracts_app:/app
+      - ./contracts/package.json:/app/package.json
+      - ./contracts/package-lock.json:/app/package-lock.json
+      - ./contracts/hardhat.config.ts:/app/hardhat.config.ts
+      - ./contracts/tsconfig.json:/app/tsconfig.json
+      - ./contracts/src:/app/src
+      - ./contracts/scripts:/app/scripts
+      - ./contracts/test:/app/test
+      - ./contracts/deploy:/app/deploy
+      - ./contracts/docker:/app/docker
+      - contracts_npm_cache:/npm-cache
     networks: [ dfsp ]
     ports:
-      - "8545:8545"
-    volumes:
-      - ./contracts:/app
+      - "${CHAIN_HOST_PORT:-8545}:8545"
 
   contracts:
     extends:
       file: ./contracts/docker/compose.dev.yml
       service: contracts
     networks: [ dfsp ]
+    volumes:
+      - contracts_app:/app
+      - ./contracts/package.json:/app/package.json
+      - ./contracts/package-lock.json:/app/package-lock.json
+      - ./contracts/hardhat.config.ts:/app/hardhat.config.ts
+      - ./contracts/tsconfig.json:/app/tsconfig.json
+      - ./contracts/src:/app/src
+      - ./contracts/scripts:/app/scripts
+      - ./contracts/test:/app/test
+      - ./contracts/deploy:/app/deploy
+      - ./contracts/docker:/app/docker
+      - shared:/shared
+      - contracts_npm_cache:/npm-cache
     depends_on:
       chain:
         condition: service_healthy
-    volumes:
-      - ./contracts:/app
-      - shared:/shared
     environment:
-      HARDHAT_URL: http://chain:8545
-      # КУДА писать адреса/ABI, чтобы API их увидел:
-      DEPLOY_OUT: /shared/deployment.localhost.json
+      HARDHAT_URL: "${HARDHAT_URL:-http://chain:8545}"
+      DEPLOY_OUT: "${DEPLOY_OUT:-/shared/deployment.localhost.json}"
+      NPM_CONFIG_CACHE: /npm-cache
     command: >
       sh -lc "npm ci &&
               npx hardhat run scripts/deploy-local.ts --network docker &&
@@ -154,7 +179,20 @@ services:
       service: ipfs
     networks: [ dfsp ]
     ports:
-      - "5001:5001"
-      - "8080:8080"
+      - "${IPFS_API_HOST_PORT:-5001}:5001"
+      - "${IPFS_GATEWAY_HOST_PORT:-8080}:8080"
     volumes:
       - ipfs:/data/ipfs
+
+networks:
+  dfsp:
+    driver: bridge
+
+volumes:
+  pgdata: {}
+  ipfs: {}
+  shared: {}
+  web_pnpm_store: {}
+  contracts_npm_cache: {}
+  web_app: {}
+  contracts_app: {}

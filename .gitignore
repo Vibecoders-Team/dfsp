@@ -28,3 +28,10 @@ recordings
 src/settings.json
 .aider*
 dummy.py
+
+frontend/node_modules/
+
+contracts/node_modules/
+contracts/artifacts/
+contracts/artifacts-abi/
+contracts/cache/

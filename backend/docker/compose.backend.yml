@@ -1,8 +1,3 @@
-name: dfsp-backend-dev
-
-# Общие переменные из env-файлов:
-# - .env.dev — дефолты для команды
-# - .env.local — локальные оверрайды разработчика (если есть — берёт приоритет)
 x-env-files: &env_files
   env_file:
     - path: ../../deploy/.env.dev
@@ -15,16 +10,14 @@ networks:
     driver: bridge
 
 volumes:
-  pgdata:
+  pgdata: { }
 
 services:
   # ----------- опциональная локальная БД (включается профилем localdb) ----------
   db:
     image: postgres:16-alpine
-    container_name: dfsp-db
+    container_name: db
     <<: *env_files
-    # ВАЖНО: значения POSTGRES_* считаем из DB_*, приходящих через env_file.
-    # Делаем это ДО запуска стандартного entrypoint postgres.
     entrypoint:
       - /bin/sh
       - -c
@@ -33,11 +26,9 @@ services:
         export POSTGRES_PASSWORD="${DB_PASSWORD:-dfsp}";
         export POSTGRES_DB="${DB_NAME:-dfsp}";
         exec /usr/local/bin/docker-entrypoint.sh postgres
-    # Порты нужны Compose заранее — оставляем как есть
     ports:
       - "${DB_HOST_PORT:-5432}:5432"
     healthcheck:
-      # Экранируем $ → $$, чтобы переменные подставились ВНУТРИ контейнера
       test:
         [ "CMD-SHELL",
           "pg_isready -U $${DB_USER:-dfsp} -d $${DB_NAME:-dfsp} -p 5432" ]
@@ -52,10 +43,8 @@ services:
   # ------------------------ Redis (по умолчанию включён) ------------------------
   redis:
     image: redis:7.2-alpine
-    container_name: dfsp-redis
+    container_name: redis
     <<: *env_files
-    # env для самого redis-образа не нужен — он слушает 6379.
-    # Порт наружу — задаётся Compose.
     ports:
       - "${REDIS_HOST_PORT:-6379}:6379"
     healthcheck:
@@ -70,9 +59,22 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: dfsp-migrator
+    container_name: migrator
     working_dir: /app
     <<: *env_files
+    environment:
+      ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
+      WAIT_FOR_TIMEOUT: "${WAIT_FOR_TIMEOUT:-60}"
+
+      # DB (если используем внешний Postgres — придут из env_file)
+      DB_HOST: "${DB_HOST:-db}"
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_NAME: "${DB_NAME:-dfsp}"
+      DB_USER: "${DB_USER:-dfsp}"
+      DB_PASSWORD: "${DB_PASSWORD:-dfsp}"
+
+      # Redis (можно переопределить REDIS_URL целиком)
+      REDIS_URL: "${REDIS_URL:-redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/${REDIS_DB:-0}}"
     command:
       - bash
       - -lc
@@ -81,9 +83,6 @@ services:
         export REDIS_URL="$${REDIS_URL:-redis://$${REDIS_HOST:-dfsp-redis}:$${REDIS_PORT:-6379}/$${REDIS_DB:-0}}";
         export WAIT_FOR_TIMEOUT="$${WAIT_FOR_TIMEOUT:-60}";
         ./docker/entrypoint.sh migrate
-    environment:
-      # DEV: автогенерация ревизий перед upgrade
-      ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
     volumes:
       - ../app:/app/app
       - ../migrations:/app/migrations
@@ -102,12 +101,39 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    container_name: dfsp-api
-    environment:
-      API_AUTO_MIGRATE: "${API_AUTO_MIGRATE:-true}"   # dev-удобство
-      ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
+    container_name: api
     working_dir: /app
     <<: *env_files
+    environment:
+      # server
+      API_HOST: "${API_HOST:-0.0.0.0}"
+      API_PORT: "${API_PORT:-8000}"
+      API_RELOAD: "${API_RELOAD:-true}"
+      API_LOG_LEVEL: "${API_LOG_LEVEL:-info}"
+      API_AUTO_MIGRATE: "${API_AUTO_MIGRATE:-false}"
+      ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
+      WAIT_FOR_TIMEOUT: "${WAIT_FOR_TIMEOUT:-60}"
+      JWT_SECRET: "${JWT_SECRET:-change_me}"
+
+      # DB
+      DB_HOST: "${DB_HOST:-db}"
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_NAME: "${DB_NAME:-dfsp}"
+      DB_USER: "${DB_USER:-dfsp}"
+      DB_PASSWORD: "${DB_PASSWORD:-dfsp}"
+
+      # Redis
+      REDIS_URL: "${REDIS_URL:-redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/${REDIS_DB:-0}}"
+
+      # Chain / IPFS / contracts (верхний compose может переопределить)
+      CHAIN_RPC_URL: "${CHAIN_RPC_URL:-http://chain:8545}"
+      CHAIN_ID: "${CHAIN_ID:-31337}"
+      REGISTRY_CONTRACT_NAME: "${REGISTRY_CONTRACT_NAME:-FileRegistry}"
+      CONTRACTS_DEPLOYMENT_JSON: "${CONTRACTS_DEPLOYMENT_JSON:-/app/shared/deployment.localhost.json}"
+      IPFS_API_URL: "${IPFS_API_URL:-http://ipfs:5001/api/v0}"
+      IPFS_GATEWAY_URL: "${IPFS_GATEWAY_URL:-http://ipfs:8080}"
+      IPFS_PUBLIC_GATEWAY_URL: "${IPFS_PUBLIC_GATEWAY_URL:-http://localhost:8080}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:${VITE_PORT:-5173},http://127.0.0.1:${VITE_PORT:-5173}}"
     command:
       - bash
       - -lc
@@ -131,9 +157,9 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      #db:
-      #  condition: service_healthy
-      #migrator:
-      #  condition: service_completed_successfully
+      # db:
+      #   condition: service_healthy
+      # migrator:
+      #   condition: service_completed_successfully
     restart: unless-stopped
     networks: [ dfsp ]

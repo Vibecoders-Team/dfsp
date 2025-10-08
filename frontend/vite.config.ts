@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   server: {
-    port: 5170,
+    port: 5173,
     host: true,           // чтобы слушал 0.0.0.0 в контейнере
   },
   plugins: [react()],
