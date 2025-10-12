@@ -16,7 +16,7 @@ app = FastAPI(title="DFSP API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5170"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

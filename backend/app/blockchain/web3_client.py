@@ -1,71 +1,102 @@
-from __future__ import annotations
-
 import json
+import logging
+from pathlib import Path
+from typing import Dict
+
 from web3 import Web3
 from web3.types import TxParams
-import json, os, logging
-from web3 import Web3, HTTPProvider
-from typing import Dict
+
+# Импортируем наш объект settings
+from app.config import settings
 
 log = logging.getLogger(__name__)
 
+# Папка с ABI-файлами, которую мы создали
+ABI_DIR = Path(__file__).parent / "abi"
+
+
 class Chain:
-    def __init__(self, rpc_url: str, chain_id: int, deploy_json_path: str, contract_name: str, tx_from: str | None = None):
-        self.w3 = Web3(Web3.HTTPProvider(rpc_url))
-        self.chain_id = chain_id
-        d = json.load(open(deploy_json_path, "r", encoding="utf-8"))
-        c = d["contracts"][contract_name]
-        self.address = Web3.to_checksum_address(c["address"])
-        self.abi = c["abi"]
+    def __init__(self, contract_name: str):
+        # 1. Подключаемся к блокчейну, используя URL из настроек
+        self.w3 = Web3(Web3.HTTPProvider(settings.CHAIN_RPC_URL))
+        if not self.w3.is_connected():
+            raise ConnectionError(f"Failed to connect to Web3 provider at {settings.CHAIN_RPC_URL}")
+
+        # 2. Загружаем конфигурацию с адресами, используя путь из настроек
+        deploy_json_path = settings.DEPLOYMENT_JSON_PATH
+        try:
+            with open(deploy_json_path, "r", encoding="utf-8") as f:
+                config_data = json.load(f)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Deployment config not found at {deploy_json_path}")
+
+        self.chain_id = int(config_data.get("chainId", 0))
+
+        # 3. Получаем АДРЕС контракта из "verifyingContracts"
+        contract_address_str = config_data.get("verifyingContracts", {}).get(contract_name)
+        if not contract_address_str:
+            raise ValueError(f"Address for '{contract_name}' not found in {deploy_json_path}")
+        self.address = Web3.to_checksum_address(contract_address_str)
+
+        # 4. Загружаем ABI из файла в папке /abi
+        abi_path = ABI_DIR / f"{contract_name}.json"
+        if not abi_path.exists():
+            raise FileNotFoundError(f"ABI file not found for '{contract_name}' at {abi_path}")
+
+        with open(abi_path, "r", encoding="utf-8") as f:
+            abi_data = json.load(f)
+            self.abi = abi_data.get("abi") if isinstance(abi_data, dict) else abi_data
+            if not self.abi:
+                raise ValueError(f"Invalid ABI format in {abi_path}")
+
+        # 5. Инициализируем остальные атрибуты
         self.contract = self.w3.eth.contract(address=self.address, abi=self.abi)
-        self.tx_from = Web3.to_checksum_address(tx_from) if tx_from else self.w3.eth.accounts[0]
+        # Для локальной разработки предполагаем, что первый аккаунт доступен для отправки транзакций
+        self.tx_from = self.w3.eth.accounts[0] if self.w3.eth.accounts else None
+        if not self.tx_from:
+            log.warning("Could not determine default 'from' address for transactions.")
+
         self._fn = {f["name"]: f for f in self.abi if f.get("type") == "function"}
         self._events = {e["name"]: e for e in self.abi if e.get("type") == "event"}
-        self.rpc_url = rpc_url or os.getenv("CHAIN_RPC_URL", "http://chain:8545")
-        self.deployment_json = deploy_json_path or os.getenv(
-            "CONTRACTS_DEPLOYMENT_JSON", "/app/shared/deployment.localhost.json"
-        )
-        self.w3 = Web3(HTTPProvider(self.rpc_url))
-        self.contracts: Dict[str, any] = {}
-        self._load_contracts()
 
     def _tx(self) -> TxParams:
+        if not self.tx_from:
+            raise RuntimeError("Cannot send transaction: 'from' address is not set.")
         return {"from": self.tx_from, "chainId": self.chain_id, "gas": 2_000_000}
 
-    def register_or_update(self, item_id: bytes, cid: str, checksum32: bytes, size: int, mime: str = "") -> str:
+    # --- ВАША ЛОГИКА МЕТОДОВ (СКОПИРОВАНА БЕЗ ИЗМЕНЕНИЙ) ---
 
-        """
-        Универсальная запись: если есть register — зовём его (2 или 5 аргументов).
-        Если revert/конфликт — пробуем updateCid (2 или 5 аргументов).
-        """
+    def register_or_update(
+        self, item_id: bytes, cid: str, checksum32: bytes, size: int, mime: str = ""
+    ) -> str:
         def _arity(name: str) -> int:
             f = self._fn.get(name)
             return len(f["inputs"]) if f else -1
 
-        # primary: register OR store
-        primary_name = "register" if "register" in self._fn else ("store" if "store" in self._fn else None)
+        primary_name = (
+            "register" if "register" in self._fn else ("store" if "store" in self._fn else None)
+        )
         if not primary_name:
             raise RuntimeError("Registry has no register/store")
-
-        # try primary
         try:
             n = _arity(primary_name)
             if n == 2:
-                txh = getattr(self.contract.functions, primary_name)(item_id, cid).transact(self._tx())
+                txh = getattr(self.contract.functions, primary_name)(item_id, cid).transact(
+                    self._tx()
+                )
             elif n == 5:
                 txh = getattr(self.contract.functions, primary_name)(
                     item_id,
                     cid,
                     checksum32 or (b"\x00" * 32),
-                    int(size) & ((1 << 64) - 1),  # ← размер файла
-                    mime or "",  # ← mime
+                    int(size) & ((1 << 64) - 1),
+                    mime or "",
                 ).transact(self._tx())
             else:
                 raise RuntimeError(f"{primary_name} has unsupported arity: {n}")
             rcpt = self.w3.eth.wait_for_transaction_receipt(txh)
             return rcpt.transactionHash.hex()
         except Exception:
-            # fallback: updateCid
             if "updateCid" not in self._fn:
                 raise
             n = _arity("updateCid")
@@ -85,32 +116,26 @@ class Chain:
             return rcpt.transactionHash.hex()
 
     def cid_of(self, item_id: bytes) -> str:
-        # прямой путь
         if "cidOf" in self._fn:
             return self.contract.functions.cidOf(item_id).call() or ""
-
-        # metaOf(bytes32) returns tuple(...). Найдём индекс поля 'cid' по ABI.
         if "metaOf" in self._fn:
             fn = self._fn["metaOf"]
             outs = (fn.get("outputs") or [{}])[0]
             comps = outs.get("components") or []
-            # попробуем найти явно 'cid'; если нет — возьмём первую string-компоненту; запасной дефолт = 1
-            idx = next((i for i, c in enumerate(comps) if (c.get("name") or "").lower() == "cid"), None)
+            idx = next(
+                (i for i, c in enumerate(comps) if (c.get("name") or "").lower() == "cid"), None
+            )
             if idx is None:
                 idx = next((i for i, c in enumerate(comps) if c.get("type") == "string"), 1)
-
             res = self.contract.functions.metaOf(item_id).call()
             if isinstance(res, dict):
                 return res.get("cid") or ""
             if isinstance(res, (list, tuple)) and len(res) > idx:
                 return res[idx] or ""
             return ""
-
-        # versionsOf(bytes32) → string[]
         if "versionsOf" in self._fn:
             arr = self.contract.functions.versionsOf(item_id).call()
             return (arr[-1] if isinstance(arr, (list, tuple)) and arr else "") or ""
-
         return ""
 
     def meta_of_full(self, item_id: bytes) -> dict:
@@ -121,13 +146,17 @@ class Chain:
         comps = outs.get("components") or []
         res = self.contract.functions.metaOf(item_id).call()
 
-        # сопоставляем имена полей с значениями
         def to_dict(vals):
             if isinstance(vals, dict):
                 return vals
             if isinstance(vals, (list, tuple)):
-                return { (c.get("name") or f"f{i}"): vals[i] for i, c in enumerate(comps) if i < len(vals) }
+                return {
+                    (c.get("name") or f"f{i}"): vals[i]
+                    for i, c in enumerate(comps)
+                    if i < len(vals)
+                }
             return {}
+
         return to_dict(res)
 
     def versions_of(self, item_id: bytes) -> list[dict]:
@@ -136,10 +165,8 @@ class Chain:
         fn = self._fn["versionsOf"]
         outs = (fn.get("outputs") or [{}])[0]
         comps = outs.get("components") or []
-
         res = self.contract.functions.versionsOf(item_id).call()
         out: list[dict] = []
-
         if isinstance(res, (list, tuple)):
             for el in res:
                 if isinstance(el, dict):
@@ -161,75 +188,59 @@ class Chain:
         events: list[dict] = []
 
         def _evt_logs(evt, arg_filters):
-            # web3.py v6: get_logs(from_block, to_block)
             try:
-                return list(evt.get_logs(from_block=0, to_block="latest", argument_filters=arg_filters))
+                return list(
+                    evt.get_logs(from_block=0, to_block="latest", argument_filters=arg_filters)
+                )
             except TypeError:
                 pass
-            # иногда в старых версиях есть get_logs с camelCase
             try:
-                return list(evt.get_logs(fromBlock=0, toBlock="latest", argument_filters=arg_filters))  # type: ignore
+                return list(
+                    evt.get_logs(fromBlock=0, toBlock="latest", argument_filters=arg_filters)
+                )
             except Exception:
                 pass
-            # v6: create_filter(from_block, to_block)
             try:
-                flt = evt.create_filter(from_block=0, to_block="latest", argument_filters=arg_filters)
+                flt = evt.create_filter(
+                    from_block=0, to_block="latest", argument_filters=arg_filters
+                )
                 return flt.get_all_entries()
             except TypeError:
                 pass
-            # v5: createFilter(fromBlock, toBlock)
-            flt = evt.createFilter(fromBlock=0, toBlock="latest", argument_filters=arg_filters)  # type: ignore
+            flt = evt.createFilter(fromBlock=0, toBlock="latest", argument_filters=arg_filters)
             return flt.get_all_entries()
 
         def _collect(evt_name: str):
             if evt_name not in self._events:
                 return
             evt = getattr(self.contract.events, evt_name)
-
             arg_filters = {"fileId": item_id}
-            # owner есть только у FileRegistered и он indexed — фильтруем, если передан
-            if owner and any(i.get("name") == "owner" and i.get("indexed") for i in self._events[evt_name]["inputs"]):
+            if owner and any(
+                i.get("name") == "owner" and i.get("indexed")
+                for i in self._events[evt_name]["inputs"]
+            ):
                 arg_filters["owner"] = Web3.to_checksum_address(owner)
-
             logs = _evt_logs(evt, arg_filters)
-
             for lg in logs:
                 args = dict(lg["args"]) if isinstance(lg.get("args"), dict) else lg.get("args", {})
                 block = self.w3.eth.get_block(lg["blockNumber"])
                 checksum = args.get("checksum")
                 if isinstance(checksum, (bytes, bytearray)):
                     checksum = checksum.hex()
-
-                events.append({
-                    "type": evt_name,
-                    "blockNumber": lg["blockNumber"],
-                    "txHash": lg["transactionHash"].hex(),
-                    "timestamp": int(block["timestamp"]),
-                    "owner": args.get("owner"),
-                    "cid": args.get("cid"),
-                    "checksum": checksum,
-                    "size": int(args.get("size") or 0),
-                    "mime": args.get("mime"),
-                })
-
+                events.append(
+                    {
+                        "type": evt_name,
+                        "blockNumber": lg["blockNumber"],
+                        "txHash": lg["transactionHash"].hex(),
+                        "timestamp": int(block["timestamp"]),
+                        "owner": args.get("owner"),
+                        "cid": args.get("cid"),
+                        "checksum": checksum,
+                        "size": int(args.get("size") or 0),
+                        "mime": args.get("mime"),
+                    }
+                )
         _collect("FileRegistered")
         _collect("FileVersioned")
         events.sort(key=lambda x: (x["blockNumber"], x["timestamp"]))
         return events
-
-    def _load_contracts(self):
-        self.contracts = {}
-        try:
-            with open(self.deployment_json, "r") as f:
-                j = json.load(f)
-            for name, info in j.get("contracts", {}).items():
-                addr = Web3.to_checksum_address(info["address"])
-                abi = info["abi"]
-                self.contracts[name] = self.w3.eth.contract(address=addr, abi=abi)
-            log.info("Loaded %d contracts from %s", len(self.contracts), self.deployment_json)
-        except Exception as e:
-            log.warning("Contracts load failed (%s): %s", self.deployment_json, e)
-
-    def reload_contracts(self):
-        """Явный перезахват контрактов с диска."""
-        self._load_contracts()
