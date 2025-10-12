@@ -111,6 +111,8 @@ class Settings(BaseSettings):
 
     CHAIN_RPC_URL: str
 
+    DEPLOYMENT_JSON_PATH: str
+
     # ---------------------------- удобные производные/геттеры ----------------------------
 
     @property
