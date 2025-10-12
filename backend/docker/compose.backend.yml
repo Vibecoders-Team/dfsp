@@ -128,6 +128,7 @@ services:
       - ../app:/app/app
       - ../migrations:/app/migrations
       - ../alembic.ini:/app/alembic.ini
+      - ../../contracts/deploy/chain-config.json:/app/shared/deployment.localhost.json
     depends_on:
       redis:
         condition: service_healthy

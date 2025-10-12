@@ -109,6 +109,8 @@ class Settings(BaseSettings):
     # --- Квоты (вложенные) ---
     quotas: Quotas = Field(default_factory=Quotas, alias="QUOTAS")
 
+    CHAIN_RPC_URL: str
+
     # ---------------------------- удобные производные/геттеры ----------------------------
 
     @property
