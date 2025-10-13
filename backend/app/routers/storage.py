@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+from typing import Literal
+
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel
-from app.blockchain.web3_client import Chain
-from app.ipfs.client import IpfsClient
 from web3 import Web3
-from typing import Literal
-import hashlib
 
-from app.deps import get_chain, get_ipfs, get_db
+from app.blockchain.web3_client import Chain
+from app.deps import get_chain, get_ipfs
 from app.ipfs.client import IpfsClient
-from app.models import Asset, User
+from app.models import User
 from app.security import get_current_user  # guard
 
 router = APIRouter(prefix="/storage", tags=["storage"])
@@ -30,10 +30,14 @@ async def store_file(
         id_hex: str | None = Form(None),
         chain: Chain = Depends(get_chain),
         ipfs: IpfsClient = Depends(get_ipfs),
+        user: User = Depends(get_current_user),
 ):
+    MAX_BYTES = 200 * 1024 * 1024  # 200MB
     data = await file.read()
     if not data:
         raise HTTPException(400, "empty_file")
+    if len(data) > MAX_BYTES:
+        raise HTTPException(413, "file_too_large")
 
     cid = ipfs.add_bytes(data, filename=file.filename or "blob")
 
@@ -104,6 +108,7 @@ def meta(id_hex: str, chain: Chain = Depends(get_chain)):
         createdAt=int(m.get("createdAt") or 0),
     )
 
+
 class VersionItem(BaseModel):
     owner: str | None = None
     cid: str | None = None
@@ -111,6 +116,7 @@ class VersionItem(BaseModel):
     size: int | None = None
     mime: str | None = None
     createdAt: int | None = None
+
 
 class VersionsOut(BaseModel):
     versions: list[VersionItem]
@@ -160,19 +166,21 @@ class HistoryItem(BaseModel):
     size: int | None = None
     mime: str | None = None
 
+
 class HistoryOut(BaseModel):
     items: list[HistoryItem]
 
+
 @router.get("/history/{id_hex}", response_model=HistoryOut)
 def history(
-    id_hex: str,
-    owner: str | None = None,
-    type: Literal["FileRegistered","FileVersioned"] | None = None,
-    from_block: int | None = None,
-    to_block: int | None = None,
-    order: Literal["asc","desc"] = "asc",
-    limit: int = 100,
-    chain: Chain = Depends(get_chain),
+        id_hex: str,
+        owner: str | None = None,
+        type: Literal["FileRegistered", "FileVersioned"] | None = None,
+        from_block: int | None = None,
+        to_block: int | None = None,
+        order: Literal["asc", "desc"] = "asc",
+        limit: int = 100,
+        chain: Chain = Depends(get_chain),
 ):
     if not (isinstance(id_hex, str) and id_hex.startswith("0x") and len(id_hex) == 66):
         raise HTTPException(400, "bad_id")

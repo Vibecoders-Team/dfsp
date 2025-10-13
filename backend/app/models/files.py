@@ -5,8 +5,9 @@ from datetime import datetime
 
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey, UniqueConstraint, Index, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.db.base import Base
 
 
@@ -14,15 +15,20 @@ class File(Base):
     __tablename__ = "files"
     __table_args__ = (
         UniqueConstraint("checksum", "owner_id", name="uq_files_checksum_owner"),
+        UniqueConstraint("bytes32_id", name="uq_files_bytes32_id"),
         Index("ix_files_owner", "owner_id"),
     )
 
+    # PK = UUID (для удобных FK)
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
+    # on-chain id (bytes32) — бизнес-идентификатор, уникальный
+    bytes32_id: Mapped[bytes] = mapped_column(sa.LargeBinary(32), nullable=False)
+
     owner_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        PG_UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="RESTRICT"),
         index=True,
         nullable=False,
@@ -48,17 +54,22 @@ class FileVersion(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
+    # FK на files.id (UUID)
     file_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        PG_UUID(as_uuid=True),
         ForeignKey("files.id", ondelete="CASCADE"),
         nullable=False,
     )
 
     version: Mapped[int] = mapped_column(nullable=False)
     cid: Mapped[str] = mapped_column(nullable=False)
+
+    checksum: Mapped[bytes] = mapped_column(sa.LargeBinary(32), nullable=False)
+    size: Mapped[int] = mapped_column(nullable=False)
+    mime: Mapped[str | None] = mapped_column(nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=func.now(), nullable=False

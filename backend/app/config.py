@@ -1,11 +1,10 @@
-# backend/app/config.py
 from __future__ import annotations
 
 import json
 import logging
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, List, Optional
-from datetime import timedelta
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, PositiveInt
@@ -13,7 +12,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 log = logging.getLogger("dfsp.settings")
 
-# --- .env автозагрузка из backend/.env (не мешает переменным окружения из compose) ---
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.is_file():
     print(f"Loading environment variables from: {env_path}")
@@ -32,21 +30,34 @@ class Quotas(BaseModel):
 def _parse_origins(val: str | List[str] | None) -> List[str]:
     """
     Принимает JSON-массив или CSV-строку и возвращает уникальный список, очищенный от пустых значений.
+    Поддерживает '*' (любой источник).
     """
     if val is None:
         return ["http://localhost:5173", "http://localhost:8000"]
     if isinstance(val, list):
-        return [s.strip() for s in val if s and s.strip()]
-    s = val.strip()
-    if not s:
-        return []
-    try:
-        arr = json.loads(s)
-        if isinstance(arr, list):
-            return [str(x).strip() for x in arr if str(x).strip()]
-    except Exception:
-        pass
-    return [item.strip() for item in s.split(",") if item.strip()]
+        out = [s.strip() for s in val if s and s.strip()]
+    else:
+        s = val.strip()
+        if not s:
+            return []
+        if s == "*":
+            return ["*"]
+        try:
+            arr = json.loads(s)
+            if isinstance(arr, list):
+                out = [str(x).strip() for x in arr if str(x).strip()]
+            else:
+                out = [s]
+        except Exception:
+            out = [item.strip() for item in s.split(",") if item.strip()]
+    # убираем дубликаты, сохраняя порядок
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for o in out:
+        if o not in seen:
+            seen.add(o)
+            uniq.append(o)
+    return uniq
 
 
 def _mask(s: str | None, keep: int = 4) -> str | None:
@@ -105,6 +116,7 @@ class Settings(BaseSettings):
 
     # --- CORS ---
     cors_origins_raw: str | List[str] | None = Field(default=None, alias="CORS_ORIGINS")
+    cors_origin_raw: str | None = Field(default=None, alias="CORS_ORIGIN")
 
     # --- Квоты (вложенные) ---
     quotas: Quotas = Field(default_factory=Quotas, alias="QUOTAS")
@@ -115,7 +127,29 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        return _parse_origins(self.cors_origins_raw)
+        """
+        Итоговый список Origin'ов для CORS.
+        Приоритет: CORS_ORIGINS (если задан) -> CORS_ORIGIN (если задан) -> дефолт.
+        Спец-случай '*': вернём ['*'].
+        """
+        if self.cors_origins_raw not in (None, "", []):
+            return _parse_origins(self.cors_origins_raw)
+        if self.cors_origin_raw not in (None, ""):
+            return _parse_origins(self.cors_origin_raw)
+        return _parse_origins(None)
+
+    @property
+    def cors_origin(self) -> str | None:
+        """
+        Возвращает первый origin из cors_origins (или None, если не задан).
+        Удобно, если нужен один «основной» origin, например для генерации URL.
+        """
+        origins = self.cors_origins
+        if not origins:
+            return None
+        if origins == ["*"]:
+            return "*"
+        return origins[0]
 
     @property
     def redis_dsn(self) -> str:

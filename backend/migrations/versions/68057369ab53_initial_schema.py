@@ -1,8 +1,8 @@
-"""auto 20251003082758
+"""initial schema
 
-Revision ID: dce4e4c8142a
+Revision ID: 68057369ab53
 Revises: 
-Create Date: 2025-10-03 08:28:02.204127
+Create Date: 2025-10-12 06:22:26.750232
 
 """
 
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = 'dce4e4c8142a'
+revision: str = '68057369ab53'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -51,8 +51,30 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_users_eth_address'), 'users', ['eth_address'], unique=True)
     op.create_index(op.f('ix_users_id'), 'users', ['id'], unique=False)
+    op.create_table('assets',
+    sa.Column('id', sa.Uuid(), nullable=False),
+    sa.Column('file_id_hex', sa.String(length=66), nullable=False),
+    sa.Column('cid', sa.String(length=120), nullable=False),
+    sa.Column('tx_hash', sa.String(length=66), nullable=False),
+    sa.Column('owner', sa.String(length=42), nullable=True),
+    sa.Column('chain_block', sa.Integer(), nullable=True),
+    sa.Column('chain_timestamp', sa.Integer(), nullable=True),
+    sa.Column('size', sa.Integer(), nullable=False),
+    sa.Column('mime', sa.String(length=128), nullable=True),
+    sa.Column('user_id', sa.UUID(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_assets_chain_block'), 'assets', ['chain_block'], unique=False)
+    op.create_index(op.f('ix_assets_cid'), 'assets', ['cid'], unique=False)
+    op.create_index(op.f('ix_assets_file_id_hex'), 'assets', ['file_id_hex'], unique=False)
+    op.create_index(op.f('ix_assets_owner'), 'assets', ['owner'], unique=False)
+    op.create_index(op.f('ix_assets_tx_hash'), 'assets', ['tx_hash'], unique=False)
+    op.create_index(op.f('ix_assets_user_id'), 'assets', ['user_id'], unique=False)
     op.create_table('files',
     sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('bytes32_id', sa.LargeBinary(length=32), nullable=False),
     sa.Column('owner_id', sa.UUID(), nullable=False),
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('size', sa.Integer(), nullable=False),
@@ -62,6 +84,7 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('bytes32_id', name='uq_files_bytes32_id'),
     sa.UniqueConstraint('checksum', 'owner_id', name='uq_files_checksum_owner')
     )
     op.create_index('ix_files_owner', 'files', ['owner_id'], unique=False)
@@ -87,6 +110,9 @@ def upgrade() -> None:
     sa.Column('file_id', sa.UUID(), nullable=False),
     sa.Column('version', sa.Integer(), nullable=False),
     sa.Column('cid', sa.String(), nullable=False),
+    sa.Column('checksum', sa.LargeBinary(length=32), nullable=False),
+    sa.Column('size', sa.Integer(), nullable=False),
+    sa.Column('mime', sa.String(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['file_id'], ['files.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
@@ -135,6 +161,13 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_files_owner_id'), table_name='files')
     op.drop_index('ix_files_owner', table_name='files')
     op.drop_table('files')
+    op.drop_index(op.f('ix_assets_user_id'), table_name='assets')
+    op.drop_index(op.f('ix_assets_tx_hash'), table_name='assets')
+    op.drop_index(op.f('ix_assets_owner'), table_name='assets')
+    op.drop_index(op.f('ix_assets_file_id_hex'), table_name='assets')
+    op.drop_index(op.f('ix_assets_cid'), table_name='assets')
+    op.drop_index(op.f('ix_assets_chain_block'), table_name='assets')
+    op.drop_table('assets')
     op.drop_index(op.f('ix_users_id'), table_name='users')
     op.drop_index(op.f('ix_users_eth_address'), table_name='users')
     op.drop_table('users')

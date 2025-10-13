@@ -1,4 +1,3 @@
-# backend/tests/integration/test_auth.py
 import pytest
 import httpx
 import secrets

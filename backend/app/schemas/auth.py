@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
-from typing import Optional, Dict
-from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field, field_validator
 import json
+from typing import Dict, Any
 
+from pydantic import BaseModel, field_validator
 
 
 class ChallengeOut(BaseModel):
@@ -13,9 +11,11 @@ class ChallengeOut(BaseModel):
     nonce: str  # hex 32 bytes
     exp_sec: int
 
+
 class Tokens(BaseModel):
     access: str
     refresh: str
+
 
 class FileCreateIn(BaseModel):
     fileId: str  # 0x...32
@@ -25,13 +25,16 @@ class FileCreateIn(BaseModel):
     cid: str
     checksum: str  # 0x...32
 
+
 class TypedDataOut(BaseModel):
     typedData: dict
+
 
 class MetaTxSubmitIn(BaseModel):
     request_id: str
     typed_data: dict
     signature: str
+
 
 class FileRow(BaseModel):
     id: str
@@ -41,6 +44,7 @@ class FileRow(BaseModel):
     cid: str
     checksum: str
     status: str
+
 
 class VerifyOut(BaseModel):
     onchain: dict
@@ -53,6 +57,7 @@ class TypedData(BaseModel):
     types: Dict[str, Any]
     primaryType: str
     message: Dict[str, Any]
+
 
 class RegisterIn(BaseModel):
     challenge_id: str
@@ -74,7 +79,6 @@ class RegisterIn(BaseModel):
             except Exception as e:
                 raise ValueError(f"typed_data_invalid: {e}")
         raise ValueError("typed_data must be object or JSON string")
-
 
 
 class LoginIn(BaseModel):

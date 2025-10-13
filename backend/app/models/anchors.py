@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+
 import sqlalchemy as sa
 from sqlalchemy import UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.db.base import Base
 
 

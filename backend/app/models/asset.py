@@ -1,8 +1,11 @@
 import uuid
 from datetime import datetime
+
 from sqlalchemy import String, Integer, ForeignKey, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.db.base import Base
+
 
 class Asset(Base):
     __tablename__ = "assets"
@@ -16,10 +19,10 @@ class Asset(Base):
     cid: Mapped[str] = mapped_column(String(120), index=True)
 
     # чейн
-    tx_hash: Mapped[str] = mapped_column(String(66), index=True)      # 0x + 64
-    owner: Mapped[str | None] = mapped_column(String(42), index=True) # eth-адрес
+    tx_hash: Mapped[str] = mapped_column(String(66), index=True)  # 0x + 64
+    owner: Mapped[str | None] = mapped_column(String(42), index=True)  # eth-адрес
     chain_block: Mapped[int | None] = mapped_column(Integer, index=True)
-    chain_timestamp: Mapped[int | None] = mapped_column(Integer)      # unix sec
+    chain_timestamp: Mapped[int | None] = mapped_column(Integer)  # unix sec
 
     # файл
     size: Mapped[int] = mapped_column(Integer)
