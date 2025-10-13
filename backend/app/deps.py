@@ -1,11 +1,15 @@
-from .config import settings
+from __future__ import annotations
+
+import os
+
+import redis
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import redis
-import os
-from .config import settings
+
 from app.blockchain.web3_client import Chain
 from app.ipfs.client import IpfsClient
+from app.config import settings
+
 
 def get_settings():
     return settings
@@ -16,6 +20,7 @@ SessionLocal = sessionmaker(engine, autoflush=False, autocommit=False, future=Tr
 
 rds = redis.from_url(settings.redis_dsn, decode_responses=True)
 
+
 def get_db():
     db = SessionLocal()
     try:
@@ -23,25 +28,25 @@ def get_db():
     finally:
         db.close()
 
+
 _chain_instance: Chain | None = None
 
 
 def get_chain() -> Chain:
-    """
-    Dependency function to get a cached instance of the Chain client,
-    configured for the FileRegistry contract.
-    """
     global _chain_instance
-
     if _chain_instance is None:
-        # Мы явно указываем, что по умолчанию нам нужен "FileRegistry"
-        _chain_instance = Chain(contract_name="FileRegistry")
-
-    if not _chain_instance.contract and os.path.exists(settings.DEPLOYMENT_JSON_PATH):
-        # Если что-то пошло не так, можно попробовать "перезагрузить" объект
-        _chain_instance = Chain(contract_name="FileRegistry")
-
+        _chain_instance = Chain(
+            rpc_url=os.getenv("CHAIN_RPC_URL", "http://chain:8545"),
+            chain_id=int(os.getenv("CHAIN_ID", "31337")),
+            contract_name=os.getenv("REGISTRY_CONTRACT_NAME", "FileRegistry"),
+            tx_from=os.getenv("CHAIN_TX_FROM") or None,
+            deploy_json_path=os.getenv("CONTRACTS_DEPLOYMENT_JSON", "/app/shared/deployment.localhost.json"),
+        )
+    # если инстанс уже жив, но контрактов нет — попробуем перечитать файл
+    if not _chain_instance.contracts and os.path.exists(_chain_instance.deployment_json):
+        _chain_instance.reload_contracts()
     return _chain_instance
+
 
 def get_ipfs() -> IpfsClient:
     return IpfsClient(

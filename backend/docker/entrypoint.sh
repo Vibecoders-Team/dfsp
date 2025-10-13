@@ -28,6 +28,7 @@ gen_auto_revision() {
       fi
       echo "[entrypoint] generated revision head:"
       head -n 25 "${latest}"
+      chmod -R 0777 /app/migrations
     fi
   fi
 }

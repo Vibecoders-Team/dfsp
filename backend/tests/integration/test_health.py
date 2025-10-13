@@ -1,4 +1,3 @@
-# backend/tests/integration/test_health.py
 import pytest
 import httpx
 

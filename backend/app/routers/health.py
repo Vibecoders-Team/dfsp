@@ -1,9 +1,13 @@
+import json
+import os
+import urllib.request
+import urllib.request
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-import json, os, urllib.request
+
 from app.deps import get_db, rds, get_chain
-import urllib.request
 
 router = APIRouter(prefix="/health", tags=["health"])
 
