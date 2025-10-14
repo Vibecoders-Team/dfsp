@@ -106,8 +106,6 @@ export default function RegisterPage() {
 
     async function conMtmsk() {
         
-    }
-
     return (
         <div style={{maxWidth: 700, margin: "2rem auto", fontFamily: "Inter, system-ui"}}>
             <h2>Register (local keys)</h2>
