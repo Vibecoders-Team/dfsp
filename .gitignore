@@ -14,6 +14,7 @@ config-local.yml
 node_modules
 build
 dist
+*.egg-info/
 __pycache__
 .~lock.*
 .coverage

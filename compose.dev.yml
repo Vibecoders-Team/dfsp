@@ -99,6 +99,7 @@ services:
       - ./backend/app:/app/app
       - ./backend/migrations:/app/migrations
       - ./backend/alembic.ini:/app/alembic.ini
+      - ./backend/tests:/app/tests
       - shared:/app/shared
     environment:
       API_AUTO_MIGRATE: "${API_AUTO_MIGRATE:-false}"
@@ -139,6 +140,7 @@ services:
       - ./contracts/deploy:/app/deploy
       - ./contracts/docker:/app/docker
       - contracts_npm_cache:/npm-cache
+      - shared:/app/shared
     networks: [ dfsp ]
     ports:
       - "${CHAIN_HOST_PORT:-8545}:8545"
