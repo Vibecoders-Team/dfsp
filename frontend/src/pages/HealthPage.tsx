@@ -98,7 +98,6 @@ export default function HealthPage() {
               {h.ipfs?.error && <pre style={{ color: "crimson" }}>{h.ipfs.error}</pre>}
             </div>
           </div>
-
           <h3 style={{ marginTop: 16 }}>Raw</h3>
           <pre style={{ fontSize: 12, opacity: 0.85 }}>{JSON.stringify(h, null, 2)}</pre>
         </>

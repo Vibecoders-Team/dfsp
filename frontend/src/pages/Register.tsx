@@ -104,6 +104,8 @@ export default function RegisterPage() {
         }
     }
 
+    async function conMtmsk() {
+        
     return (
         <div style={{maxWidth: 700, margin: "2rem auto", fontFamily: "Inter, system-ui"}}>
             <h2>Register (local keys)</h2>
@@ -138,6 +140,9 @@ export default function RegisterPage() {
                 <pre style={{maxHeight: 240, overflow: "auto"}}>{pubPem}</pre>
             </>)}
             <p>{status}</p>
+            <div style={{display: "flex", gap: 8}}>
+                <button onClick={conMtmsk}>Connect with Metamask</button>
+            </div>
         </div>
     );
 }
