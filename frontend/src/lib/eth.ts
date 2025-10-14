@@ -11,8 +11,9 @@ export const LOGIN_TYPES = {
 export type LoginMessage = { address: string; nonce: `0x${string}` };
 
 export async function connectWallet(): Promise<{ provider: ethers.BrowserProvider; address: string; chainId: number }> {
-  if (!(window as any).ethereum) throw new Error("No wallet");
-  const provider = new ethers.BrowserProvider((window as any).ethereum);
+  const eth = (window as any).ethereum;
+  if (!eth) throw new Error("No wallet (window.ethereum not found)");
+  const provider = new ethers.BrowserProvider(eth);
   const [address] = await provider.send("eth_requestAccounts", []);
   const net = await provider.getNetwork();
   return { provider, address, chainId: Number(net.chainId) };
@@ -20,21 +21,17 @@ export async function connectWallet(): Promise<{ provider: ethers.BrowserProvide
 
 export async function signLogin(provider: ethers.BrowserProvider, message: LoginMessage) {
   const signer = await provider.getSigner();
-  // ethers v6: signTypedData(domain, types, value)
-  const signature = await (signer as any).signTypedData?.(LOGIN_DOMAIN, LOGIN_TYPES, message)
-    ?? await signer.signMessage(JSON.stringify({ domain: LOGIN_DOMAIN, types: LOGIN_TYPES, message })); // fallback
+  const signature = await signer.signTypedData(LOGIN_DOMAIN, LOGIN_TYPES, message);
   return { signature };
 }
 
-// --- RSA PSS (SPKI PEM) ---
-
+// RSA PSS (SPKI PEM)
 function ab2b64(ab: ArrayBuffer): string {
   const bytes = new Uint8Array(ab);
   let s = "";
   for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
   return btoa(s);
 }
-
 export async function generateRSA(): Promise<{ publicPem: string; privateKey: CryptoKey }> {
   const pair = await crypto.subtle.generateKey(
     { name: "RSA-PSS", modulusLength: 2048, publicExponent: new Uint8Array([0x01,0x00,0x01]), hash: "SHA-256" },
