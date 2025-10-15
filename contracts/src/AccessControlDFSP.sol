@@ -67,7 +67,7 @@ contract AccessControlDFSP is ERC2771Context {
         _grantsOf[grantee].push(capId);
 
         // ✅ инкремент после фиксации capId
-        unchecked { grantNonces[_msgSender()] = n + 1; }
+        unchecked {grantNonces[_msgSender()] = n + 1;}
 
         emit Granted(capId, g.grantor, g.grantee, g.fileId, g.expiresAt, g.maxDownloads);
     }
@@ -86,7 +86,7 @@ contract AccessControlDFSP is ERC2771Context {
         if (g.revoked) revert RevokedGrant();
         if (block.timestamp > g.expiresAt) revert ExpiredGrant();
         if (g.used >= g.maxDownloads) revert ExhaustedGrant();
-        unchecked { g.used += 1; }
+        unchecked {g.used += 1;}
         emit Used(capId, g.used);
     }
 
