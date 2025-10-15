@@ -2,71 +2,123 @@
 Глобальный стиль для проетка (времменно)*/
 
 :root {
-  --bg: #0f1115;
-  --panel: #151821;
-  --text: #e6eaf2;
-  --muted: #a9b1bd;
-  --primary: #5b8cff;
-  --radius: 14px;
-  --maxw: 1100px;
+    --bg: #0f1115;
+    --panel: #151821;
+    --text: #e6eaf2;
+    --muted: #a9b1bd;
+    --primary: #5b8cff;
+    --radius: 14px;
+    --maxw: 1100px;
 }
 
-* { box-sizing: border-box; }
-html, body { height: 100%; }
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+}
 
 body {
-  margin: 0;
-  font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+    font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* Контейнер по центру */
 .container {
-  max-width: var(--maxw);
-  margin: 0 auto;
-  padding: 24px;
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 24px;
 }
 
 /* Заголовки */
-h1, h2, h3 { line-height: 1.2; margin: 0 0 12px; }
-h1 { font-size: 28px; }
-h2 { font-size: 22px; color: var(--muted); }
+h1, h2, h3 {
+    line-height: 1.2;
+    margin: 0 0 12px;
+}
+
+h1 {
+    font-size: 28px;
+}
+
+h2 {
+    font-size: 22px;
+    color: var(--muted);
+}
 
 /* Карточки/панели */
 .card {
-  background: var(--panel);
-  border-radius: var(--radius);
-  padding: 20px;
-  box-shadow: 0 6px 24px rgba(0,0,0,.25);
+    background: var(--panel);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
 }
 
 /* Ссылки и кнопки */
-a { color: var(--primary); text-decoration: none; }
-a:hover { text-decoration: underline; }
+a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
 
 button, .btn {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: var(--primary); color: #fff; border: 0;
-  padding: 10px 14px; border-radius: 10px; cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--primary);
+    color: #fff;
+    border: 0;
+    padding: 10px 14px;
+    border-radius: 10px;
+    cursor: pointer;
 }
-button:disabled { opacity: .6; cursor: not-allowed; }
+
+button:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
 
 /* Формы */
 input, select, textarea {
-  width: 100%; background: #0d0f14; color: var(--text);
-  border: 1px solid #262a35; border-radius: 10px; padding: 10px 12px;
+    width: 100%;
+    background: #0d0f14;
+    color: var(--text);
+    border: 1px solid #262a35;
+    border-radius: 10px;
+    padding: 10px 12px;
 }
 
 /* Таблицы */
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: 10px 12px; border-bottom: 1px solid #262a35; }
-th { text-align: left; color: var(--muted); }
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #262a35;
+}
+
+th {
+    text-align: left;
+    color: var(--muted);
+}
 
 /* Код/преформат */
 pre, code {
-  background: #0d0f14; padding: 2px 6px; border-radius: 8px;
+    background: #0d0f14;
+    padding: 2px 6px;
+    border-radius: 8px;
 }
-pre { padding: 14px; overflow: auto; }
+
+pre {
+    padding: 14px;
+    overflow: auto;
+}

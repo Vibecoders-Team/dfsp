@@ -1,21 +1,48 @@
-import axios from "axios";
+import axios, {
+    AxiosHeaders,
+    isAxiosError,
+    type InternalAxiosRequestConfig,
+} from "axios";
+import type {TypedDataDomain, TypedDataField} from "ethers";
+import type {LoginMessage} from "./keychain";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
-export const api = axios.create({ baseURL: API_BASE });
+export const ACCESS_TOKEN_KEY = "ACCESS_TOKEN";
 
-// если включим guard позже — раскомментируй:
-// api.interceptors.request.use((cfg) => {
-//   const tok = localStorage.getItem("ACCESS_TOKEN");
-//   if (tok) cfg.headers.Authorization = `Bearer ${tok}`;
-//   return cfg;
-// });
+export const api = axios.create({baseURL: API_BASE});
 
+/** ---- Auth header interceptor (без any) ---- */
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+    const tok = localStorage.getItem(ACCESS_TOKEN_KEY);
+    if (tok) {
+        // Превращаем headers в AxiosHeaders и ставим Authorization
+        const headers = AxiosHeaders.from(config.headers);
+        headers.set("Authorization", `Bearer ${tok}`);
+        config.headers = headers;
+    }
+    return config;
+});
+
+/** ---- 401/403 handler ---- */
+api.interceptors.response.use(
+    (r) => r,
+    (err: unknown) => {
+        if (isAxiosError(err)) {
+            const status = err.response?.status;
+            if (status === 401 || status === 403) {
+                // например, редирект или логаут
+                // window.location.href = "/login";
+            }
+        }
+        return Promise.reject(err);
+    }
+);
+
+/** ---- Types ---- */
 export type ChallengeOut = { challenge_id: string; nonce: `0x${string}`; exp_sec: number };
 export type Tokens = { access: string; refresh: string };
 
-export async function fetchHealth() {
-  const { data } = await api.get("/health");
-  return data as {
+export type HealthOut = {
     ok: boolean;
     api: { ok: boolean; version?: string; error?: string };
     db: { ok: boolean; error?: string };
@@ -23,59 +50,112 @@ export async function fetchHealth() {
     chain: { ok: boolean; chainId?: number; error?: string };
     contracts: { ok: boolean; names?: string[]; error?: string };
     ipfs: { ok: boolean; id?: string; error?: string };
-  };
-}
+};
 
+export type StoreFileOut = { id_hex: `0x${string}`; cid: string; tx_hash: string; url: string };
+export type CidOut = { cid: string; url: string };
+export type MetaOut = {
+    owner: string;
+    cid: string;
+    checksum: string;
+    size: number;
+    mime: string;
+    createdAt: number;
+};
+export type VersionsOut = {
+    versions: Array<{
+        owner?: string; cid?: string; checksum?: string; size?: number; mime?: string; createdAt?: number;
+    }>;
+};
+export type HistoryParams = {
+    owner?: string;
+    type?: "FileRegistered" | "FileVersioned";
+    from_block?: number;
+    to_block?: number;
+    order?: "asc" | "desc";
+    limit?: number;
+};
+export type HistoryOut = {
+    items: Array<{
+        type: string;
+        blockNumber: number;
+        txHash: string;
+        timestamp: number;
+        owner?: string;
+        cid?: string;
+        checksum?: string;
+        size?: number;
+        mime?: string;
+    }>;
+};
+
+/** общий тип для EIP-712 блока, который ты отправляешь на бэк */
+export type TypedLoginData = {
+    domain: TypedDataDomain;
+    types: Record<string, TypedDataField[]>;
+    primaryType: "LoginChallenge";
+    message: LoginMessage;
+};
+export type RegisterPayload = {
+    challenge_id: string;
+    eth_address: `0x${string}`;
+    rsa_public: string;
+    display_name: string;
+    typed_data: TypedLoginData;
+    signature: string;
+};
+export type LoginPayload = {
+    challenge_id: string;
+    eth_address: `0x${string}`;
+    typed_data: TypedLoginData;
+    signature: string;
+};
+
+/** ---- API calls ---- */
+export async function fetchHealth() {
+    const {data} = await api.get<HealthOut>("/health");
+    return data;
+}
 
 export async function postChallenge() {
-  const { data } = await api.post<ChallengeOut>("/auth/challenge");
-  return data;
+    const {data} = await api.post<ChallengeOut>("/auth/challenge");
+    return data;
 }
-export async function postRegister(payload: any) {
-  const { data } = await api.post<Tokens>("/auth/register", payload);
-  return data;
+
+export async function postRegister(payload: RegisterPayload) {
+    const {data} = await api.post<Tokens>("/auth/register", payload);
+    return data;
 }
-export async function postLogin(payload: any) {
-  const { data } = await api.post<Tokens>("/auth/login", payload);
-  return data;
+
+export async function postLogin(payload: LoginPayload) {
+    const {data} = await api.post<Tokens>("/auth/login", payload);
+    return data;
 }
 
 export async function storeFile(file: File, idHex?: string) {
-  const fd = new FormData();
-  fd.append("file", file);
-  if (idHex) fd.append("id_hex", idHex);
-  const { data } = await api.post("/storage/store", fd, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
-  return data as { id_hex: string; cid: string; tx_hash: string; url: string };
+    const fd = new FormData();
+    fd.append("file", file);
+    if (idHex) fd.append("id_hex", idHex);
+    const {data} = await api.post<StoreFileOut>("/storage/store", fd);
+    return data;
 }
+
 export async function fetchCid(idHex: string) {
-  const { data } = await api.get(`/storage/cid/${idHex}`);
-  return data as { cid: string; url: string };
+    const {data} = await api.get<CidOut>(`/storage/cid/${idHex}`);
+    return data;
 }
+
 export async function fetchMeta(idHex: string) {
-  const { data } = await api.get(`/storage/meta/${idHex}`);
-  return data as {
-    owner: string; cid: string; checksum: string; size: number; mime: string; createdAt: number;
-  };
+    const {data} = await api.get<MetaOut>(`/storage/meta/${idHex}`);
+    return data;
 }
+
 export async function fetchVersions(idHex: string) {
-  const { data } = await api.get(`/storage/versions/${idHex}`);
-  return data as { versions: Array<{
-    owner?: string; cid?: string; checksum?: string; size?: number; mime?: string; createdAt?: number;
-  }> };
+    const {data} = await api.get<VersionsOut>(`/storage/versions/${idHex}`);
+    return data;
 }
-export async function fetchHistory(idHex: string, params?: {
-  owner?: string;
-  type?: "FileRegistered"|"FileVersioned";
-  from_block?: number;
-  to_block?: number;
-  order?: "asc"|"desc";
-  limit?: number;
-}) {
-  const { data } = await api.get(`/storage/history/${idHex}`, { params });
-  return data as { items: Array<{
-    type: string; blockNumber: number; txHash: string; timestamp: number;
-    owner?: string; cid?: string; checksum?: string; size?: number; mime?: string;
-  }> };
+
+export async function fetchHistory(idHex: string, params?: HistoryParams) {
+    const {data} = await api.get<HistoryOut>(`/storage/history/${idHex}`, {params});
+    return data;
 }
