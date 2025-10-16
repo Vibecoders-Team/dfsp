@@ -7,6 +7,7 @@
     "test": "hardhat test",
     "node": "hardhat node",
     "deploy:local": "hardhat run scripts/deploy-local.ts --network localhost",
+    "export:deployment": "hardhat run scripts/export-deployment.ts --network localhost",
     "abi:export": "hardhat run scripts/export-abi.ts"
   },
   "devDependencies": {

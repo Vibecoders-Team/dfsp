@@ -1,47 +1,72 @@
+x-env-files: &env_files
+  env_file:
+    - path: ../../deploy/.env.dev
+      required: false
+    - path: ../../deploy/.env.local
+      required: false
+
+networks:
+  dfsp:
+    driver: bridge
+
+volumes:
+  ipfs: { }
+
 services:
+  # ----------------------- Hardhat node (локальная сеть) -----------------------
   chain:
-    image: node:20
+    image: node:${NODE_VERSION:-20}
     working_dir: /app
     command: sh -lc "npm ci && npx hardhat node --hostname 0.0.0.0"
-    volumes:
-      - ..:/app
-    ports: ["8545:8545"]
-    # более строгий healthcheck JSON-RPC:
-    # test: ["CMD-SHELL", "node -e \"require('http').request({method:'POST',host:'localhost',port:8545,headers:{'content-type':'application/json'}},res=>process.exit(res.statusCode===200?0:1)).end(JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]}))\""]
+    # /app — volume, исходники монтируем поверх
+    environment:
+      NPM_CONFIG_CACHE: /npm-cache
+      CI: "true"
+    ports:
+      - "${CHAIN_HOST_PORT:-8545}:8545"
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:8545',()=>process.exit(0)).on('error',()=>process.exit(1))\""]
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"const http=require('http');const data=JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_blockNumber',params:[]});const r=http.request({method:'POST',host:'127.0.0.1',port:8545,headers:{'content-type':'application/json','content-length':Buffer.byteLength(data)}},res=>process.exit(res.statusCode===200?0:1));r.on('error',()=>process.exit(1));r.end(data);\""
+        ]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 30
     tty: true
+    networks: [ dfsp ]
 
+  # ----------------------- Деплой контрактов и экспорт ABI ---------------------
   contracts:
-    image: node:20
+    image: node:${NODE_VERSION:-20}
     working_dir: /app
     depends_on:
       chain:
-        condition: service_healthy   # ✅ ждать готовности
+        condition: service_healthy
     environment:
-      # не обязательно, так как используем --network docker, но можно оставить
-      HARDHAT_URL: http://chain:8545
-    command: sh -lc "npm ci && npx hardhat run scripts/deploy-local.ts --network docker && npm run abi:export"
-    volumes:
-      - ..:/app
+      HARDHAT_URL: "${HARDHAT_URL:-http://chain:8545}"
+      DEPLOY_OUT: "${DEPLOY_OUT:-/shared/deployment.localhost.json}"
+      NPM_CONFIG_CACHE: /npm-cache
+    command: >
+      sh -lc "npm ci &&
+              npx hardhat run scripts/deploy-local.ts --network docker &&
+              npm run abi:export && npm run export:deployment"
+    networks: [ dfsp ]
 
+  # ------------------------------ IPFS (Kubo) ----------------------------------
   ipfs:
-    image: ipfs/kubo:latest
+    image: ipfs/kubo:${IPFS_VERSION:-latest}
+    <<: *env_files
     environment:
-      IPFS_PROFILE: server
+      IPFS_PROFILE: "${IPFS_PROFILE:-server}"
     ports:
-      - "5001:5001"
-      - "8080:8080"
+      - "${IPFS_API_HOST_PORT:-5001}:5001"
+      - "${IPFS_GATEWAY_HOST_PORT:-8080}:8080"
     volumes:
       - ipfs:/data/ipfs
     healthcheck:
-      test: ["CMD", "ipfs", "id"]
+      test: [ "CMD", "ipfs", "id" ]
       interval: 10s
       timeout: 5s
       retries: 30
-
-volumes:
-  ipfs:
+    networks: [ dfsp ]
