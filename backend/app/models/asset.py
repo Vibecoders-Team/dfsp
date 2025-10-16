@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 
 from sqlalchemy import String, Integer, ForeignKey, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from .users import User
 
 from app.db.base import Base
 

@@ -72,8 +72,13 @@ reportMissingTypeStubs = "warning"
 reportUnknownVariableType = "warning"
 reportUnknownParameterType = "warning"
 reportUnknownMemberType = "warning"
+exclude = ["build", "**/__pycache__"]
 venvPath = "."
 venv = ".venv"
+
+[[tool.pyright.executionEnvironments]]
+root = "."
+pythonVersion = "3.11"
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
@@ -84,7 +89,7 @@ managed = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*", "ipfs*"]      # <- явный список ваших пакетов
+include = ["app*", "ipfs*"]
 exclude = ["tests*", "docker*", "migrations*"]
 
 # Если в пакете есть шаблоны/статические файлы — включим их:

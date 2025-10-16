@@ -48,8 +48,10 @@ def _parse_origins(val: str | List[str] | None) -> List[str]:
                 out = [str(x).strip() for x in arr if str(x).strip()]
             else:
                 out = [s]
-        except Exception:
+        except json.JSONDecodeError:
+            # Не валидный JSON — пробуем CSV-разделитель
             out = [item.strip() for item in s.split(",") if item.strip()]
+
     # убираем дубликаты, сохраняя порядок
     seen: set[str] = set()
     uniq: list[str] = []
@@ -82,7 +84,6 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
-        # позволяем вложенные ключи через двойное подчёркивание: QUOTAS__META_TX_PER_DAY
         env_nested_delimiter="__",
     )
 
@@ -121,9 +122,39 @@ class Settings(BaseSettings):
     # --- Квоты (вложенные) ---
     quotas: Quotas = Field(default_factory=Quotas, alias="QUOTAS")
 
-    CHAIN_RPC_URL: str
+    chain_rpc_url_raw: str | None = Field(default=None, alias="CHAIN_RPC_URL")
+
+    def __init__(
+            self,
+            jwt_secret: str = "dev_secret",
+            jwt_algorithm: str = "HS256",
+            jwt_access_ttl_minutes: int = 15,
+            jwt_refresh_ttl_days: int = 7,
+            chain_rpc_url_raw: str | None = None,
+            **values: Any,
+    ) -> None:
+        """
+        Поддерживаем явный конструктор только ради статического анализатора:
+        - значения по-умолчанию синхронизированы с Field(...) в классе;
+        - остальные значения (из env/kwargs) попадут в super().__init__ как обычно.
+        """
+        # если кто-то передал явно в kwargs — не перезаписываем
+        values.setdefault("jwt_secret", jwt_secret)
+        values.setdefault("jwt_algorithm", jwt_algorithm)
+        values.setdefault("jwt_access_ttl_minutes", jwt_access_ttl_minutes)
+        values.setdefault("jwt_refresh_ttl_days", jwt_refresh_ttl_days)
+        # Для CHAIN_RPC_URL поле у тебя было ALL-CAPS — используем именно такое имя
+        values.setdefault("CHAIN_RPC_URL", chain_rpc_url_raw)
+        super().__init__(**values)
 
     # ---------------------------- удобные производные/геттеры ----------------------------
+    @property
+    def chain_rpc_url(self) -> str:
+        """Возвращает CHAIN_RPC_URL или бросает ошибку — явная и ранняя ошибка конфигурации."""
+        val = self.chain_rpc_url_raw
+        if not val:
+            raise RuntimeError("Missing required configuration: CHAIN_RPC_URL (set env CHAIN_RPC_URL)")
+        return val
 
     @property
     def cors_origins(self) -> list[str]:
@@ -144,7 +175,7 @@ class Settings(BaseSettings):
         Возвращает первый origin из cors_origins (или None, если не задан).
         Удобно, если нужен один «основной» origin, например для генерации URL.
         """
-        origins = self.cors_origins
+        origins: list[str] = self.cors_origins
         if not origins:
             return None
         if origins == ["*"]:
@@ -172,14 +203,15 @@ class Settings(BaseSettings):
         if not p:
             return None
         try:
-            raw = json.loads(Path(p).read_text())
-            # chainId может быть строкой
+            raw_text = Path(p).read_text()
+            raw = json.loads(raw_text)
             if isinstance(raw.get("chainId"), str):
                 raw["chainId"] = int(raw["chainId"])
             return ChainConfig(**raw)
         except FileNotFoundError:
             log.warning("Chain config not found at %s (ok for now)", p)
-        except Exception as e:
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            # JSON парсинг, приведение типов или валидация ChainConfig
             log.warning("Failed to load chain config from %s: %s", p, e)
         return None
 

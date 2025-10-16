@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import jwt
 import os
 import uuid
@@ -24,19 +26,16 @@ def get_current_user(
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
     except Exception:
-        raise HTTPException(401, "invalid_token")
+        raise HTTPException(status_code=401, detail="invalid_token")
 
     uid = payload.get("sub") or payload.get("uid") or payload.get("id")
     if not uid:
-        raise HTTPException(401, "invalid_token")
+        raise HTTPException(status_code=401, detail="invalid_token")
 
-    try:
-        user = db.get(User, uuid.UUID(str(uid)))
-    except Exception:
-        raise HTTPException(401, "invalid_token")
-
-    if not user:
-        raise HTTPException(401, "user_not_found")
+    # Явная аннотация переменной
+    user: User | None = db.get(User, uuid.UUID(str(uid)))
+    if user is None:
+        raise HTTPException(status_code=401, detail="user_not_found")
     return user
 
 

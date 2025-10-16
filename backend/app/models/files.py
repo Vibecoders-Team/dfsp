@@ -1,37 +1,25 @@
 from __future__ import annotations
-
-import uuid
 from datetime import datetime
-
+import uuid
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey, UniqueConstraint, Index, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
-
 from app.db.base import Base
-
 
 class File(Base):
     __tablename__ = "files"
     __table_args__ = (
         UniqueConstraint("checksum", "owner_id", name="uq_files_checksum_owner"),
-        UniqueConstraint("bytes32_id", name="uq_files_bytes32_id"),
         Index("ix_files_owner", "owner_id"),
     )
 
-    # PK = UUID (для удобных FK)
-    id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-
-    # on-chain id (bytes32) — бизнес-идентификатор, уникальный
-    bytes32_id: Mapped[bytes] = mapped_column(sa.LargeBinary(32), nullable=False)
+    # PK = bytes32 (on-chain fileId)
+    id: Mapped[bytes] = mapped_column(sa.LargeBinary(32), primary_key=True)
 
     owner_id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="RESTRICT"),
-        index=True,
-        nullable=False,
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"),
+        index=True, nullable=False
     )
 
     name: Mapped[str] = mapped_column(nullable=False)
@@ -45,7 +33,6 @@ class File(Base):
         sa.DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-
 class FileVersion(Base):
     __tablename__ = "file_versions"
     __table_args__ = (
@@ -57,11 +44,9 @@ class FileVersion(Base):
         PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
-    # FK на files.id (UUID)
-    file_id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("files.id", ondelete="CASCADE"),
-        nullable=False,
+    # FK → files.id (bytes32)
+    file_id: Mapped[bytes] = mapped_column(
+        sa.LargeBinary(32), ForeignKey("files.id", ondelete="CASCADE"), nullable=False
     )
 
     version: Mapped[int] = mapped_column(nullable=False)

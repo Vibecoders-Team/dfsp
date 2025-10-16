@@ -23,8 +23,6 @@ def test_health_ok_minimal(client: httpx.Client):
     )
 
     data = response.json()
-    # Адаптируем под вашу структуру ответа /healthz
-    # Предполагаем, что полный ответ содержит ключ "api"
     assert data.get("api", {}).get("ok") is True, "API status should be 'ok: True'"
 
 

@@ -30,7 +30,7 @@ def health(db: Session = Depends(get_db)):
         db.execute(text("SELECT 1"))
         out["db"] = _ok(True)
     except Exception as e:
-        out["db"] = _ok(False, e);
+        out["db"] = _ok(False, e)
         out["ok"] = False
 
     # redis
@@ -39,7 +39,7 @@ def health(db: Session = Depends(get_db)):
         out["redis"] = _ok(bool(pong))
         if not pong: out["ok"] = False
     except Exception as e:
-        out["redis"] = _ok(False, e);
+        out["redis"] = _ok(False, e)
         out["ok"] = False
 
     # chain + contracts
@@ -60,12 +60,12 @@ def health(db: Session = Depends(get_db)):
     # ipfs (API)
     try:
         base = os.getenv("IPFS_API_URL", "http://ipfs:5001/api/v0").rstrip("/")
-        req = urllib.request.Request(base + "/id", data=b"", method="POST")  # <= POST!
+        req = urllib.request.Request(base + "/id", data=b"", method="POST")  # type: ignore[arg-type]
         with urllib.request.urlopen(req, timeout=3) as resp:
             j = json.loads(resp.read().decode())
         out["ipfs"] = _ok(True, id=j.get("ID"))
     except Exception as e:
-        out["ipfs"] = _ok(False, e);
+        out["ipfs"] = _ok(False, e)
         out["ok"] = False
 
     return out

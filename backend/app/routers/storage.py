@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 from typing import Literal
 
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel
+from pydantic import ConfigDict  # pydantic v2
+from pydantic import Field
 from web3 import Web3
 
 from app.blockchain.web3_client import Chain
@@ -49,7 +52,7 @@ async def store_file(
             raise HTTPException(400, "bad_id")
         item_id = bytes.fromhex(s)
     else:
-        item_id = hashlib.sha256(data).digest()
+        item_id = hashlib.sha256(memoryview(data)).digest() # type: ignore[arg-type]
 
     size = len(data)  # ← размер
     checksum32 = Web3.keccak(data)
@@ -96,13 +99,20 @@ class MetaOut(BaseModel):
 def meta(id_hex: str, chain: Chain = Depends(get_chain)):
     if not (isinstance(id_hex, str) and id_hex.startswith("0x") and len(id_hex) == 66):
         raise HTTPException(400, "bad_id")
-    m = chain.meta_of_full(bytes.fromhex(id_hex[2:]))
-    # нормализуем
+    m: dict[str, Any] = chain.meta_of_full(bytes.fromhex(id_hex[2:]))
+
+    cs = m.get("checksum")
+    if isinstance(cs, (bytes, bytearray)):
+        checksum = cs.hex()
+    elif isinstance(cs, str):
+        checksum = cs
+    else:
+        checksum = None
+
     return MetaOut(
         owner=m.get("owner"),
         cid=m.get("cid"),
-        checksum=m.get("checksum") if isinstance(m.get("checksum"), str) else (
-            m.get("checksum").hex() if m.get("checksum") else None),
+        checksum=checksum,
         size=int(m.get("size") or 0),
         mime=m.get("mime"),
         createdAt=int(m.get("createdAt") or 0),
@@ -156,13 +166,14 @@ def versions(id_hex: str, chain: Chain = Depends(get_chain)):
 
 
 class HistoryItem(BaseModel):
-    type: str
+    model_config = ConfigDict(populate_by_name=True)  # можно и без этого, но полезно
+    event_type: str = Field(alias="type")
     blockNumber: int
     txHash: str
     timestamp: int
     owner: str | None = None
     cid: str | None = None
-    checksum: str | None = None  # hex без 0x
+    checksum: str | None = None
     size: int | None = None
     mime: str | None = None
 
@@ -175,7 +186,7 @@ class HistoryOut(BaseModel):
 def history(
         id_hex: str,
         owner: str | None = None,
-        type: Literal["FileRegistered", "FileVersioned"] | None = None,
+        event_type: Literal["FileRegistered", "FileVersioned"] | None = None,
         from_block: int | None = None,
         to_block: int | None = None,
         order: Literal["asc", "desc"] = "asc",
@@ -187,8 +198,8 @@ def history(
 
     raw = chain.history(bytes.fromhex(id_hex[2:]), owner=owner)
 
-    if type:
-        raw = [e for e in raw if e["type"] == type]
+    if event_type:
+        raw = [e for e in raw if (e.get("type") or e.get("event_type")) == event_type]
     if from_block is not None:
         raw = [e for e in raw if e["blockNumber"] >= from_block]
     if to_block is not None:
