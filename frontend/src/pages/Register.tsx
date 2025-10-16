@@ -2,15 +2,38 @@ import {useEffect, useRef, useState} from "react";
 import {
     createBackupBlob,
     restoreFromBackup,
-    getEOA
+    getEOA,
+    ensureEOA,
+    ensureRSA,
+    LOGIN_DOMAIN,
+    LOGIN_TYPES,
+    signLoginTyped,
+    type LoginMessage,
 } from "../lib/keychain";
 import {ethers} from "ethers";
-import {ensureEOA, ensureRSA, LOGIN_DOMAIN, LOGIN_TYPES, signLoginTyped} from "../lib/keychain";
-import {postChallenge, postRegister} from "../lib/api";
+import {postChallenge, postRegister, ACCESS_TOKEN_KEY} from "../lib/api";
 
+/** аккуратно достаём сообщение об ошибке без any */
+function getErrorMessage(e: unknown, fallback: string): string {
+    if (typeof e === "object" && e !== null) {
+        const anyE = e as { message?: unknown; response?: { data?: { detail?: unknown } } };
+        if (typeof anyE?.response?.data?.detail === "string") return anyE.response.data.detail;
+        if (typeof anyE?.message === "string") return anyE.message;
+    }
+    return fallback;
+}
+
+/** assert-хелперы — линтер счастлив, TS получает сужение типов */
+function assert(condition: unknown, message: string): asserts condition {
+    if (!condition) throw new Error(message);
+}
+
+function assertHexAddress(a: string): asserts a is `0x${string}` {
+    assert(/^0x[0-9a-fA-F]{40}$/.test(a), `Invalid hex address: ${a}`);
+}
 
 export default function RegisterPage() {
-    const [address, setAddress] = useState("");
+    const [address, setAddress] = useState<`0x${string}` | "">("");
     const [pubPem, setPubPem] = useState("");
     const [status, setStatus] = useState("");
     const [pwd, setPwd] = useState("");
@@ -19,7 +42,7 @@ export default function RegisterPage() {
     useEffect(() => {
         (async () => {
             const w = await getEOA();
-            if (w) setAddress(w.address);
+            if (w) setAddress(w.address as `0x${string}`);
         })();
     }, []);
 
@@ -28,11 +51,14 @@ export default function RegisterPage() {
             setStatus("Generating keys…");
             const w = await ensureEOA();
             const rsa = await ensureRSA();
-            setAddress(w.address);
+            // убеждаемся в корректности адреса и даём TS узкий тип
+            const addrStr = w.address;
+            assertHexAddress(addrStr);
+            setAddress(addrStr);
             setPubPem(rsa.publicPem);
             setStatus("Keys ready.");
-        } catch (e: any) {
-            setStatus(e?.message || "Key generation error");
+        } catch (e: unknown) {
+            setStatus(getErrorMessage(e, "Key generation error"));
         }
     }
 
@@ -41,21 +67,22 @@ export default function RegisterPage() {
             setStatus("Challenge…");
             const chal = await postChallenge();
 
-            // берём ОДИН wallet и адрес ТУТ
             const eoa = await ensureEOA();
-            const addr = eoa.address;
+            const addrStr = eoa.address;
+            assertHexAddress(addrStr);
+            const addr = addrStr; // теперь addr: `0x${string}`
             const rsa = await ensureRSA();
 
-            const message = {address: addr, nonce: chal.nonce as `0x${string}`};
+            const message: LoginMessage = {address: addr, nonce: chal.nonce as `0x${string}`};
 
             setStatus("Signing…");
-            const signature = await signLoginTyped(message); // должен подписывать ТЕМ ЖЕ eoa
+            const signature = await signLoginTyped(message);
 
-            // локальная диагностика: проверить, что подпись действительно от addr
             const recovered = ethers.verifyTypedData(LOGIN_DOMAIN, LOGIN_TYPES, message, signature);
-            if (recovered.toLowerCase() !== addr.toLowerCase()) {
-                throw new Error(`local verify failed: recovered ${recovered} ≠ ${addr}`);
-            }
+            assert(
+                recovered.toLowerCase() === addr.toLowerCase(),
+                `local verify failed: recovered ${recovered} ≠ ${addr}`
+            );
 
             const payload = {
                 challenge_id: chal.challenge_id,
@@ -68,12 +95,12 @@ export default function RegisterPage() {
 
             setStatus("Register…");
             const tok = await postRegister(payload);
-            localStorage.setItem("ACCESS_TOKEN", tok.access);
+            localStorage.setItem(ACCESS_TOKEN_KEY, tok.access);
             localStorage.setItem("REFRESH_TOKEN", tok.refresh);
             setStatus("Done.");
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error(e);
-            setStatus(e?.response?.data?.detail || e?.message || "Register error");
+            setStatus(getErrorMessage(e, "Register error"));
         }
     }
 
@@ -86,8 +113,8 @@ export default function RegisterPage() {
             a.download = ".dfspkey";
             a.click();
             setStatus("Backup saved.");
-        } catch (e: any) {
-            setStatus(e?.message || "Backup failed");
+        } catch (e: unknown) {
+            setStatus(getErrorMessage(e, "Backup failed"));
         }
     }
 
@@ -97,15 +124,14 @@ export default function RegisterPage() {
             if (!f) return setStatus("Pick .dfspkey file");
             if (!pwd) return setStatus("Enter password");
             const {address} = await restoreFromBackup(f, pwd);
-            setAddress(address);
+            setAddress(address as `0x${string}`);
             setStatus("Restored.");
-        } catch (e: any) {
-            setStatus(e?.message || "Restore failed");
+        } catch (e: unknown) {
+            setStatus(getErrorMessage(e, "Restore failed"));
         }
     }
 
-    async function conMtmsk() {
-        
+    function conMtmsk() { /* noop for now */
     }
 
     return (
@@ -119,14 +145,16 @@ export default function RegisterPage() {
 
             <h3 style={{marginTop: 24}}>Backup / Restore</h3>
             <div style={{display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr", alignItems: "center"}}>
-                <input type="password" placeholder="backup password" value={pwd}
-                       onChange={(e) => setPwd(e.target.value)}/>
+                <input
+                    type="password"
+                    placeholder="backup password"
+                    value={pwd}
+                    onChange={(e) => setPwd(e.target.value)}
+                />
                 <div style={{display: "flex", gap: 8}}>
                     <button onClick={backup}>Backup .dfspkey</button>
                     <label style={{display: "inline-block"}}>
-                        <input ref={fileRef} type="file" accept=".dfspkey,application/json" style={{display: "none"}}
-                               onChange={() => {
-                               }}/>
+                        <input ref={fileRef} type="file" accept=".dfspkey,application/json" style={{display: "none"}}/>
                         <span style={{
                             padding: "6px 10px",
                             border: "1px solid #ccc",
@@ -137,10 +165,12 @@ export default function RegisterPage() {
                 </div>
             </div>
 
-            {pubPem && (<>
-                <h3>RSA Public (PEM)</h3>
-                <pre style={{maxHeight: 240, overflow: "auto"}}>{pubPem}</pre>
-            </>)}
+            {pubPem && (
+                <>
+                    <h3>RSA Public (PEM)</h3>
+                    <pre style={{maxHeight: 240, overflow: "auto"}}>{pubPem}</pre>
+                </>
+            )}
             <p>{status}</p>
             <div style={{display: "flex", gap: 8}}>
                 <button onClick={conMtmsk}>Connect with Metamask</button>
