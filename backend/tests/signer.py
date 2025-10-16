@@ -1,7 +1,7 @@
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 
-# --- Константы из вашего кода ---
+# --- Константы ---
 DOMAIN_NAME = "DFSP-Login"
 DOMAIN_VERSION = "1"
 

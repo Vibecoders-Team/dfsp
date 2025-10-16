@@ -1,8 +1,6 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 import logging
 
-# Предполагаем, что ваш settings находится в app/config.py
 from app.config import settings
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,7 +15,7 @@ from .routers.verify import router as verify_router
 app = FastAPI(title="DFSP API")
 
 app.add_middleware(
-    CORSMiddleware,
+    CORSMiddleware,  # type: ignore[arg-type]
     allow_origins=[settings.cors_origin or "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],

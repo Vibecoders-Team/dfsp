@@ -27,7 +27,6 @@ RUN uv sync
 ENV VIRTUAL_ENV=/app/.venv
 ENV PATH="/app/.venv/bin:${PATH}"
 
-
 # затем — код проекта (в dev будет перекрыт volume-монтом)
 COPY app/ app/
 COPY migrations/ migrations/

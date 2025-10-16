@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
-from typing import Dict, Any
-
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 
 class ChallengeOut(BaseModel):
@@ -52,6 +49,12 @@ class VerifyOut(BaseModel):
     match: bool
 
 
+import json
+from typing import Dict, Any
+
+from pydantic import BaseModel, field_validator
+
+
 class TypedData(BaseModel):
     domain: Dict[str, Any]
     types: Dict[str, Any]
@@ -64,34 +67,49 @@ class RegisterIn(BaseModel):
     eth_address: str
     rsa_public: str
     display_name: str | None = None
-    typed_data: TypedData | str
+    # Храним в модели уже TypedData (сериализация/валидация сделает экземпляр)
+    typed_data: TypedData
     signature: str
 
     @field_validator("typed_data", mode="before")
-    @classmethod
     def parse_typed_data(cls, v):
         # Принимаем как raw JSON-объект или как строку (Postman/axios особенности)
-        if isinstance(v, (dict, TypedData)):
+        if isinstance(v, TypedData):
+            return v
+        if isinstance(v, dict):
+            # возвращаем dict — Pydantic дальше превратит его в TypedData
             return v
         if isinstance(v, str):
             try:
-                return TypedData.model_validate(json.loads(v))
-            except Exception as e:
-                raise ValueError(f"typed_data_invalid: {e}")
+                parsed = json.loads(v)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"typed_data_invalid: {e}") from e
+            # проверим и вернём dict для дальнейшей валидации
+            if isinstance(parsed, dict):
+                return parsed
+            raise ValueError("typed_data JSON must be an object")
         raise ValueError("typed_data must be object or JSON string")
 
 
 class LoginIn(BaseModel):
     challenge_id: str
     eth_address: str
-    typed_data: TypedData | str
+    typed_data: TypedData
     signature: str
 
     @field_validator("typed_data", mode="before")
-    @classmethod
     def parse_typed_data(cls, v):
-        if isinstance(v, (dict, TypedData)):
+        # Подобная логика как в RegisterIn
+        if isinstance(v, TypedData):
+            return v
+        if isinstance(v, dict):
             return v
         if isinstance(v, str):
-            return TypedData.model_validate(json.loads(v))
+            try:
+                parsed = json.loads(v)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"typed_data_invalid: {e}") from e
+            if isinstance(parsed, dict):
+                return parsed
+            raise ValueError("typed_data JSON must be an object")
         raise ValueError("typed_data must be object or JSON string")

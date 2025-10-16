@@ -5,6 +5,8 @@ import os
 import redis
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from typing import Generator
+from sqlalchemy.orm import Session
 
 from app.blockchain.web3_client import Chain
 from app.ipfs.client import IpfsClient
@@ -21,7 +23,7 @@ SessionLocal = sessionmaker(engine, autoflush=False, autocommit=False, future=Tr
 rds = redis.from_url(settings.redis_dsn, decode_responses=True)
 
 
-def get_db():
+def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db

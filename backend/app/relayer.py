@@ -1,9 +1,11 @@
-# app/relayer.py
 from __future__ import annotations
 
+from typing import Any, cast, Dict, Tuple
 from celery import Celery
 from web3 import Web3
+from web3.datastructures import AttributeDict
 from web3.exceptions import ContractLogicError, TransactionNotFound, TimeExhausted
+from eth_typing import HexStr
 
 from app.config import settings
 from app.deps import get_chain  # берём Chain (w3 + все контракты)
@@ -14,7 +16,7 @@ celery.conf.result_serializer = "json"
 celery.conf.accept_content = ["json"]
 
 
-def _build_req_tuple(msg: dict) -> tuple:
+def _build_req_tuple(msg: Dict[str, Any]) -> Tuple:
     """
     Приводим message из typedData к tuple ForwardRequest:
     (from, to, value, gas, nonce, data)
@@ -25,7 +27,7 @@ def _build_req_tuple(msg: dict) -> tuple:
         int(msg.get("value", 0)),
         int(msg.get("gas", 0)),
         int(msg["nonce"]),
-        Web3.to_bytes(hexstr=msg["data"]),
+        Web3.to_bytes(hexstr=cast(HexStr, msg["data"])),
     )
 
 
@@ -37,7 +39,7 @@ def _build_req_tuple(msg: dict) -> tuple:
     retry_backoff=True,
     retry_jitter=True,
 )
-def submit_forward(self, request_id: str, typed_data: dict, signature: str):
+def submit_forward(self, request_id: str, typed_data: Dict[str, Any], signature: str):
     """
     Отправка meta-tx в OZ MinimalForwarder:
     1) verify(req, sig) — дешёвый on-chain вызов
@@ -50,7 +52,8 @@ def submit_forward(self, request_id: str, typed_data: dict, signature: str):
     msg = (typed_data or {}).get("message") or {}
     try:
         req_tuple = _build_req_tuple(msg)
-        sig_bytes = Web3.to_bytes(hexstr=signature)  # 0x… → bytes
+        # здесь cast нужен, чтобы удовлетворить статическому анализатору
+        sig_bytes = Web3.to_bytes(hexstr=cast(HexStr, signature))  # 0x… → bytes
     except Exception as e:
         # невалидный typed_data — не ретраим
         return {"status": "bad_request", "error": str(e)}
@@ -66,7 +69,7 @@ def submit_forward(self, request_id: str, typed_data: dict, signature: str):
 
     # кто платит газ: используем конфиг/Chain.tx_from (разлоченный аккаунт у ноды)
     tx_from = chain.tx_from or getattr(settings, "chain_tx_from", None)
-    tx_params = {}
+    tx_params: Dict[str, Any] = {}
     if tx_from:
         tx_params["from"] = Web3.to_checksum_address(tx_from)
 
@@ -77,19 +80,14 @@ def submit_forward(self, request_id: str, typed_data: dict, signature: str):
 
     try:
         tx_hash = fwd.functions.execute(req_tuple, sig_bytes).transact(tx_params)
-        receipt = chain.w3.eth.wait_for_transaction_receipt(tx_hash)
+        receipt = cast(AttributeDict, chain.w3.eth.wait_for_transaction_receipt(tx_hash))
         return {"status": "sent", "txHash": receipt.transactionHash.hex()}
     except (ContractLogicError, TransactionNotFound, TimeExhausted) as e:
-        # типичные временные/состояния — ретраим
         raise self.retry(exc=e)
     except Exception as e:
-        # неизвестная ошибка — тоже ретраим с backoff
         raise self.retry(exc=e)
 
 
-def enqueue_forward_request(request_id: str, typed_data: dict, signature: str) -> str:
-    """
-    Поставить задачу в очередь Celery. Возвращает task_id.
-    """
-    async_result = submit_forward.delay(request_id, typed_data, signature)
+def enqueue_forward_request(request_id: str, typed_data: Dict[str, Any], signature: str) -> str:
+    async_result = cast(Any, submit_forward).delay(request_id, typed_data, signature)
     return async_result.id

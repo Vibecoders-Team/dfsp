@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
+
 from ..deps import get_db, rds
-from ..schemas.auth import MetaTxSubmitIn
 from ..relayer import enqueue_forward_request
+from ..schemas.auth import MetaTxSubmitIn
 
 router = APIRouter(prefix="/meta-tx", tags=["meta-tx"])
 

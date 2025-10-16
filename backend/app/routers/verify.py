@@ -1,9 +1,12 @@
-# app/routers/verify.py
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from typing import Any, Dict, cast
+
+from eth_typing import HexStr
+from fastapi import APIRouter, Depends, Path
 from sqlalchemy import select
+from sqlalchemy.orm import Session
+from typing_extensions import Annotated
 from web3 import Web3
 
 from app.deps import get_db, get_chain
@@ -11,18 +14,19 @@ from app.models import File
 
 router = APIRouter(prefix="/verify", tags=["verify"])
 
+FileIdHex = Annotated[str, Path(pattern=r"^0x[a-fA-F0-9]{64}$")]
+
 
 @router.get("/{file_id_hex}")
-def verify(file_id_hex: str, db: Session = Depends(get_db), chain=Depends(get_chain)):
-    # 1) Валидация id (ровно 32 байта в hex)
-    if not (isinstance(file_id_hex, str) and file_id_hex.startswith("0x") and len(file_id_hex) == 66):
-        raise HTTPException(400, "bad_file_id")
+def verify(
+        file_id_hex: FileIdHex,
+        db: Session = Depends(get_db),
+        chain=Depends(get_chain),
+):
+    fid = Web3.to_bytes(hexstr=cast(HexStr, file_id_hex))
 
-    fid = Web3.to_bytes(hexstr=file_id_hex)
-
-    # 2) Off-chain из БД (не требуем авторизации)
     row = db.scalar(select(File).where(File.id == fid))
-    off = {}
+    off: Dict[str, Any] = {}
     if row:
         off = {
             "cid": row.cid,
@@ -31,19 +35,14 @@ def verify(file_id_hex: str, db: Session = Depends(get_db), chain=Depends(get_ch
             "mime": row.mime,
         }
 
-    # 3) On-chain (безопасный путь: через cidOf/версии; НЕ зовём metaOf)
-    on = {}
+    on: Dict[str, Any] = {}
     try:
-        cid = chain.cid_of(fid) or ""  # внутри уже есть fallback на разные ABI
+        cid = chain.cid_of(fid) or ""
         if cid:
             on["cid"] = cid
     except Exception:
-        # Любая web3/ABI/адресная ошибка → считаем что on-chain пока пусто
         on = {}
 
-    # 4) Сравнение (минимально — по cid)
-    match = False
-    if on and off:
-        match = (on.get("cid") == off.get("cid"))
+    match = bool(on) and bool(off) and (on.get("cid") == off.get("cid"))
 
     return {"onchain": on, "offchain": off, "match": match}
