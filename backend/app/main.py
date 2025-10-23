@@ -11,6 +11,7 @@ from .routers.files import router as files_router
 from .routers.meta_tx import router as mtx_router
 from .routers.verify import router as verify_router
 from .routers.download import router as download_router
+from .routers.grants import router as grants_router
 
 app = FastAPI(title="DFSP API")
 
@@ -29,3 +30,4 @@ app.include_router(mtx_router)
 app.include_router(verify_router)
 app.include_router(files_router)
 app.include_router(download_router)
+app.include_router(grants_router)

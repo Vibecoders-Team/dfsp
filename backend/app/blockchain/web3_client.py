@@ -359,3 +359,15 @@ class Chain:
             raise ValueError("cap_id must be bytes32 or 0x-hex32")
         tx = ac.functions.useOnce(cap_b).build_transaction(self._tx())
         return tx["data"]
+
+    def encode_revoke_call(self, cap_id: bytes | str) -> str:
+        """Build call data for AccessControlDFSP.revoke(capId)."""
+        ac = self.get_access_control()
+        if isinstance(cap_id, (bytes, bytearray)):
+            cap_b = bytes(cap_id)
+        elif isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66:
+            cap_b = Web3.to_bytes(hexstr=cast("HexStr", cap_id))  # type: ignore[name-defined]
+        else:
+            raise ValueError("cap_id must be bytes32 or 0x-hex32")
+        tx = ac.functions.revoke(cap_b).build_transaction(self._tx())
+        return tx["data"]
