@@ -120,4 +120,9 @@ contract AccessControlDFSP is ERC2771Context {
     function _msgData() internal view override returns (bytes calldata) {
         return ERC2771Context._msgData();
     }
+
+    // --- New helper view for backend ---
+    function grantOf(bytes32 capId) external view returns (Grant memory) {
+        return grants[capId];
+    }
 }
