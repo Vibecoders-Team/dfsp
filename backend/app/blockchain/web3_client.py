@@ -5,7 +5,8 @@ import logging
 import os
 from typing import Any, Dict, Sequence, cast
 
-from eth_utils.address import to_checksum_address  # ✅ правильный импорт
+from eth_utils import to_checksum_address  # was: from eth_utils.address import to_checksum_address
+from eth_abi import encode as abi_encode
 from web3 import Web3, HTTPProvider
 from web3.types import TxParams
 
@@ -304,14 +305,25 @@ class Chain:
         }
         return {"domain": domain, "types": types, "primaryType": "ForwardRequest", "message": message}
 
+    def read_grant_nonce(self, grantor: str) -> int:
+        """Read AccessControlDFSP.grantNonces(grantor) as int.
+        Safe checksum normalization is applied.
+        """
+        grantor_cs = to_checksum_address(grantor)
+        return int(self.get_access_control().functions.grantNonces(grantor_cs).call())
+
     def predict_cap_id(self, grantor: str, grantee: str, file_id: bytes, nonce: int | None = None, offset: int = 0) -> bytes:
-        """Compute keccak256(grantor, grantee, fileId, nonce+offset) to predict capId.
-        If nonce is None, read from AccessControlDFSP.grantNonces(grantor).
+        """Compute keccak256(grantor, grantee, fileId, (nonce or grantNonces[grantor]) + offset) → bytes32.
+        Matches Solidity: keccak256(abi.encode(address,address,bytes32,uint256)).
+        - grantor, grantee: EVM addresses (0x-hex), case-insensitive.
+        - file_id: bytes32 or 0x-hex32.
+        - nonce: if None, read on-chain via read_grant_nonce().
+        - offset: to predict a batch item, add 0,1,2,... to the starting nonce.
         """
         grantor_cs = to_checksum_address(grantor)
         grantee_cs = to_checksum_address(grantee)
         if nonce is None:
-            nonce_val = int(self.get_access_control().functions.grantNonces(grantor_cs).call())
+            nonce_val = self.read_grant_nonce(grantor_cs)
         else:
             nonce_val = int(nonce)
         n = nonce_val + int(offset)
@@ -322,7 +334,8 @@ class Chain:
             fid = Web3.to_bytes(hexstr=cast("HexStr", file_id))  # type: ignore[name-defined]
         else:
             raise ValueError("file_id must be bytes32 or 0x-hex32")
-        return Web3.solidity_keccak(["address", "address", "bytes32", "uint256"], [grantor_cs, grantee_cs, fid, n])
+        encoded = abi_encode(["address", "address", "bytes32", "uint256"], [grantor_cs, grantee_cs, fid, n])
+        return Web3.keccak(encoded)
 
     def verify_forward(self, typed: dict, signature: str) -> bool:
         fwd = self.get_forwarder()
