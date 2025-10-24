@@ -122,6 +122,32 @@ def auth_headers(client: httpx.Client, test_signer: EIP712Signer) -> dict:
     return {"Authorization": f"Bearer {access_token}"}
 
 
+@pytest.fixture
+def make_user(client: httpx.Client) -> Callable[[], tuple[str, dict]]:
+    """Factory to register a fresh user and return (address, auth_headers)."""
+    def _create() -> tuple[str, dict]:
+        import secrets as _secrets
+        signer = EIP712Signer("0x" + _secrets.token_hex(32))
+        r1 = client.post("/auth/challenge", json={})
+        assert r1.status_code == 200, r1.text
+        ch = r1.json()
+        sig, typed = signer.sign(ch["nonce"])  # EIP-712 login typed data
+        payload = {
+            "eth_address": signer.address,
+            "challenge_id": ch["challenge_id"],
+            "signature": sig,
+            "typed_data": typed,
+            "display_name": f"PyUser-{_secrets.token_hex(4)}",
+            "rsa_public": "test_rsa_key",
+        }
+        r2 = client.post("/auth/register", json=payload)
+        assert r2.status_code == 200, r2.text
+        tokens = r2.json()
+        return signer.address, {"Authorization": f"Bearer {tokens['access']}"}
+
+    return _create
+
+
 # --- Хелперы ---
 
 

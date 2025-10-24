@@ -243,6 +243,9 @@ class Chain:
     def get_forwarder(self):
         return self.get_contract("MinimalForwarder")
 
+    def get_access_control(self):
+        return self.get_contract("AccessControlDFSP")
+
     def encode_register_call(self, item_id: bytes, cid: str, checksum32: bytes, size: int, mime: str) -> str:
         try:
             fn = self.contract.get_function_by_name("register")
@@ -250,6 +253,14 @@ class Chain:
             raise RuntimeError("FileRegistry has no 'register'") from e
         tx = fn(item_id, cid, checksum32, int(size) & ((1 << 64) - 1), mime or "").build_transaction(self._tx())
         return tx["data"]  # 0x...
+
+    def encode_grant_call(self, file_id: bytes, grantee: str, ttl_sec: int, max_downloads: int) -> str:
+        """Build call data for AccessControlDFSP.grant."""
+        ac = self.get_access_control()
+        grantee = to_checksum_address(grantee)
+        # ttl fits uint64, max_downloads fits uint32
+        tx = ac.functions.grant(file_id, grantee, int(ttl_sec) & ((1 << 64) - 1), int(max_downloads) & ((1 << 32) - 1)).build_transaction(self._tx())
+        return tx["data"]
 
     def build_forward_typed_data(self, from_addr: str, to_addr: str, data: bytes | str, gas: int = 120_000) -> dict:
         fwd = self.get_forwarder()
@@ -293,6 +304,26 @@ class Chain:
         }
         return {"domain": domain, "types": types, "primaryType": "ForwardRequest", "message": message}
 
+    def predict_cap_id(self, grantor: str, grantee: str, file_id: bytes, nonce: int | None = None, offset: int = 0) -> bytes:
+        """Compute keccak256(grantor, grantee, fileId, nonce+offset) to predict capId.
+        If nonce is None, read from AccessControlDFSP.grantNonces(grantor).
+        """
+        grantor_cs = to_checksum_address(grantor)
+        grantee_cs = to_checksum_address(grantee)
+        if nonce is None:
+            nonce_val = int(self.get_access_control().functions.grantNonces(grantor_cs).call())
+        else:
+            nonce_val = int(nonce)
+        n = nonce_val + int(offset)
+        # Ensure file_id is 32 bytes
+        if isinstance(file_id, (bytes, bytearray)):
+            fid = bytes(file_id)
+        elif isinstance(file_id, str) and file_id.startswith("0x") and len(file_id) == 66:
+            fid = Web3.to_bytes(hexstr=cast("HexStr", file_id))  # type: ignore[name-defined]
+        else:
+            raise ValueError("file_id must be bytes32 or 0x-hex32")
+        return Web3.solidity_keccak(["address", "address", "bytes32", "uint256"], [grantor_cs, grantee_cs, fid, n])
+
     def verify_forward(self, typed: dict, signature: str) -> bool:
         fwd = self.get_forwarder()
         msg = (typed or {}).get("message") or {}
@@ -315,3 +346,28 @@ class Chain:
         except Exception as e:
             log.warning("forwarder.verify failed: %s", e)
             return False
+
+    # -------- New helpers for AccessControlDFSP actions --------
+    def encode_use_once_call(self, cap_id: bytes | str) -> str:
+        """Build call data for AccessControlDFSP.useOnce(capId). cap_id can be bytes32 or hex string."""
+        ac = self.get_access_control()
+        if isinstance(cap_id, (bytes, bytearray)):
+            cap_b = bytes(cap_id)
+        elif isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66:
+            cap_b = Web3.to_bytes(hexstr=cast("HexStr", cap_id))  # type: ignore[name-defined]
+        else:
+            raise ValueError("cap_id must be bytes32 or 0x-hex32")
+        tx = ac.functions.useOnce(cap_b).build_transaction(self._tx())
+        return tx["data"]
+
+    def encode_revoke_call(self, cap_id: bytes | str) -> str:
+        """Build call data for AccessControlDFSP.revoke(capId)."""
+        ac = self.get_access_control()
+        if isinstance(cap_id, (bytes, bytearray)):
+            cap_b = bytes(cap_id)
+        elif isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66:
+            cap_b = Web3.to_bytes(hexstr=cast("HexStr", cap_id))  # type: ignore[name-defined]
+        else:
+            raise ValueError("cap_id must be bytes32 or 0x-hex32")
+        tx = ac.functions.revoke(cap_b).build_transaction(self._tx())
+        return tx["data"]

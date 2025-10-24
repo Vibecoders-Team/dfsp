@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Optional, cast
+from typing import Any, Optional, cast, Union
 from typing_extensions import Annotated
 from eth_typing import ChecksumAddress
 from web3.exceptions import ContractLogicError, BadFunctionCallOutput
@@ -12,10 +12,16 @@ from sqlalchemy.orm import Session
 from web3 import Web3
 from eth_typing import HexStr
 
-from app.deps import get_db, get_chain
-from app.models import File, FileVersion, User
+from app.deps import get_db, get_chain, rds
+from app.models import File, FileVersion, User, Grant
 from app.schemas.auth import FileCreateIn, TypedDataOut
+from app.schemas.grants import ShareIn, ShareOut, ShareItemOut, DuplicateOut
 from app.security import parse_token
+
+import base64
+from datetime import datetime, timedelta, timezone
+from app.repos.user_repo import get_by_eth_address
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -152,3 +158,121 @@ def create_file(
         },
     }
     return {"typedData": typed_data}
+
+
+@router.post("/{id}/share", response_model=Union[ShareOut, DuplicateOut])
+def share_file(
+    id: str,
+    body: ShareIn,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+    chain=Depends(get_chain),
+):
+    # validate file id hex32
+    if not (isinstance(id, str) and id.startswith("0x") and len(id) == 66):
+        raise HTTPException(400, "bad_file_id")
+    file_id_bytes = Web3.to_bytes(hexstr=cast(HexStr, id))
+
+    # ownership check
+    file_row: Optional[File] = db.get(File, file_id_bytes)
+    if file_row is None:
+        raise HTTPException(404, "file_not_found")
+    if file_row.owner_id != user.id:
+        raise HTTPException(403, "not_owner")
+
+    # idempotency key
+    import json as _json
+    key = f"share:req:{body.request_id}"
+    existing = rds.get(key)
+    if isinstance(existing, str) and existing:
+        try:
+            data = _json.loads(existing)
+            capIds = data.get("capIds") or []
+        except Exception:
+            capIds = []
+        return {"status": "duplicate", "capIds": capIds}
+
+    # resolve users and validate encK_map
+    addr_lower_to_input = {a.lower(): a for a in body.users}
+    # normalize encK_map keys to lower
+    enc_map = {k.lower(): v for k, v in (body.encK_map or {}).items()}
+
+    # lookup grantees
+    grantees: list[tuple[str, User]] = []  # (checksum address, user)
+    for addr_in in body.users:
+        # validate presence in encK_map
+        if addr_in.lower() not in enc_map:
+            raise HTTPException(400, f"encK_missing_for_{addr_in}")
+        u = get_by_eth_address(db, addr_in)
+        if u is None:
+            raise HTTPException(400, f"unknown_grantee_{addr_in}")
+        grantees.append((Web3.to_checksum_address(addr_in), u))
+
+    # chain helpers
+    ac = chain.get_access_control()
+    grantor_addr = Web3.to_checksum_address(user.eth_address)
+    try:
+        start_nonce = int(ac.functions.grantNonces(grantor_addr).call())
+    except Exception as e:
+        raise HTTPException(502, f"chain_unavailable: {e}")
+
+    # compute capIds deterministically
+    cap_ids_bytes: list[bytes] = []
+    cap_ids_hex: list[str] = []
+    for idx, (grantee_addr, _) in enumerate(grantees):
+        cap_b = chain.predict_cap_id(grantor_addr, grantee_addr, file_id_bytes, nonce=start_nonce, offset=idx)
+        cap_ids_bytes.append(cap_b)
+        cap_ids_hex.append("0x" + cap_b.hex())
+
+    # prepare typedData for each grant
+    typed_list: list[dict] = []
+    ttl_sec = int(body.ttl_days) * 86400
+    to_addr = getattr(ac, "address", grantor_addr)
+    for (grantee_addr, _), _cap in zip(grantees, cap_ids_bytes):
+        call_data = chain.encode_grant_call(file_id_bytes, grantee_addr, ttl_sec, int(body.max_dl))
+        td = chain.build_forward_typed_data(from_addr=grantor_addr, to_addr=to_addr, data=call_data, gas=180_000)
+        typed_list.append(td)
+
+    # store idempotency info early (capIds) with TTL 1h
+    rds.set(key, _json.dumps({"grantor": grantor_addr, "fileId": id, "capIds": cap_ids_hex}), ex=3600, nx=True)
+
+    # insert DB rows, skipping if cap_id already exists
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(days=int(body.ttl_days))
+    for (grantee_addr, grantee_user), cap_b in zip(grantees, cap_ids_bytes):
+        # check existing by cap_id to avoid UniqueViolation if nonce hasn't advanced yet
+        exists = db.query(Grant).filter(Grant.cap_id == cap_b).one_or_none()
+        if exists is not None:
+            continue
+        enc_b64 = enc_map[grantee_addr.lower()]
+        try:
+            enc_bytes = base64.b64decode(enc_b64)
+        except Exception:
+            raise HTTPException(400, f"bad_encK_for_{grantee_addr}")
+        grant = Grant(
+            cap_id=cap_b,
+            file_id=file_id_bytes,
+            grantor_id=user.id,
+            grantee_id=grantee_user.id,
+            expires_at=expires_at,
+            max_dl=int(body.max_dl),
+            used=0,
+            revoked_at=None,
+            status="pending",
+            tx_hash=None,
+            confirmed_at=None,
+            enc_key=enc_bytes,
+        )
+        db.add(grant)
+    try:
+        db.commit()
+    except IntegrityError as ie:
+        # вероятная гонка по уникальному cap_id — откатим и продолжим без фатала
+        db.rollback()
+        # если это не про uq_grants_cap_id — пробросим дальше
+        if "uq_grants_cap_id" not in str(ie.orig) if hasattr(ie, "orig") else str(ie):
+            raise
+
+    items = [ShareItemOut(grantee=addr_lower_to_input[ga.lower()], capId=ch, status="queued") for (ga, _), ch in zip(grantees, cap_ids_hex)]
+    return ShareOut(items=items, typedDataList=typed_list)
+
