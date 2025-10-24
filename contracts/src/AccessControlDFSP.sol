@@ -33,6 +33,7 @@ contract AccessControlDFSP is ERC2771Context {
     error ExhaustedGrant();
     error MaxDownloadsZero();
     error BearerNotEnabled();
+    error InvalidGrantee(); // New error for zero-address grantee
 
     constructor(address trustedForwarder) ERC2771Context(trustedForwarder) {}
 
@@ -43,6 +44,7 @@ contract AccessControlDFSP is ERC2771Context {
         uint32 maxDownloads
     ) external returns (bytes32 capId) {
         if (maxDownloads == 0) revert MaxDownloadsZero();
+        if (grantee == address(0)) revert InvalidGrantee(); // Check for zero address
 
         uint64 exp = uint64(block.timestamp) + ttlSec;
 
