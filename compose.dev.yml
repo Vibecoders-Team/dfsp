@@ -113,6 +113,12 @@ services:
       IPFS_GATEWAY_URL: "${IPFS_GATEWAY_URL:-http://ipfs:8080}"
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}"
       CHAIN_TX_FROM: "${CHAIN_TX_FROM:-}"
+      # New DevOps envs
+      RELAYER_HIGH_QUEUE: "${RELAYER_HIGH_QUEUE:-relayer.high}"
+      RELAYER_DEFAULT_QUEUE: "${RELAYER_DEFAULT_QUEUE:-relayer.default}"
+      QUOTA_META_TX_PER_DAY: "${QUOTA_META_TX_PER_DAY:-50}"
+      QUOTA_DOWNLOAD_BYTES_PER_DAY: "${QUOTA_DOWNLOAD_BYTES_PER_DAY:-2147483648}"
+      POW_DIFFICULTY_BASE: "${POW_DIFFICULTY_BASE:-18}"
     depends_on:
       redis:
         condition: service_healthy
@@ -169,11 +175,12 @@ services:
     environment:
       HARDHAT_URL: "${HARDHAT_URL:-http://chain:8545}"
       DEPLOY_OUT: "${DEPLOY_OUT:-/shared/deployment.localhost.json}"
+      CHAIN_CONFIG_PATH: "${CHAIN_CONFIG_PATH:-/app/deploy/chain-config.json}"
       NPM_CONFIG_CACHE: /npm-cache
     command: >
       sh -lc "npm ci &&
               npx hardhat run scripts/deploy-local.ts --network docker &&
-              npm run abi:export"
+              npm run abi:export && npm run export:deployment"
 
   ipfs:
     extends:
@@ -198,3 +205,4 @@ volumes:
   contracts_npm_cache: {}
   web_app: {}
   contracts_app: {}
+

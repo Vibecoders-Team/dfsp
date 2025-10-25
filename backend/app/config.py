@@ -119,8 +119,18 @@ class Settings(BaseSettings):
     cors_origins_raw: str | List[str] | None = Field(default=None, alias="CORS_ORIGINS")
     cors_origin_raw: str | None = Field(default=None, alias="CORS_ORIGIN")
 
-    # --- Квоты (вложенные) ---
+    # --- Квоты (вложенные, дефолты) ---
     quotas: Quotas = Field(default_factory=Quotas, alias="QUOTAS")
+    # Плоские env-переменные для квот (удобные для DevOps)
+    quota_download_bytes_day_env: Optional[int] = Field(default=None, alias="QUOTA_DOWNLOAD_BYTES_PER_DAY")
+    quota_meta_tx_per_day_env: Optional[int] = Field(default=None, alias="QUOTA_META_TX_PER_DAY")
+
+    # --- Relayer/Celery очереди ---
+    relayer_high_queue: str = Field(default="relayer.high", alias="RELAYER_HIGH_QUEUE")
+    relayer_default_queue: str = Field(default="relayer.default", alias="RELAYER_DEFAULT_QUEUE")
+
+    # --- Proof-of-Work параметры (резерв под будущую фичу) ---
+    pow_difficulty_base: int = Field(default=18, alias="POW_DIFFICULTY_BASE")
 
     chain_rpc_url_raw: str | None = Field(default=None, alias="CHAIN_RPC_URL")
 
@@ -197,6 +207,16 @@ class Settings(BaseSettings):
     def jwt_refresh_ttl(self) -> timedelta:
         return timedelta(days=int(self.jwt_refresh_ttl_days))
 
+    @property
+    def quotas_effective(self) -> Quotas:
+        """Возвращает квоты с учётом плоских env-переменных (если заданы)."""
+        q = Quotas(**self.quotas.model_dump()) if isinstance(self.quotas, Quotas) else Quotas()
+        if self.quota_download_bytes_day_env is not None:
+            q.download_bytes_day = int(self.quota_download_bytes_day_env)
+        if self.quota_meta_tx_per_day_env is not None:
+            q.meta_tx_per_day = int(self.quota_meta_tx_per_day_env)
+        return q
+
     # --- Загрузка chain-config.json (опционально, без падений, если файла нет) ---
     def load_chain_config(self) -> ChainConfig | None:
         p = self.chain_config_path
@@ -224,9 +244,14 @@ class Settings(BaseSettings):
             "rpc_url": self.rpc_url,
             "anchor_period_min": self.anchor_period_min,
             "cors_origins": self.cors_origins,
-            "quotas": self.quotas.model_dump(),
+            "quotas": self.quotas_effective.model_dump(),
             "abi_dir": str(self.abi_dir) if self.abi_dir else None,
             "chain_config_path": str(self.chain_config_path) if self.chain_config_path else None,
+            "relayer_queues": {
+                "high": self.relayer_high_queue,
+                "default": self.relayer_default_queue,
+            },
+            "pow": {"difficulty_base": self.pow_difficulty_base},
             "chain_loaded": bool(chain),
             "chainId": getattr(chain, "chainId", None),
         }
