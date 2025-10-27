@@ -232,3 +232,21 @@ export async function signLoginTyped(message: LoginMessage): Promise<string> {
     const wallet = await ensureEOA();
     return wallet.signTypedData(LOGIN_DOMAIN, LOGIN_TYPES, message);
 }
+
+// === Helpers for Share ===
+
+export function pemToArrayBuffer(pem: string): ArrayBuffer {
+  const b64 = pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+export function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+

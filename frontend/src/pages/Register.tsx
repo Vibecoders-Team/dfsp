@@ -12,6 +12,7 @@ import {
 } from "../lib/keychain";
 import {ethers} from "ethers";
 import {postChallenge, postRegister, ACCESS_TOKEN_KEY} from "../lib/api";
+import { publishMyKeyCard } from "../lib/publishMyKey";
 
 /** аккуратно достаём сообщение об ошибке без any */
 function getErrorMessage(e: unknown, fallback: string): string {
@@ -38,6 +39,7 @@ export default function RegisterPage() {
     const [status, setStatus] = useState("");
     const [pwd, setPwd] = useState("");
     const fileRef = useRef<HTMLInputElement>(null);
+    const [pubInfo, setPubInfo] = useState<{cid:string; url?: string} | null>(null);
 
     useEffect(() => {
         (async () => {
@@ -45,6 +47,17 @@ export default function RegisterPage() {
             if (w) setAddress(w.address as `0x${string}`);
         })();
     }, []);
+
+    async function publishKey() {
+        try {
+        setStatus("Publishing key…");
+        const out = await publishMyKeyCard();
+        setPubInfo(out);
+        setStatus("Published.");
+        } catch (e) {
+        setStatus(getErrorMessage(e, "Publish failed"));
+        }
+    }
 
     async function genKeys() {
         try {
@@ -141,7 +154,20 @@ export default function RegisterPage() {
             <div style={{display: "flex", gap: 8, flexWrap: "wrap"}}>
                 <button onClick={genKeys}>Generate Keys</button>
                 <button onClick={doRegister} disabled={!address}>Register</button>
+                <button onClick={publishKey}>Publish my key</button> {/* +++ */}
             </div>
+
+            {pubInfo && (
+                <div style={{marginTop: 8}}>
+                    <div>CID: <code>{pubInfo.cid}</code></div>
+                    {pubInfo.url && (
+                        <div>
+                            Link: <a href={pubInfo.url} target="_blank" rel="noreferrer">{pubInfo.url}</a>
+                        </div>
+                        )}
+                    <small>Отправьте эту ссылку отправителю — он импортирует ключ одной кнопкой.</small>
+                    </div>
+                )}
 
             <h3 style={{marginTop: 24}}>Backup / Restore</h3>
             <div style={{display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr", alignItems: "center"}}>

@@ -6,6 +6,10 @@ import Files from "../pages/Files";
 import Verify from "../pages/Verify";
 import LoginPage from "../pages/Login";
 import RegisterPage from "../pages/Register";
+import FileDetails from "../pages/FileDetails"; 
+import DownloadCap from "../pages/DownloadCap";
+
+
 
 export function AppRoutes() {
     return (
@@ -18,6 +22,9 @@ export function AppRoutes() {
             <Route path="/login" element={<LoginPage/>}/>
             <Route path="/register" element={<RegisterPage/>}/>
             <Route path="*" element={<Navigate to="/" replace/>}/>
+            <Route path="/files/:fileId" element={<FileDetails />}/>
+            <Route path="/download/:capId" element={<DownloadCap />} />
+            <Route path="/d/:capId" element={<DownloadCap />} />
         </Routes>
     );
 }
