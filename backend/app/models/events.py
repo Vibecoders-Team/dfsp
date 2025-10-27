@@ -30,9 +30,9 @@ class Event(Base):
 
     type: Mapped[str] = mapped_column(nullable=False)
 
-    # FK на files.id (UUID)
-    file_id: Mapped[uuid.UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
+    # FK на files.id (BYTEA(32))
+    file_id: Mapped[bytes | None] = mapped_column(
+        sa.LargeBinary(32),  # <--- ТИП ИСПРАВЛЕН
         ForeignKey("files.id", ondelete="SET NULL"),
         nullable=True,
         index=True,

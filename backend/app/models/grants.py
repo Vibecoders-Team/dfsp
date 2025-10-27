@@ -6,7 +6,7 @@ from datetime import datetime
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey, Index, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -56,3 +56,8 @@ class Grant(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    # Отношения для ORM
+    file = relationship("File", back_populates="grants")
+    grantor = relationship("User", foreign_keys=[grantor_id], back_populates="given_grants")
+    grantee = relationship("User", foreign_keys=[grantee_id], back_populates="received_grants")
