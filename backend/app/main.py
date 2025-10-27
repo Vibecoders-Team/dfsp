@@ -4,6 +4,7 @@ from app.config import settings
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers.health import router as health_router
+from app.routers import pow as pow_router
 from app.routers.auth import router as auth_router
 from app.routers.storage import router as storage_router
 
@@ -31,3 +32,4 @@ app.include_router(verify_router)
 app.include_router(files_router)
 app.include_router(download_router)
 app.include_router(grants_router)
+app.include_router(pow_router.router)

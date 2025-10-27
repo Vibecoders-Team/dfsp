@@ -28,6 +28,22 @@ celery.conf.task_queues = (
     Queue(DEFAULT_Q),
 )
 
+# route by task name + payload (useOnce/revoke → high)
+
+def _route_for_task(name: str, args: tuple, kwargs: dict, options: dict, task=None, **kw):  # noqa: ANN001
+    if name == "relayer.submit_forward":
+        typed: Dict[str, Any] | None = None
+        if args and isinstance(args, tuple) and len(args) >= 2 and isinstance(args[1], dict):
+            typed = cast(Dict[str, Any], args[1])
+        elif isinstance(kwargs, dict):
+            typed = cast(Optional[Dict[str, Any]], kwargs.get("typed_data")) or None
+        if typed:
+            q = _decide_queue(typed)
+            return {"queue": q}
+    return {"queue": DEFAULT_Q}
+
+celery.conf.task_routes = (_route_for_task,)
+
 # simple metrics in Redis
 METRICS_KEY_PREFIX = "metrics:relayer"
 
@@ -179,11 +195,11 @@ def _decide_queue(typed_data: Dict[str, Any]) -> str:
         to = str(((typed_data or {}).get("message") or {}).get("to", ""))
         if ac_addr and to and Web3.to_checksum_address(ac_addr) == Web3.to_checksum_address(to):
             data = str(((typed_data or {}).get("message") or {}).get("data", ""))
-            sel = data[:10] if data.startswith("0x") and len(data) >= 10 else ""
-            # precomputed selectors
-            use_sel = Web3.keccak(text="useOnce(bytes32)")[:4].hex()
-            rev_sel = Web3.keccak(text="revoke(bytes32)")[:4].hex()
-            if sel[2:].lower() in (use_sel, rev_sel):
+            sel = data[2:10].lower() if data.startswith("0x") and len(data) >= 10 else ""
+            # first 4 bytes (8 hex chars) of keccak("sig")
+            use_sel = Web3.keccak(text="useOnce(bytes32)")[:4].hex()[2:].lower()
+            rev_sel = Web3.keccak(text="revoke(bytes32)")[:4].hex()[2:].lower()
+            if sel in (use_sel, rev_sel):
                 return HIGH_Q
     except Exception:
         pass
