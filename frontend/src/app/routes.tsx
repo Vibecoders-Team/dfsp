@@ -8,6 +8,7 @@ import LoginPage from "../pages/Login";
 import RegisterPage from "../pages/Register";
 import FileDetails from "../pages/FileDetails"; 
 import DownloadCap from "../pages/DownloadCap";
+import Settings from "../pages/Settings";
 
 
 
@@ -25,6 +26,7 @@ export function AppRoutes() {
             <Route path="/files/:fileId" element={<FileDetails />}/>
             <Route path="/download/:capId" element={<DownloadCap />} />
             <Route path="/d/:capId" element={<DownloadCap />} />
+            <Route path="/settings" element={<Settings />} />
         </Routes>
     );
 }

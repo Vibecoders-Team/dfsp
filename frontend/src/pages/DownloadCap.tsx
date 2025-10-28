@@ -2,17 +2,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ACCESS_TOKEN_KEY } from "../lib/api";
-import { ensureRSA } from "../lib/keychain";
-import { fetchDownload, fetchGrantByCapId, type GrantStatus } from "../lib/api";
+import { ensureRSA, ensureEOA } from "../lib/keychain";
+import { fetchDownload, fetchGrantByCapId, type GrantStatus, submitMetaTx } from "../lib/api";
 import { getErrorMessage } from "../lib/errors";
 import { getOptionalPowHeader } from "../lib/pow";
+import { isAxiosError } from "axios";
 
 const IPFS_GATEWAY = import.meta.env.VITE_IPFS_PUBLIC_GATEWAY ?? "http://localhost:8080";
-
-// FE-3: сюда подключим реальный PoW
-async function getPowHeader(): Promise<string | undefined> {
-  return undefined;
-}
 
 // локальный helper: base64 -> Uint8Array
 function b64ToU8(b64: string): Uint8Array {
@@ -67,8 +63,42 @@ export default function DownloadCap() {
       setProgress(0);
       setPhase("fetch");
 
-      const powHeader = await getOptionalPowHeader();
-      const { encK, ipfsPath } = await fetchDownload(capId, powHeader);
+      let powHeader = await getOptionalPowHeader();
+      let encK: string;
+      let ipfsPath: string;
+      let requestId: string | undefined;
+      let typedData: any | undefined;
+      try {
+        const res = await fetchDownload(capId, powHeader);
+        encK = res.encK; ipfsPath = res.ipfsPath; requestId = res.requestId; typedData = res.typedData as any;
+      } catch (e) {
+        if (isAxiosError(e) && e.response?.status === 429) {
+          const detail = (e.response?.data as any)?.detail as string | undefined;
+          if (detail && detail.startsWith("pow_")) {
+            // получим новый токен и попробуем ещё раз
+            powHeader = await getOptionalPowHeader(true);
+            const res2 = await fetchDownload(capId, powHeader);
+            encK = res2.encK; ipfsPath = res2.ipfsPath; requestId = res2.requestId; typedData = res2.typedData as any;
+          } else {
+            throw e;
+          }
+        } else {
+          throw e;
+        }
+      }
+
+      // Асинхронно подпишем и отправим useOnce, чтобы зафиксировать использование на чейне
+      if (requestId && typedData) {
+        (async () => {
+          try {
+            const w = await ensureEOA();
+            const sig = await w.signTypedData(typedData.domain, typedData.types, typedData.message);
+            await submitMetaTx(requestId, typedData, sig);
+          } catch {
+            // ignore errors here; UI подтянет фактический статус позже
+          }
+        })();
+      }
 
       setPhase("decrypt");
       // Расшифруем симметричный ключ K_file своей приваткой RSA-OAEP

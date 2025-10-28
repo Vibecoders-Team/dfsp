@@ -11,53 +11,62 @@ function isValidCached(): boolean {
   return !!cached && Date.now() < cached.expiresAt;
 }
 
-export async function getPowToken(): Promise<PowToken> {
-  if (isValidCached()) return cached!.token;
+export async function getPowToken(forceNew = true): Promise<PowToken> {
+  if (!forceNew && isValidCached()) return cached!.token;
 
   const ch: PowChallenge = await requestPowChallenge();
 
-  // Запускаем воркер
-  const worker = new Worker(new URL("../workers/pow.worker.ts", import.meta.url), { type: "module" });
+  const cores = Math.max(2, Math.min((navigator as any).hardwareConcurrency || 4, 8));
+  const workers = Array.from({ length: cores }, () => new Worker(new URL("../workers/pow.worker.ts", import.meta.url), { type: "module" }));
 
-  const nonce = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      worker.terminate();
-      reject(new Error("PoW timeout"));
-    }, 15_000);
+  // A controller to stop all workers
+  let settled = false;
+  const stopAll = () => {
+    if (settled) return;
+    settled = true;
+    for (const w of workers) try { w.terminate(); } catch {}
+  };
 
-    worker.onmessage = (ev: MessageEvent<{ nonce: string }>) => {
-      clearTimeout(timer);
-      worker.terminate();
+  const promises = workers.map((w, i) => new Promise<string>((resolve, reject) => {
+    const onMsg = (ev: MessageEvent<{ nonce: string }>) => {
       resolve(ev.data.nonce);
     };
-    worker.onerror = (err) => {
-      clearTimeout(timer);
-      worker.terminate();
+    const onErr = (err: any) => {
       reject(err instanceof Error ? err : new Error("Worker error"));
     };
+    w.onmessage = onMsg;
+    w.onerror = onErr;
+    w.postMessage({ challenge: ch.challenge, difficulty: ch.difficulty, start: i, step: cores });
+  }));
 
-    worker.postMessage({ challenge: ch.challenge, difficulty: ch.difficulty });
-  });
+  const timer = new Promise<string>((_, reject) => setTimeout(() => reject(new Error("PoW timeout")), 30_000));
 
-  const token: PowToken = { challenge: ch.challenge, nonce };
-  // Кэшируем на ttl секунд
-  const ttlMs = Math.max(0, (ch.ttl ?? 0) * 1000);
-  cached = { token, expiresAt: Date.now() + ttlMs };
-
-  return token;
+  try {
+    const nonce = await Promise.race([Promise.any(promises), timer]);
+    stopAll();
+    const token: PowToken = { challenge: ch.challenge, nonce };
+    const ttlMs = Math.max(0, (ch.ttl ?? 0) * 1000);
+    cached = { token, expiresAt: Date.now() + ttlMs };
+    return token;
+  } catch (e) {
+    stopAll();
+    throw e;
+  }
 }
 
-/** Возвращает X-PoW строку или undefined, если PoW на бэке не включён */
-export async function getOptionalPowHeader(): Promise<string | undefined> {
+/**
+ * Возвращает строку токена для заголовка X-PoW-Token вида "challenge.nonce".
+ * Если бэк не поддерживает PoW (404/501), вернет undefined.
+ * Иначе при ошибке — бросит исключение (не замалчиваем, чтобы не ловить 429 на сервере).
+ */
+export async function getOptionalPowHeader(forceNew = true): Promise<string | undefined> {
   try {
-    const { challenge, nonce } = await getPowToken();
-    return `${challenge}:${nonce}`;
+    const { challenge, nonce } = await getPowToken(forceNew);
+    return `${challenge}.${nonce}`;
   } catch (e) {
-    // если бэк отвечает 404/501, просто отключаем PoW
     if (isAxiosError(e) && (e.response?.status === 404 || e.response?.status === 501)) {
       return undefined;
     }
-    // сетевые/другие ошибки тоже не должны блокировать шэринг
-    return undefined;
+    throw e;
   }
 }

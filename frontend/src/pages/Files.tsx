@@ -1,5 +1,6 @@
 import {useState} from "react";
 import {fetchCid, fetchMeta, fetchVersions, fetchHistory} from "../lib/api";
+import { useNavigate } from "react-router-dom";
 
 // Узкий гард, чтобы безопасно читать cid.url
 function hasUrl(v: unknown): v is { url: string } {
@@ -36,6 +37,11 @@ export default function Files() {
     const [versions, setVersions] = useState<unknown>(null);
     const [history, setHistory] = useState<unknown>(null);
     const [err, setErr] = useState("");
+    const nav = useNavigate();
+
+    function isValidIdHex(v: string): boolean {
+        return /^0x[0-9a-fA-F]{64}$/.test(v.trim());
+    }
 
     async function onResolve() {
         setErr("");
@@ -91,6 +97,13 @@ export default function Files() {
                     <button onClick={onMeta}>Meta</button>
                     <button onClick={onVersions}>Versions</button>
                     <button onClick={onHistory}>History</button>
+                    <button
+                        onClick={() => nav(`/files/${idHex.trim()}`)}
+                        disabled={!isValidIdHex(idHex)}
+                        title={!isValidIdHex(idHex) ? "Введите корректный fileId" : "Open details"}
+                    >
+                        Open details
+                    </button>
                 </div>
             </div>
 

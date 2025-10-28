@@ -1,10 +1,13 @@
 import React, { useMemo, useState } from "react";
+import { isAxiosError } from "axios";
 import { fetchGranteePubKey, shareFile, ShareItem } from "../lib/api";
 import { pemToArrayBuffer, arrayBufferToBase64 } from "../lib/keychain";
 import { getOrCreateFileKey } from "../lib/fileKey";
 import { getErrorMessage } from "../lib/errors";
 import { getOptionalPowHeader } from "../lib/pow";
 import { importKeyFromCid } from "../lib/importKeyCard";
+import { submitMetaTx } from "../lib/api";
+import { ensureEOA } from "../lib/keychain";
 
 const addrRe = /^0x[a-fA-F0-9]{40}$/;
 const isAddr = (v: string) => addrRe.test(v.trim());
@@ -35,12 +38,12 @@ export default function ShareDialog({ fileId, onClose, onShared }: Props) {
   const addGrantee = () => {
     const v = input.trim();
     if (!isAddr(v)) return setError("Неверный адрес: ожидается 0x + 40 hex символов");
-    if (!grantees.includes(v)) setGrantees(prev => [...prev, v]);
+    if (!grantees.includes(v)) setGrantees((prev: string[]) => [...prev, v]);
     setInput("");
     setError(null);
   };
 
-  const removeGrantee = (a: string) => setGrantees(g => g.filter(x => x !== a));
+  const removeGrantee = (a: string) => setGrantees((g: string[]) => g.filter((x: string) => x !== a));
 
   const onSubmit = async () => {
     try {
@@ -49,12 +52,18 @@ export default function ShareDialog({ fileId, onClose, onShared }: Props) {
 
       // 1) K_file
       const K_file = getOrCreateFileKey(fileId); // Uint8Array(32)
+      // Create a fresh ArrayBuffer to satisfy BufferSource typing (avoid SharedArrayBuffer union)
+      const K_arraybuf: ArrayBuffer = (() => {
+        const ab = new ArrayBuffer(K_file.byteLength);
+        new Uint8Array(ab).set(K_file);
+        return ab;
+      })();
 
       // 2) encK_map: RSA-OAEP(SHA-256) для каждого адресата
       const encK_map: Record<string, string> = {};
       for (const g of grantees) {
         try {
-          const pem = await fetchGranteePubKey(g); // self-share или локальный каталог
+          const pem = await fetchGranteePubKey(g); // self-share или локальный/бэкенд каталог
           const spki = pemToArrayBuffer(pem);
           const publicKey = await crypto.subtle.importKey(
             "spki",
@@ -63,11 +72,11 @@ export default function ShareDialog({ fileId, onClose, onShared }: Props) {
             false,
             ["encrypt"]
           );
-          const ct = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, publicKey, K_file);
+          const ct = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, publicKey, K_arraybuf);
           encK_map[g] = arrayBufferToBase64(ct);
-        } catch (e: any) {
-          // Ключ адресата не найден локально — предлагаем импортировать визитку по CID/ссылке
-          if (String(e?.message) === "PUBLIC_PEM_NOT_FOUND") {
+        } catch (e: unknown) {
+          // Ключ адресата не найден локально/на бэке — предлагаем импортировать визитку по CID/ссылке
+          if (e instanceof Error && e.message === "PUBLIC_PEM_NOT_FOUND") {
             setNeedPemFor(g);
             setBusy(false);
             return; // прерываем submit, ждём импорт
@@ -79,22 +88,65 @@ export default function ShareDialog({ fileId, onClose, onShared }: Props) {
       }
 
       // 3) PoW: получить токен и сформировать заголовок
-      const powHeader = await getOptionalPowHeader();
+      let powToken = await getOptionalPowHeader();
 
-      // 4) вызов API
-      const items = await shareFile(
-        fileId,
-        {
-          users: grantees,
-          ttl_days: ttlDays,
-          max_dl: maxDl,
-          encK_map,
-          request_id: crypto.randomUUID(),
-        },
-        powHeader
-      );
+      // 4) вызов API (с одним ретраем при 429 pow_token_*)
+      let resp: { items: ShareItem[]; typedDataList?: any[] } | null = null;
+      try {
+        resp = await shareFile(
+          fileId,
+          {
+            users: grantees,
+            ttl_days: ttlDays,
+            max_dl: maxDl,
+            encK_map,
+            request_id: crypto.randomUUID(),
+          },
+          powToken
+        );
+      } catch (e) {
+        if (isAxiosError(e) && e.response?.status === 429) {
+          const detail = (e.response?.data as any)?.detail as string | undefined;
+          if (detail && detail.startsWith("pow_")) {
+            powToken = await getOptionalPowHeader(true);
+            resp = await shareFile(
+              fileId,
+              {
+                users: grantees,
+                ttl_days: ttlDays,
+                max_dl: maxDl,
+                encK_map,
+                request_id: crypto.randomUUID(),
+              },
+              powToken
+            );
+          } else {
+            throw e;
+          }
+        } else {
+          throw e;
+        }
+      }
 
-      onShared(items);
+      // 5) Подписываем и отправляем meta-tx для grant() (если бэк вернул typedDataList)
+      try {
+        const tdl = resp?.typedDataList || [];
+        if (tdl.length > 0) {
+          const w = await ensureEOA();
+          await Promise.all(
+            tdl.map(async (td: any, idx: number) => {
+              const sig = await w.signTypedData(td.domain, td.types, td.message);
+              const reqId = crypto.randomUUID(); // независимый id для каждой grant meta-tx
+              await submitMetaTx(reqId, td, sig);
+            })
+          );
+        }
+      } catch (e) {
+        // Не блокируем UX шаринга, просто оставим статус "queued" до подхвата воркером
+        console.warn("Grant meta-tx submit failed:", e);
+      }
+
+      onShared(resp!.items);
       onClose();
     } catch (e) {
       setError(getErrorMessage(e, "Share failed"));
