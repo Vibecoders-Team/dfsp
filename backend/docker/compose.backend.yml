@@ -137,3 +137,50 @@ services:
       #  condition: service_completed_successfully
     restart: unless-stopped
     networks: [ dfsp ]
+
+  # ----------------------------- Celery Worker (relayer) -------------------------
+  celery-worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: dfsp-celery-worker
+    working_dir: /app
+    <<: *env_files
+    command:
+      - bash
+      - -lc
+      - |
+        export POSTGRES_DSN="postgresql+psycopg://$${DB_USER:-dfsp}:$${DB_PASSWORD:-dfsp}@$${DB_HOST:-dfsp-db}:$${DB_PORT:-5432}/$${DB_NAME:-dfsp}";
+        export REDIS_URL="$${REDIS_URL:-redis://$${REDIS_HOST:-dfsp-redis}:$${REDIS_PORT:-6379}/$${REDIS_DB:-0}}";
+        export WAIT_FOR_TIMEOUT="$${WAIT_FOR_TIMEOUT:-60}";
+        echo "Starting Celery worker...";
+        echo "Waiting for Redis at $${REDIS_URL}...";
+        uv run python -c "
+        import redis, time, sys, os
+        url = os.getenv('REDIS_URL', 'redis://dfsp-redis:6379/0')
+        timeout = int(os.getenv('WAIT_FOR_TIMEOUT', '60'))
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                r = redis.Redis.from_url(url, socket_connect_timeout=5)
+                if r.ping():
+                    print('[wait] Redis OK')
+                    sys.exit(0)
+            except Exception as e:
+                print(f'[wait] Redis not ready: {e}')
+                time.sleep(2)
+        print('[wait] Redis timeout', file=sys.stderr)
+        sys.exit(1)
+        ";
+        echo "Redis OK, starting worker...";
+        uv run celery -A app.relayer:celery worker --loglevel=info --concurrency=2 -Q relayer.high,relayer.default
+    volumes:
+      - ../app:/app/app
+      - ../migrations:/app/migrations
+      - ../alembic.ini:/app/alembic.ini
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [ dfsp ]
+

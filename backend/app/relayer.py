@@ -82,6 +82,72 @@ def _series_key(msg: Dict[str, Any]) -> str:
     return f"relayer:series:{from_addr}"
 
 
+def _sync_grant_events_from_receipt(receipt: AttributeDict, chain, db: Optional[Session]) -> None:
+    """
+    Parse events from receipt and update grants table in DB.
+    Handles: Used, Revoked, Granted events.
+    """
+    if db is None:
+        return
+
+    try:
+        from app.models.grants import Grant
+        from datetime import datetime, timezone
+
+        ac = chain.get_access_control()
+
+        # Process Used events
+        try:
+            used_events = ac.events.Used().process_receipt(receipt)
+            for evt in used_events:
+                cap_id = evt.args.capId if hasattr(evt.args, 'capId') else evt.get('args', {}).get('capId')
+                used_count = evt.args.used if hasattr(evt.args, 'used') else evt.get('args', {}).get('used')
+                if cap_id and used_count is not None:
+                    cap_b = bytes(cap_id) if isinstance(cap_id, (bytes, bytearray)) else Web3.to_bytes(hexstr=cap_id)
+                    grant = db.query(Grant).filter(Grant.cap_id == cap_b).first()
+                    if grant:
+                        grant.used = int(used_count)
+                        db.add(grant)
+        except Exception:
+            pass  # Event might not exist in receipt
+
+        # Process Revoked events
+        try:
+            revoked_events = ac.events.Revoked().process_receipt(receipt)
+            for evt in revoked_events:
+                cap_id = evt.args.capId if hasattr(evt.args, 'capId') else evt.get('args', {}).get('capId')
+                if cap_id:
+                    cap_b = bytes(cap_id) if isinstance(cap_id, (bytes, bytearray)) else Web3.to_bytes(hexstr=cap_id)
+                    grant = db.query(Grant).filter(Grant.cap_id == cap_b).first()
+                    if grant:
+                        grant.revoked_at = datetime.now(timezone.utc)
+                        grant.status = "revoked"
+                        db.add(grant)
+        except Exception:
+            pass  # Event might not exist in receipt
+
+        # Process Granted events (update status to confirmed)
+        try:
+            granted_events = ac.events.Granted().process_receipt(receipt)
+            for evt in granted_events:
+                cap_id = evt.args.capId if hasattr(evt.args, 'capId') else evt.get('args', {}).get('capId')
+                if cap_id:
+                    cap_b = bytes(cap_id) if isinstance(cap_id, (bytes, bytearray)) else Web3.to_bytes(hexstr=cap_id)
+                    grant = db.query(Grant).filter(Grant.cap_id == cap_b).first()
+                    if grant:
+                        grant.status = "confirmed"
+                        grant.confirmed_at = datetime.now(timezone.utc)
+                        grant.tx_hash = receipt.get("transactionHash", b"").hex() if receipt.get("transactionHash") else None
+                        db.add(grant)
+        except Exception:
+            pass  # Event might not exist in receipt
+
+        db.commit()
+    except Exception:
+        if db:
+            db.rollback()
+
+
 @celery.task(
     name="relayer.submit_forward",
     bind=True,
@@ -173,6 +239,10 @@ def submit_forward(self, request_id: str, typed_data: Dict[str, Any], signature:
                         db.commit()
                 except Exception:
                     db.rollback()
+
+            # Sync grant events from receipt to DB
+            _sync_grant_events_from_receipt(receipt, chain, db)
+
             # structured log
             txh = (receipt.get("transactionHash") or b"").hex()
             return {"status": "sent", "txHash": txh}

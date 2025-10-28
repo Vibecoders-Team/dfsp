@@ -229,3 +229,95 @@ def share_file(
             raise
     items = [ShareItemOut(grantee=addr_lower_to_input[ga.lower()], capId=ch, status="queued") for (ga, _), ch in zip(grantees, cap_ids_hex)]
     return ShareOut(items=items, typedDataList=typed_list)
+
+
+@router.get("/{id}/grants")
+def list_file_grants(
+    id: str,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+    chain=Depends(get_chain),
+):
+    # Validate file id (0x + 64)
+    if not (isinstance(id, str) and id.startswith("0x") and len(id) == 66):
+        raise HTTPException(400, "bad_file_id")
+    try:
+        file_id_bytes = Web3.to_bytes(hexstr=cast(HexStr, id))
+    except Exception:
+        raise HTTPException(400, "bad_file_id")
+
+    # Ensure file exists and belongs to current user
+    file_row: Optional[File] = db.get(File, file_id_bytes)
+    if file_row is None:
+        raise HTTPException(404, "file_not_found")
+    if file_row.owner_id != user.id:
+        raise HTTPException(403, "not_owner")
+
+    # Collect grants joined with grantee address
+    rows = db.execute(
+        select(Grant, User.eth_address)
+        .join(User, Grant.grantee_id == User.id)
+        .where(Grant.file_id == file_id_bytes)
+        .order_by(Grant.created_at.desc())
+    ).all()
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+
+    # Try to use on-chain info when possible
+    items = []
+    ac = None
+    try:
+        ac = chain.get_access_control()
+    except Exception:
+        ac = None
+
+    for g, grantee_addr in rows:
+        cap_hex = "0x" + bytes(g.cap_id).hex()
+        status = (g.status or "pending").lower()
+        used = int(g.used or 0)
+        max_dl = int(g.max_dl or 0)
+        expires_at_iso = g.expires_at.isoformat()
+
+        if ac is not None:
+            try:
+                gg = ac.functions.grants(bytes(g.cap_id)).call()
+                on_expires_at = int(gg[3]) if gg and len(gg) >= 4 else 0
+                on_max = int(gg[4]) if gg and len(gg) >= 5 else 0
+                on_used = int(gg[5]) if gg and len(gg) >= 6 else 0
+                on_revoked = bool(gg[7]) if gg and len(gg) >= 8 else False
+                if gg and len(gg) >= 7 and int(gg[6]) == 0:
+                    status = "pending"
+                else:
+                    used = on_used
+                    max_dl = on_max
+                    expires_at_iso = datetime.fromtimestamp(on_expires_at, tz=timezone.utc).isoformat() if on_expires_at else expires_at_iso
+                    if on_revoked:
+                        status = "revoked"
+                    elif now.timestamp() > on_expires_at and on_expires_at:
+                        status = "expired"
+                    elif on_used >= on_max and on_max:
+                        status = "exhausted"
+                    else:
+                        status = "confirmed"
+            except Exception:
+                # fallback below
+                pass
+        if ac is None:
+            if g.revoked_at is not None:
+                status = "revoked"
+            elif now > g.expires_at:
+                status = "expired"
+            elif int(g.used or 0) >= int(g.max_dl or 0):
+                status = "exhausted"
+
+        items.append({
+            "grantee": grantee_addr,
+            "capId": cap_hex,
+            "maxDownloads": max_dl,
+            "usedDownloads": used,
+            "expiresAt": expires_at_iso,
+            "status": status,
+        })
+
+    return {"items": items}

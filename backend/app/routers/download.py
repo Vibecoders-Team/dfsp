@@ -119,16 +119,11 @@ def get_download_info(
     # В соответствии с AC: "учитываем useOnce только при успешной выдаче encK"
     quota_manager.consume_download_bytes(file_id_bytes)
 
+    # Готовим deterministic request_id и typedData для useOnce — отдаём клиенту для подписи
     req_name = f"useOnce:{cap_id}:{user.id}"
     req_uuid = uuid.uuid5(uuid.NAMESPACE_URL, req_name)
-    rds.set(f"mtx:req:{req_uuid}", "queued", ex=3600, nx=True)
-    existing: Optional[MetaTxRequest] = db.get(MetaTxRequest, req_uuid)
-    if existing is None:
-        db.add(MetaTxRequest(request_id=req_uuid, type="useOnce", status="queued"))
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
+
+    typed = None
     try:
         ac = chain.get_access_control()
         to_addr = getattr(ac, "address", None) or Web3.to_checksum_address("0x" + "00" * 20)
@@ -136,9 +131,12 @@ def get_download_info(
         typed = chain.build_forward_typed_data(
             from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000
         )
-        enqueue_forward_request(str(req_uuid), typed, "0x")
     except Exception:
-        pass
+        typed = None
 
     enc_b64 = base64.b64encode(grant.enc_key).decode("ascii")
-    return {"encK": enc_b64, "ipfsPath": f"/ipfs/{cid}"}
+    out = {"encK": enc_b64, "ipfsPath": f"/ipfs/{cid}"}
+    if typed is not None:
+        out.update({"requestId": str(req_uuid), "typedData": typed})
+    return out
+
