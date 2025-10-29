@@ -131,6 +131,10 @@ class Settings(BaseSettings):
 
     # --- Proof-of-Work параметры (резерв под будущую фичу) ---
     pow_difficulty_base: int = Field(default=18, alias="POW_DIFFICULTY_BASE")
+    pow_challenge_ttl_seconds: int = Field(
+        default=300, alias="POW_CHALLENGE_TTL_SECONDS"
+    ) # 5 минут
+    pow_enabled: bool = Field(default=True, alias="POW_ENABLED") # Глобальный переключатель
 
     chain_rpc_url_raw: str | None = Field(default=None, alias="CHAIN_RPC_URL")
 

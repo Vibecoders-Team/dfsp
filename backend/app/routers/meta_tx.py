@@ -7,6 +7,12 @@ from ..deps import get_db, rds
 from ..relayer import enqueue_forward_request
 from ..schemas.auth import MetaTxSubmitIn
 
+# NEW: optional sync execution in dev
+import os
+from ..relayer import submit_forward as _submit_forward_task
+from ..models.meta_tx_requests import MetaTxRequest
+import uuid
+
 router = APIRouter(prefix="/meta-tx", tags=["meta-tx"])
 
 
@@ -24,34 +30,51 @@ def submit(req: MetaTxSubmitIn, response: Response, db: Session = Depends(get_db
     """
     Принимаем подписанный ForwardRequest и кладем задачу в релейер.
     Гарантируем детерминированный JSON-ответ со статусом.
+    В DEV-режиме (RELAYER_SYNC_DEV=1) дополнительно выполняем задачу синхронно в текущем процессе.
+    Поведение идемпотентности: мы допускаем повторную постановку в очередь с тем же request_id,
+    опираясь на БД/релейер для дедупликации, чтобы не залипать из-за прежнего NX-флага.
     """
-    # идемпотентность: атомарный set NX
-    key = f"mtx:req:{req.request_id}"
-    created = rds.set(key, "queued", ex=3600, nx=True)
-    if not created:
-        # уже был поставлен в очередь ранее
-        # возвращаем детерминированный dict
-        response.status_code = 200
-        return {"status": "duplicate"}
-
     # базовая валидация формы typedData (чтобы не падали на .get)
     _validate_typed_data(req.typed_data)
 
-    # опциональная серверная проверка подписи — если включите, замените ok=True на реальную проверку
+    # мягкая пометка в Redis (без NX) — не блокирует повторную постановку
+    key = f"mtx:req:{req.request_id}"
     try:
-        ok = True
-        if not ok:
-            # снимаем флажок идемпотентности, чтобы можно было повторить
-            rds.delete(key)
-            raise HTTPException(400, "signature_invalid")
-    except HTTPException:
-        raise
+        rds.set(key, "queued", ex=3600)
     except Exception:
-        rds.delete(key)
-        raise HTTPException(400, "signature_invalid")
+        pass
 
-    # ставим задачу в Celery
+    # upsert в БД запись MetaTxRequest (для внутренних дедупов и мониторинга)
+    try:
+        rid = uuid.UUID(str(req.request_id))
+    except Exception:
+        raise HTTPException(400, "bad_request_id")
+    try:
+        m = db.get(MetaTxRequest, rid)
+        if m is None:
+            m = MetaTxRequest(request_id=rid, type="forward", status="queued")
+            db.add(m)
+        else:
+            if m.status not in ("sent", "mined"):
+                m.status = "queued"
+                db.add(m)
+        db.commit()
+    except Exception:
+        db.rollback()
+        # не критично для постановки задачи
+
+    # ставим задачу в Celery (дедупликация и сериализация произойдут в самой задаче)
     task_id = enqueue_forward_request(req.request_id, req.typed_data, req.signature)
+
+    # опциональный DEV path: выполнить синхронно (без воркера)
+    if os.getenv("RELAYER_SYNC_DEV", "0") == "1":
+        try:
+            result = _submit_forward_task.apply(args=[req.request_id, req.typed_data, req.signature]).get(timeout=60)
+            response.status_code = 200
+            return {"status": "executed", "task_id": task_id, "result": result}
+        except Exception as e:
+            response.status_code = 202
+            return {"status": "queued", "task_id": task_id, "error": str(e)}
 
     # 202 — принято в обработку
     response.status_code = 202

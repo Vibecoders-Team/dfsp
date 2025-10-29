@@ -3,6 +3,7 @@ import os
 import time
 import secrets
 from typing import Callable
+import hashlib
 
 import pytest
 import httpx
@@ -178,3 +179,35 @@ def is_hex_bytes32(s: str) -> bool:
         return False
     # 0x + 32 байта * 2 символа/байт = 66 символов
     return len(s) == 66 and all(c in "0123456789abcdefABCDEF" for c in s[2:])
+
+def _solve_pow(challenge: str, difficulty: int) -> str:
+    """Решает PoW-задачу и возвращает nonce в виде строки."""
+    prefix = '0' * ((difficulty + 3) // 4)
+    nonce = 0
+    while True:
+        h = hashlib.sha256(f"{challenge}{nonce}".encode()).hexdigest()
+        if h.startswith(prefix):
+            return str(nonce)
+        nonce += 1
+
+@pytest.fixture
+def pow_header_factory(client: httpx.Client) -> Callable[[], dict]:
+    """
+    Фикстура, которая возвращает ФАБРИКУ (функцию) для генерации PoW-заголовков.
+    Эту фабрику можно вызывать много раз внутри одного теста.
+    """
+    def _generate() -> dict:
+        # 1. Получаем челлендж
+        r = client.post("/pow/challenge")
+        assert r.status_code == 200, "Failed to get PoW challenge"
+        challenge_data = r.json()
+        challenge = challenge_data["challenge"]
+        difficulty = challenge_data["difficulty"]
+
+        # 2. Решаем его
+        nonce = _solve_pow(challenge, difficulty)
+
+        # 3. Возвращаем готовый заголовок
+        return {"X-PoW-Token": f"{challenge}.{nonce}"}
+
+    return _generate

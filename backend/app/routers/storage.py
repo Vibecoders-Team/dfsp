@@ -1,22 +1,27 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from typing import Any
 from typing import Literal
 
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
-from pydantic import BaseModel
-from pydantic import ConfigDict  # pydantic v2
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
 from web3 import Web3
 
 from app.blockchain.web3_client import Chain
-from app.deps import get_chain, get_ipfs
+
+# --- ИЗМЕНЕНИЯ ЗДЕСЬ (Импорты) ---
+from app.deps import get_chain, get_ipfs, get_db
 from app.ipfs.client import IpfsClient
-from app.models import User
+
+# --- ИЗМЕНЕНИЯ ЗДЕСЬ (Импорты) ---
+from app.models import User, File as FileModel
 from app.security import get_current_user  # guard
 
 router = APIRouter(prefix="/storage", tags=["storage"])
+log = logging.getLogger(__name__)
 
 
 class StoreOut(BaseModel):
@@ -28,12 +33,13 @@ class StoreOut(BaseModel):
 
 @router.post("/store", response_model=StoreOut)
 async def store_file(
-        file: UploadFile = File(...),
-        # опционально фиксируем id (bytes32, hex) — чтобы заюзать updateCid
-        id_hex: str | None = Form(None),
-        chain: Chain = Depends(get_chain),
-        ipfs: IpfsClient = Depends(get_ipfs),
-        user: User = Depends(get_current_user),
+    file: UploadFile = File(...),
+    id_hex: str | None = Form(None),
+    chain: Chain = Depends(get_chain),
+    ipfs: IpfsClient = Depends(get_ipfs),
+    # --- ИЗМЕНЕНИЯ ЗДЕСЬ (Зависимость) ---
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     MAX_BYTES = 200 * 1024 * 1024  # 200MB
     data = await file.read()
@@ -44,24 +50,63 @@ async def store_file(
 
     cid = ipfs.add_bytes(data, filename=file.filename or "blob")
 
-    # если id_hex задан — проверяем и используем его; иначе считаем sha256(data)
     if id_hex:
         s = id_hex.lower()
-        if s.startswith("0x"): s = s[2:]
+        if s.startswith("0x"):
+            s = s[2:]
         if len(s) != 64:
             raise HTTPException(400, "bad_id")
         item_id = bytes.fromhex(s)
     else:
-        item_id = hashlib.sha256(memoryview(data)).digest() # type: ignore[arg-type]
+        item_id = hashlib.sha256(memoryview(data)).digest()
 
-    size = len(data)  # ← размер
+    size = len(data)
     checksum32 = Web3.keccak(data)
     mime = file.content_type or ""
 
     try:
-        tx_hash = chain.register_or_update(item_id, cid, checksum32=checksum32, size=size, mime=mime)
+        tx_hash = chain.register_or_update(
+            item_id, cid, checksum32=checksum32, size=size, mime=mime
+        )
     except Exception as e:
+        log.error(f"Chain transaction failed: {e}", exc_info=True)
         raise HTTPException(502, f"chain_error: {e}")
+
+    try:
+        # Проверяем, существует ли уже запись, чтобы обновить ее (логика update)
+        db_file = db.get(FileModel, item_id)
+        if db_file:
+            # Если файл существует, обновляем его поля
+            db_file.cid = cid
+            db_file.checksum = checksum32
+            db_file.size = size
+            db_file.mime = mime
+            db_file.name = file.filename or "untitled"
+        else:
+            # Если файла нет, создаем новую запись (логика register)
+            db_file = FileModel(
+                id=item_id,
+                owner_id=user.id,
+                name=file.filename or "untitled",
+                size=size,
+                mime=mime,
+                cid=cid,
+                checksum=checksum32,
+            )
+            db.add(db_file)
+
+        db.commit()
+
+    except Exception as e:
+        db.rollback()
+        # Это критическая ошибка: данные есть в блокчейне, но не в нашей БД.
+        # В продакшене здесь нужен алертинг.
+        log.critical(
+            f"DATABASE FAILED after successful chain transaction {tx_hash}: {e}", exc_info=True
+        )
+        # Мы все равно возвращаем успех, так как on-chain операция прошла,
+        # но это состояние рассинхронизации нужно будет исправить вручную или фоновым воркером.
+        pass
 
     return StoreOut(
         id_hex="0x" + item_id.hex(),
@@ -71,6 +116,7 @@ async def store_file(
     )
 
 
+# ... (остальная часть файла остается без изменений)
 class ResolveOut(BaseModel):
     cid: str
     url: str
@@ -153,14 +199,16 @@ def versions(id_hex: str, chain: Chain = Depends(get_chain)):
         elif isinstance(checksum, int):
             checksum = f"{checksum:064x}"
 
-        items.append(VersionItem(
-            owner=v.get("owner"),
-            cid=v.get("cid"),
-            checksum=checksum,
-            size=int(v.get("size") or 0),
-            mime=v.get("mime"),
-            createdAt=int(v.get("createdAt") or 0),
-        ))
+        items.append(
+            VersionItem(
+                owner=v.get("owner"),
+                cid=v.get("cid"),
+                checksum=checksum,
+                size=int(v.get("size") or 0),
+                mime=v.get("mime"),
+                createdAt=int(v.get("createdAt") or 0),
+            )
+        )
 
     return VersionsOut(versions=items)
 
@@ -184,14 +232,14 @@ class HistoryOut(BaseModel):
 
 @router.get("/history/{id_hex}", response_model=HistoryOut)
 def history(
-        id_hex: str,
-        owner: str | None = None,
-        event_type: Literal["FileRegistered", "FileVersioned"] | None = None,
-        from_block: int | None = None,
-        to_block: int | None = None,
-        order: Literal["asc", "desc"] = "asc",
-        limit: int = 100,
-        chain: Chain = Depends(get_chain),
+    id_hex: str,
+    owner: str | None = None,
+    event_type: Literal["FileRegistered", "FileVersioned"] | None = None,
+    from_block: int | None = None,
+    to_block: int | None = None,
+    order: Literal["asc", "desc"] = "asc",
+    limit: int = 100,
+    chain: Chain = Depends(get_chain),
 ):
     if not (isinstance(id_hex, str) and id_hex.startswith("0x") and len(id_hex) == 66):
         raise HTTPException(400, "bad_id")

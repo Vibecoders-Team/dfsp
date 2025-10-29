@@ -22,6 +22,10 @@ SessionLocal = sessionmaker(engine, autoflush=False, autocommit=False, future=Tr
 
 rds = redis.from_url(settings.redis_dsn, decode_responses=True)
 
+def get_redis() -> redis.Redis:
+    """Dependency to get the Redis client instance."""
+    return rds
+
 
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()

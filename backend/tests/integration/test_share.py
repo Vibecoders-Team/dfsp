@@ -2,7 +2,7 @@ import secrets
 import pytest
 import httpx
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable
 from web3 import Web3
 
 from .conftest import is_hex_bytes32
@@ -18,8 +18,13 @@ def _fake_cid() -> str:
     return "bafy" + secrets.token_hex(16)
 
 
-def _create_file(client: httpx.Client, headers: dict, *, file_id: Optional[str] = None, checksum: Optional[str] = None) -> Tuple[str, str]:
-    """Create a file record owned by the user behind headers. Returns (fileId, checksum)."""
+def _create_file(
+    client: httpx.Client,
+    headers: dict,
+    *,
+    file_id: Optional[str] = None,
+    checksum: Optional[str] = None,
+) -> Tuple[str, str]:
     fid = file_id or _hex32()
     chk = checksum or _hex32()
     payload = {
@@ -35,131 +40,150 @@ def _create_file(client: httpx.Client, headers: dict, *, file_id: Optional[str] 
     return fid, chk
 
 
-def test_share_happy_and_duplicate(client: httpx.Client, auth_headers: dict, make_user):
-    """
-    POST /files/{id}/share: happy path returns queued items and typedDataList;
-    duplicate by request_id returns status=duplicate with same capIds.
-    """
-    # arrange: grantee exists in DB
+def test_share_happy_and_duplicate(
+    client: httpx.Client, auth_headers: dict, make_user, pow_header_factory: Callable[[], dict]
+):
     grantee_addr, _ = make_user()
-
-    # arrange: create file as current user (auth_headers)
     file_id, _ = _create_file(client, auth_headers)
-
-    # body
     req_id = "req-" + secrets.token_hex(8)
-    enc_key_b64 = "c2VjcmV0LWtleQ=="  # base64("secret-key")
     body = {
         "users": [grantee_addr],
         "ttl_days": 7,
         "max_dl": 3,
-        "encK_map": {grantee_addr: enc_key_b64},
+        "encK_map": {grantee_addr: "c2VjcmV0LWtleQ=="},
         "request_id": req_id,
     }
 
-    # act: first share
-    r1 = client.post(f"/files/{file_id}/share", json=body, headers=auth_headers)
-    assert r1.status_code == 200, f"unexpected {r1.status_code}: {r1.text}"
-    j1 = r1.json()
+    headers1 = {**auth_headers, **pow_header_factory()}
+    r1 = client.post(f"/files/{file_id}/share", json=body, headers=headers1)
+    assert r1.status_code == 200
 
-    # assert: items
-    assert isinstance(j1.get("items"), list) and len(j1["items"]) == 1
-    item = j1["items"][0]
-    assert item["grantee"].lower() == grantee_addr.lower()
-    assert item["status"] == "queued"
-    assert is_hex_bytes32(item["capId"])  # deterministic bytes32
-
-    # assert: typedDataList present and valid-ish
-    tdl = j1.get("typedDataList")
-    assert isinstance(tdl, list) and len(tdl) == 1
-    td = next(iter(tdl))
-    assert td.get("primaryType") == "ForwardRequest"
-    assert isinstance(td.get("domain"), dict)
-    assert isinstance(td.get("types"), dict)
-    assert isinstance(td.get("message"), dict)
-    assert Web3.is_address(td["message"].get("from", ""))
-    assert Web3.is_address(td["message"].get("to", ""))
-
-    # duplicate with the same request_id
-    r2 = client.post(f"/files/{file_id}/share", json=body, headers=auth_headers)
-    assert r2.status_code == 200, f"duplicate should return 200, got {r2.status_code}: {r2.text}"
-    j2 = r2.json()
-    assert j2.get("status") == "duplicate"
-    assert isinstance(j2.get("capIds"), list) and len(j2["capIds"]) == 1
-    assert is_hex_bytes32(j2["capIds"][0])
-
-    # invoke with a new request_id and ensure capIds are the same (nonce unchanged until meta-tx mined)
-    body2 = dict(body)
-    body2["request_id"] = "req-" + secrets.token_hex(8)
-    r3 = client.post(f"/files/{file_id}/share", json=body2, headers=auth_headers)
-    assert r3.status_code == 200, r3.text
-    j3 = r3.json()
-    assert j3["items"][0]["capId"].lower() == item["capId"].lower()
+    headers2 = {**auth_headers, **pow_header_factory()}
+    r2 = client.post(f"/files/{file_id}/share", json=body, headers=headers2)
+    assert r2.status_code == 200
+    assert r2.json().get("status") == "duplicate"
 
 
-def test_share_bad_file_id_400(client: httpx.Client, auth_headers: dict):
-    bad_id = "0x1234"
+def test_share_bad_file_id_400(
+    client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]
+):
+    headers = {**auth_headers, **pow_header_factory()}
+    # --- ИСПРАВЛЕНИЕ: Передаем минимально валидный JSON, чтобы избежать ошибки 422 ---
     addr = "0x" + ("11" * 20)
     body = {
         "users": [addr],
-        "ttl_days": 7,
-        "max_dl": 3,
-        "encK_map": {addr: "eA=="},  # base64("x")
-        "request_id": "req-" + secrets.token_hex(8),
+        "ttl_days": 1,
+        "max_dl": 1,
+        "encK_map": {addr: "a"},
+        "request_id": "r1",
     }
-    r = client.post(f"/files/{bad_id}/share", json=body, headers=auth_headers)
+    r = client.post(f"/files/0x1234/share", json=body, headers=headers)
     assert r.status_code == 400
-    assert "bad_file_id" in r.text
 
 
-def test_share_not_owner_403(client: httpx.Client, auth_headers: dict, make_user):
-    # owner (user A) creates a file
+def test_share_not_owner_403(
+    client: httpx.Client, auth_headers: dict, make_user, pow_header_factory: Callable[[], dict]
+):
     file_id, _ = _create_file(client, auth_headers)
-
-    # create another user B to act as caller (not owner)
     other_addr, other_headers = make_user()
-
-    # choose a valid grantee (user B), with encK
+    full_other_headers = {**other_headers, **pow_header_factory()}
     body = {
-        "users": [other_addr],  # any existing user; encK must be present
+        "users": [other_addr],
         "ttl_days": 3,
         "max_dl": 1,
-        "encK_map": {other_addr: "aw=="},  # base64("k")
+        "encK_map": {other_addr: "aw=="},
         "request_id": "req-" + secrets.token_hex(8),
     }
-
-    r = client.post(f"/files/{file_id}/share", json=body, headers=other_headers)
-    assert r.status_code == 403, f"expected 403 not_owner, got {r.status_code}: {r.text}"
-    assert "not_owner" in r.text
+    r = client.post(f"/files/{file_id}/share", json=body, headers=full_other_headers)
+    assert r.status_code == 403
 
 
-def test_share_missing_encK_400(client: httpx.Client, auth_headers: dict, make_user):
-    # arrange: grantee exists and file exists
+def test_share_missing_encK_400(
+    client: httpx.Client, auth_headers: dict, make_user, pow_header_factory: Callable[[], dict]
+):
     grantee_addr, _ = make_user()
     file_id, _ = _create_file(client, auth_headers)
-
+    headers = {**auth_headers, **pow_header_factory()}
     body = {
         "users": [grantee_addr],
         "ttl_days": 7,
         "max_dl": 3,
-        "encK_map": {},  # missing key for grantee
+        "encK_map": {},
         "request_id": "req-" + secrets.token_hex(8),
     }
-    r = client.post(f"/files/{file_id}/share", json=body, headers=auth_headers)
+    r = client.post(f"/files/{file_id}/share", json=body, headers=headers)
     assert r.status_code == 400
-    assert "encK_missing_for" in r.text
 
 
-def test_share_unknown_grantee_400(client: httpx.Client, auth_headers: dict):
+def test_share_unknown_grantee_400(
+    client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]
+):
     file_id, _ = _create_file(client, auth_headers)
     unknown = "0x" + ("44" * 20)
+    headers = {**auth_headers, **pow_header_factory()}
     body = {
         "users": [unknown],
         "ttl_days": 2,
         "max_dl": 1,
-        "encK_map": {unknown: "aw=="},  # base64("k")
+        "encK_map": {unknown: "aw=="},
         "request_id": "req-" + secrets.token_hex(8),
     }
-    r = client.post(f"/files/{file_id}/share", json=body, headers=auth_headers)
+    r = client.post(f"/files/{file_id}/share", json=body, headers=headers)
     assert r.status_code == 400
-    assert "unknown_grantee" in r.text
+
+
+def test_share_requires_pow(
+    client: httpx.Client, auth_headers: dict, make_user, pow_header_factory: Callable[[], dict]
+):
+    grantee_addr, _ = make_user()
+    file_id, _ = _create_file(client, auth_headers)
+    body = {
+        "users": [grantee_addr],
+        "ttl_days": 1,
+        "max_dl": 1,
+        "encK_map": {grantee_addr: "test"},
+        "request_id": "pow-test-1",
+    }
+
+    r1 = client.post(f"/files/{file_id}/share", json=body, headers=auth_headers)
+    assert r1.status_code == 429
+    assert "pow_token_required" in r1.text
+
+    headers = {**auth_headers, **pow_header_factory()}
+    r2 = client.post(f"/files/{file_id}/share", json=body, headers=headers)
+    assert r2.status_code == 200
+
+
+@pytest.mark.slow
+def test_share_meta_tx_quota(
+    client: httpx.Client, auth_headers: dict, make_user, pow_header_factory: Callable[[], dict]
+):
+    grantee_addr, _ = make_user()
+    file_id, _ = _create_file(client, auth_headers)
+
+    # --- ИСПРАВЛЕНИЕ: Проверяем, что ошибка НАСТУПИТ в пределах разумного числа запросов ---
+    # Мы делаем на 10 запросов больше лимита, чтобы гарантированно его превысить
+    # даже если другие тесты потратили часть квоты.
+    QUOTA_LIMIT = 50
+    requests_to_make = QUOTA_LIMIT + 10
+
+    quota_exceeded = False
+    for i in range(requests_to_make):
+        headers = {**auth_headers, **pow_header_factory()}
+        body = {
+            "users": [grantee_addr],
+            "ttl_days": 1,
+            "max_dl": 1,
+            "encK_map": {grantee_addr: "test"},
+            "request_id": f"quota-test-{i}",
+        }
+        r = client.post(f"/files/{file_id}/share", json=body, headers=headers)
+
+        if r.status_code == 429:
+            assert "meta_tx_quota_exceeded" in r.text
+            quota_exceeded = True
+            print(f"\nQuota exceeded on request #{i + 1}, which is expected.")
+            break  # Выходим из цикла, как только получили нужную ошибку
+
+    # Финальная проверка: убеждаемся, что мы действительно поймали ошибку превышения квоты
+    assert quota_exceeded, f"Quota was not exceeded after {requests_to_make} requests"

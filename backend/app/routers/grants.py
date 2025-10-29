@@ -62,43 +62,92 @@ def revoke_grant(
     if grant.grantor_id != user.id:
         raise HTTPException(403, "not_grantor")
 
-    # If already revoked (db cache), noop
-    if grant.revoked_at is not None or (grant.status or "") == "revoked":
-        return {"status": "noop"}
-
-    # Idempotency by deterministic request_id per (capId, grantor)
+    # Deterministic request_id for idempotency
     req_name = f"revoke:{cap_id}:{user.id}"
     req_uuid = uuid.uuid5(uuid.NAMESPACE_URL, req_name)
 
-    # If already enqueued (redis or DB), return noop
-    if rds.get(f"mtx:req:{req_uuid}"):
-        return {"status": "noop"}
-    if db.get(MetaTxRequest, req_uuid) is not None:
-        return {"status": "noop"}
-
-    # Mark idempotency and persist DB record
-    rds.set(f"mtx:req:{req_uuid}", "queued", ex=3600, nx=True)
-    db.add(MetaTxRequest(request_id=req_uuid, type="revoke", status="queued"))
-    try:
-        db.commit()
-    except Exception:
-        db.rollback()
-        # even if commit failed, fall through to try enqueue to avoid breaking API
-
-    # Build typed data and enqueue (best-effort); signature will be provided by client in real flow
-    task_id = None
+    # Build typed data for revoke; return to client for signing
     try:
         ac = chain.get_access_control()
-        addr = getattr(ac, "address", None)
-        to_addr = Web3.to_checksum_address(addr) if isinstance(addr, str) else Web3.to_checksum_address(
-            "0x" + "00" * 20)
+        to_addr = getattr(ac, "address", None) or Web3.to_checksum_address("0x" + "00" * 20)
         call_data = chain.encode_revoke_call(cap_b)
         typed = chain.build_forward_typed_data(from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000)
-        task_id = enqueue_forward_request(str(req_uuid), typed, "0x")
-    except Exception:
-        # swallow: optimistic queueing should not block API semantics
-        task_id = None
+    except Exception as e:
+        raise HTTPException(502, f"chain_unavailable: {e}")
 
-    # 202 Accepted with task_id when we attempted to queue
-    response.status_code = 202
-    return {"status": "queued", "task_id": task_id}
+    response.status_code = 200
+    return {"status": "prepared", "requestId": str(req_uuid), "typedData": typed}
+
+
+@router.get("/{cap_id}")
+def get_grant_status(
+        cap_id: str,
+        user: User = Depends(require_user),
+        db: Session = Depends(get_db),
+        chain=Depends(get_chain),
+):
+    if not (isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66):
+        raise HTTPException(400, "bad_cap_id")
+    try:
+        cap_b = Web3.to_bytes(hexstr=cast(HexStr, cap_id))
+    except Exception:
+        raise HTTPException(400, "bad_cap_id")
+
+    grant: Optional[Grant] = db.scalar(select(Grant).where(Grant.cap_id == cap_b))
+    if grant is None:
+        raise HTTPException(404, "grant_not_found")
+
+    # allow only grantor or grantee to view
+    if grant.grantor_id != user.id and grant.grantee_id != user.id:
+        raise HTTPException(403, "forbidden")
+
+    # Build status (prefer on-chain if available)
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+
+    status = (grant.status or "pending").lower()
+    used = int(grant.used or 0)
+    max_dl = int(grant.max_dl)
+    expires_at_iso = grant.expires_at.isoformat()
+
+    try:
+        ac = chain.get_access_control()
+        g = ac.functions.grants(cap_b).call()
+        on_grantor = Web3.to_checksum_address(g[0]) if g and len(g) >= 1 else None
+        on_grantee = Web3.to_checksum_address(g[1]) if g and len(g) >= 2 else None
+        on_expires_at = int(g[3]) if g and len(g) >= 4 else 0
+        on_max = int(g[4]) if g and len(g) >= 5 else 0
+        on_used = int(g[5]) if g and len(g) >= 6 else 0
+        on_revoked = bool(g[7]) if g and len(g) >= 8 else False
+        # if not created (createdAt == 0), treat as pending
+        if g and len(g) >= 7 and int(g[6]) == 0:
+            status = "pending"
+        else:
+            used = on_used
+            max_dl = on_max
+            expires_at_iso = datetime.fromtimestamp(on_expires_at, tz=timezone.utc).isoformat() if on_expires_at else expires_at_iso
+            if on_revoked:
+                status = "revoked"
+            elif now.timestamp() > on_expires_at and on_expires_at:
+                status = "expired"
+            elif on_used >= on_max and on_max:
+                status = "exhausted"
+            else:
+                status = "confirmed"
+    except Exception:
+        # fallback: use DB-derived status
+        if grant.revoked_at is not None:
+            status = "revoked"
+        elif now > grant.expires_at:
+            status = "expired"
+        elif int(grant.used or 0) >= int(grant.max_dl or 0):
+            status = "exhausted"
+
+    return {
+        "capId": cap_id,
+        "grantee": None,
+        "maxDownloads": max_dl,
+        "usedDownloads": used,
+        "status": status,
+        "expiresAt": expires_at_iso,
+    }
