@@ -1,10 +1,12 @@
-import axios, {
-    AxiosHeaders,
-    isAxiosError,
-    type InternalAxiosRequestConfig,
-} from "axios";
+import axios, { InternalAxiosRequestConfig, isAxiosError, AxiosHeaders } from "axios";
 import type {TypedDataDomain, TypedDataField} from "ethers";
 import type {LoginMessage} from "./keychain";
+import { ensureEOA, ensureRSA } from "./keychain";
+import { findKey } from "./pubkeys";
+import { saveKey } from "./pubkeys";
+
+
+// export const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE });
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 export const ACCESS_TOKEN_KEY = "ACCESS_TOKEN";
@@ -110,8 +112,14 @@ export type LoginPayload = {
     typed_data: TypedLoginData;
     signature: string;
 };
+export type ForwardTyped = {
+  domain: any;
+  types: Record<string, TypedDataField[]>;
+  primaryType: string;
+  message: any;
+};
 
-/** ---- API calls ---- */
+// /** ---- API calls ---- */
 export async function fetchHealth() {
     const {data} = await api.get<HealthOut>("/health");
     return data;
@@ -158,4 +166,140 @@ export async function fetchVersions(idHex: string) {
 export async function fetchHistory(idHex: string, params?: HistoryParams) {
     const {data} = await api.get<HistoryOut>(`/storage/history/${idHex}`, {params});
     return data;
+}
+
+// === Share & Grants API ===
+
+export type Grant = {
+  grantee: string;
+  capId: string;
+  maxDownloads: number;
+  usedDownloads: number;
+  expiresAt: string; // ISO
+  status: "queued" | "pending" | "confirmed" | "revoked" | "expired" | "exhausted";
+};
+
+export type SharePayload = {
+  users: string[];
+  ttl_days: number;
+  max_dl: number;
+  encK_map: Record<string, string>;
+  request_id: string;
+};
+
+export type ShareItem = { grantee: string; capId: string; status: Grant["status"] };
+export type ShareOutResp = { items: ShareItem[]; typedDataList?: any[] };
+
+export async function fetchGranteePubKey(addr: string): Promise<string> {
+  const a = addr.trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(a)) throw new Error("Invalid address format");
+
+  // self-share: мой адрес -> локальный PEM из IndexedDB
+  const me = (await ensureEOA()).address;
+  if (a.toLowerCase() === me.toLowerCase()) {
+    const { publicPem } = await ensureRSA();
+    return publicPem;
+  }
+
+  // чужой адрес -> ищем в локальном каталоге
+  const pem = findKey(a);
+  if (pem) return pem;
+
+  // нет локально — пытаемся получить с бэка и закешировать
+  try {
+    const { data } = await api.get<{ address: string; rsa_public: string; display_name?: string }>(`/users/${a}/pubkey`);
+    if (data?.rsa_public) {
+      saveKey(a, data.rsa_public);
+      return data.rsa_public;
+    }
+  } catch (e) {
+    // если 404 — оставим как PUBLIC_PEM_NOT_FOUND; остальные ошибки прокинем наружу
+    if (isAxiosError(e) && e.response?.status === 404) {
+      // fall-through
+    } else {
+      throw e;
+    }
+  }
+
+  // источника нет — дальше перехватим в UI и предложим импорт
+  throw new Error("PUBLIC_PEM_NOT_FOUND");
+}
+
+export async function listGrants(fileId: string): Promise<Grant[]> {
+  try {
+    const { data } = await api.get<{ items: Grant[] }>(`/files/${fileId}/grants`);
+    return data.items;
+  } catch (e: unknown) {
+    if (isAxiosError(e)) {
+      if (e.response?.status === 404) return [];
+    }
+    throw e;
+  }
+}
+
+export async function shareFile(
+  fileId: string,
+  payload: SharePayload,
+  powHeader?: string
+): Promise<ShareOutResp> {
+  const { data } = await api.post<ShareOutResp>(
+    `/files/${fileId}/share`,
+    payload,
+    { headers: powHeader ? { "X-PoW-Token": powHeader } : undefined }
+  );
+  return data;
+}
+
+export async function revokeGrant(capId: string): Promise<void> {
+  await api.post(`/grants/${capId}/revoke`, {});
+}
+
+// === Download (by capId) ===
+
+export type DownloadOut = { encK: string; ipfsPath: string; requestId?: string; typedData?: ForwardTyped };
+
+export async function fetchDownload(capId: string, powHeader?: string): Promise<DownloadOut> {
+  const { data } = await api.get<DownloadOut>(`/download/${capId}`, {
+    headers: powHeader ? { "X-PoW-Token": powHeader } : undefined,
+  });
+  return data;
+}
+
+// === Meta-tx submit ===
+export async function submitMetaTx(requestId: string, typedData: any, signature: string): Promise<{ status: string; task_id?: string }>{
+  const { data } = await api.post<{ status: string; task_id?: string }>(`/meta-tx/submit`, {
+    request_id: requestId,
+    typed_data: typedData,
+    signature,
+  });
+  return data;
+}
+
+// === Revoke prepare (returns typedData) ===
+export async function prepareRevoke(capId: string): Promise<{ status: string; requestId: string; typedData: ForwardTyped }>{
+  const { data } = await api.post<{ status: string; requestId: string; typedData: ForwardTyped }>(`/grants/${capId}/revoke`, {});
+  return data;
+}
+
+// === PoW Challenge ===
+export type PowChallenge = { challenge: string; difficulty: number; ttl: number };
+
+export async function requestPowChallenge(): Promise<PowChallenge> {
+  const { data } = await api.post<PowChallenge>("/pow/challenge");
+  return data;
+}
+
+// === Grant status polling ===
+export type GrantStatus = {
+  capId: string;
+  grantee?: string;
+  maxDownloads: number;
+  usedDownloads: number;
+  status: "queued" | "pending" | "confirmed" | "revoked" | "expired" | "exhausted";
+  expiresAt?: string;
+};
+
+export async function fetchGrantByCapId(capId: string): Promise<GrantStatus> {
+  const { data } = await api.get<GrantStatus>(`/grants/${capId}`);
+  return data;
 }
