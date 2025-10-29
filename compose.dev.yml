@@ -31,16 +31,16 @@ services:
     volumes:
       - web_app:/app
       - web_pnpm_store:/pnpm-store
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-      - ./frontend/package.json:/app/package.json
-      - ./frontend/pnpm-lock.yaml:/app/pnpm-lock.yaml
-      - ./frontend/index.html:/app/index.html
+      - ./frontend_new/src:/app/src
+      - ./frontend_new/public:/app/public
+      - ./frontend_new/package.json:/app/package.json
+      - ./frontend_new/pnpm-lock.yaml:/app/pnpm-lock.yaml
+      - ./frontend_new/index.html:/app/index.html
       # если у тебя конфиг Vite называется vite.config.ts — раскомментируй строку ниже
-      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend_new/vite.config.ts:/app/vite.config.ts
       # если конфиг eslint/prettier нужен внутри контейнера — добавь аналогично:
-      - ./frontend/.eslintrc.cjs:/app/.eslintrc.cjs
-      - ./frontend/eslint.config.js:/app/eslint.config.js
+      - ./frontend_new/.eslintrc.cjs:/app/.eslintrc.cjs
+      - ./frontend_new/eslint.config.js:/app/eslint.config.js
     depends_on:
       api:
         condition: service_started
@@ -128,6 +128,33 @@ services:
         condition: service_completed_successfully
       ipfs:
         condition: service_healthy
+
+  celery-worker:
+    extends:
+      file: ./backend/docker/compose.backend.yml
+      service: celery-worker
+    <<: *env_files
+    networks: [ dfsp ]
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+      - ./backend/alembic.ini:/app/alembic.ini
+      - ./backend/tests:/app/tests
+      - shared:/app/shared
+    environment:
+      CHAIN_RPC_URL: "${CHAIN_RPC_URL:-http://chain:8545}"
+      CHAIN_ID: "${CHAIN_ID:-31337}"
+      CONTRACTS_DEPLOYMENT_JSON: "${CONTRACTS_DEPLOYMENT_JSON:-/app/shared/deployment.localhost.json}"
+      REGISTRY_CONTRACT_NAME: "${REGISTRY_CONTRACT_NAME:-FileRegistry}"
+      RELAYER_PRIVATE_KEY: "${RELAYER_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+      RELAYER_HIGH_QUEUE: "${RELAYER_HIGH_QUEUE:-relayer.high}"
+      RELAYER_DEFAULT_QUEUE: "${RELAYER_DEFAULT_QUEUE:-relayer.default}"
+      RELAYER_SYNC_DEV: "${RELAYER_SYNC_DEV:-0}"
+    depends_on:
+      redis:
+        condition: service_healthy
+      contracts:
+        condition: service_completed_successfully
 
   # ---------------------- contracts: chain/contracts/ipfs ----------------------
   chain:

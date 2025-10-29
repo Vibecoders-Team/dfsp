@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import uuid
-from typing import Optional, cast
+from typing import Optional, cast, Literal
 
 from eth_typing import HexStr
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typing_extensions import Annotated
 from web3 import Web3
 
 from app.deps import get_db, get_chain, rds
-from app.models import Grant, User
+from app.models import Grant, User, File
 from app.models.meta_tx_requests import MetaTxRequest
 from app.security import parse_token
 from app.relayer import enqueue_forward_request
@@ -35,6 +35,96 @@ def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_d
     if user_obj is None:
         raise HTTPException(401, "user_not_found")
     return user_obj
+
+
+@router.get("")
+def list_my_grants(
+    role: Literal["received", "granted"] = Query("received"),
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+    chain=Depends(get_chain),
+):
+    """
+    Список грантов для текущего пользователя.
+    role=received — я получатель (grantee)
+    role=granted  — я выдавший (grantor)
+    Возвращает items: [{ fileId, capId, grantor, grantee, maxDownloads, usedDownloads, status, expiresAt, fileName? }]
+    """
+    if role == "received":
+        rows = db.execute(
+            select(Grant, File.name)
+            .join(File, File.id == Grant.file_id)
+            .where(Grant.grantee_id == user.id)
+            .order_by(Grant.created_at.desc())
+        ).all()
+    else:
+        rows = db.execute(
+            select(Grant, File.name)
+            .join(File, File.id == Grant.file_id)
+            .where(Grant.grantor_id == user.id)
+            .order_by(Grant.created_at.desc())
+        ).all()
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+
+    items = []
+    try:
+        ac = chain.get_access_control()
+    except Exception:
+        ac = None
+
+    for g, file_name in rows:
+        cap_hex = "0x" + bytes(g.cap_id).hex()
+        status = (g.status or "pending").lower()
+        used = int(g.used or 0)
+        max_dl = int(g.max_dl or 0)
+        expires_at_iso = g.expires_at.isoformat()
+
+        if ac is not None:
+            try:
+                gg = ac.functions.grants(bytes(g.cap_id)).call()
+                on_expires_at = int(gg[3]) if gg and len(gg) >= 4 else 0
+                on_max = int(gg[4]) if gg and len(gg) >= 5 else 0
+                on_used = int(gg[5]) if gg and len(gg) >= 6 else 0
+                on_revoked = bool(gg[7]) if gg and len(gg) >= 8 else False
+                if gg and len(gg) >= 7 and int(gg[6]) == 0:
+                    status = "pending"
+                else:
+                    used = on_used
+                    max_dl = on_max
+                    expires_at_iso = datetime.fromtimestamp(on_expires_at, tz=timezone.utc).isoformat() if on_expires_at else expires_at_iso
+                    if on_revoked:
+                        status = "revoked"
+                    elif now.timestamp() > on_expires_at and on_expires_at:
+                        status = "expired"
+                    elif on_used >= on_max and on_max:
+                        status = "exhausted"
+                    else:
+                        status = "confirmed"
+            except Exception:
+                pass
+        else:
+            if g.revoked_at is not None:
+                status = "revoked"
+            elif now > g.expires_at:
+                status = "expired"
+            elif int(g.used or 0) >= int(g.max_dl or 0):
+                status = "exhausted"
+
+        items.append({
+            "fileId": "0x" + bytes(g.file_id).hex(),
+            "capId": cap_hex,
+            "grantor": str(g.grantor_id),
+            "grantee": str(g.grantee_id),
+            "maxDownloads": max_dl,
+            "usedDownloads": used,
+            "status": status,
+            "expiresAt": expires_at_iso,
+            "fileName": file_name,
+        })
+
+    return {"items": items}
 
 
 @router.post("/{cap_id}/revoke")

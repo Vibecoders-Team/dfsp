@@ -19,7 +19,13 @@ app = FastAPI(title="DFSP API")
 
 app.add_middleware(
     CORSMiddleware,  # type: ignore[arg-type]
-    allow_origins=[settings.cors_origin or "http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5175", 
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:8000",
+    ] if not settings.cors_origin else [settings.cors_origin],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

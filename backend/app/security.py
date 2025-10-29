@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import jwt
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -14,7 +12,6 @@ from app.config import settings
 from app.deps import get_db
 from app.models import User
 
-JWT_SECRET = os.getenv("JWT_SECRET", "change_me")
 bearer = HTTPBearer(auto_error=True)
 
 
@@ -24,7 +21,7 @@ def get_current_user(
 ) -> User:
     token = creds.credentials
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except Exception:
         raise HTTPException(status_code=401, detail="invalid_token")
 

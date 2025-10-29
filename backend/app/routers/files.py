@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Optional, cast, Union
+from typing import Any, Optional, cast, Union, List
 from typing_extensions import Annotated
 from eth_typing import ChecksumAddress
 from web3.exceptions import ContractLogicError, BadFunctionCallOutput
@@ -23,8 +23,11 @@ import base64
 from datetime import datetime, timedelta, timezone
 from app.repos.user_repo import get_by_eth_address
 from sqlalchemy.exc import IntegrityError
+import logging
+from app.config import settings
 
 router = APIRouter(prefix="/files", tags=["files"])
+logger = logging.getLogger(__name__)
 
 AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 
@@ -44,6 +47,93 @@ def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_d
     if user_obj is None:
         raise HTTPException(401, "user_not_found")
     return user_obj
+
+
+# ---- NEW: Schema for file list response ----
+from pydantic import BaseModel
+
+class FileListItem(BaseModel):
+    id: str  # hex string
+    name: str
+    size: int
+    mime: str
+    cid: str
+    checksum: str  # hex string
+    created_at: str  # ISO timestamp
+
+    class Config:
+        from_attributes = True
+
+
+# ---- GET /files - List all files for current user ----
+@router.get("", response_model=List[FileListItem])
+def list_my_files(
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Возвращает список всех файлов текущего пользователя
+    """
+    # Extra diagnostics
+    try:
+        dsn = settings.postgres_dsn
+    except Exception:
+        dsn = "<unknown>"
+
+    # Count total files and per-user count for diagnostics
+    total_files = db.query(File).count()
+    user_files_q = select(File).where(File.owner_id == user.id).order_by(File.created_at.desc())
+    files = db.scalars(user_files_q).all()
+    per_user_count = len(files)
+
+    # Fallback: join on users.eth_address if nothing found (diagnostic/workaround)
+    if per_user_count == 0:
+        try:
+            fallback_q = (
+                select(File)
+                .join(User, File.owner_id == User.id)
+                .where(User.eth_address == user.eth_address.lower())
+                .order_by(File.created_at.desc())
+            )
+            fb_files = db.scalars(fallback_q).all()
+            if fb_files:
+                logger.warning(
+                    "list_my_files: fallback by eth_address found %d items for user=%s",
+                    len(fb_files), str(user.id)
+                )
+                files = fb_files
+                per_user_count = len(files)
+        except Exception as e:
+            logger.warning("list_my_files: fallback query failed: %s", e)
+
+    # Log owner_ids of a few recent files for visibility
+    try:
+        sample = db.execute(select(File.owner_id, File.id).order_by(File.created_at.desc()).limit(5)).all()
+        sample_str = ", ".join([f"(owner={row[0]}, id={row[1].hex()})" for row in sample])
+    except Exception:
+        sample_str = "<n/a>"
+
+    try:
+        logger.info(
+            "list_my_files: dsn=%s user=%s total_files=%d per_user=%d recent=%s",
+            dsn, str(user.id), total_files, per_user_count, sample_str
+        )
+    except Exception:
+        pass
+
+    result = []
+    for f in files:
+        result.append(FileListItem(
+            id="0x" + f.id.hex(),
+            name=f.name or "Unnamed",
+            size=f.size,
+            mime=f.mime or "application/octet-stream",
+            cid=f.cid or "",
+            checksum="0x" + f.checksum.hex(),
+            created_at=f.created_at.isoformat() if f.created_at else "",
+        ))
+
+    return result
 
 
 @router.post("", response_model=TypedDataOut)

@@ -11,13 +11,14 @@ from sqlalchemy.orm import Session
 from web3 import Web3
 
 from app.blockchain.web3_client import Chain
+from app.config import settings
 
 # --- ИЗМЕНЕНИЯ ЗДЕСЬ (Импорты) ---
 from app.deps import get_chain, get_ipfs, get_db
 from app.ipfs.client import IpfsClient
 
 # --- ИЗМЕНЕНИЯ ЗДЕСЬ (Импорты) ---
-from app.models import User, File as FileModel
+from app.models import User, File as FileModel, FileVersion
 from app.security import get_current_user  # guard
 
 router = APIRouter(prefix="/storage", tags=["storage"])
@@ -50,6 +51,7 @@ async def store_file(
 
     cid = ipfs.add_bytes(data, filename=file.filename or "blob")
 
+    # Compute initial item_id
     if id_hex:
         s = id_hex.lower()
         if s.startswith("0x"):
@@ -58,11 +60,39 @@ async def store_file(
             raise HTTPException(400, "bad_id")
         item_id = bytes.fromhex(s)
     else:
-        item_id = hashlib.sha256(memoryview(data)).digest()
+        item_id = hashlib.sha256(data).digest()
 
     size = len(data)
     checksum32 = Web3.keccak(data)
     mime = file.content_type or ""
+
+    # Log DSN for diagnosing cross-DB issues
+    try:
+        log.info("store_file: dsn=%s", settings.postgres_dsn)
+    except Exception:
+        pass
+
+    # If another owner already has this item_id, switch to a per-user id to avoid cross-user collision
+    try:
+        existing = db.get(FileModel, item_id)
+    except Exception:
+        existing = None
+    if existing is not None and existing.owner_id != user.id and id_hex is None:
+        # Derive a per-user deterministic id from user.id and checksum32
+        item_id = Web3.keccak(user.id.bytes + bytes(checksum32))
+        log.info(
+            "store_file: switching to per-user item_id=%s due to ownership collision (original owned by %s)",
+            item_id.hex(), str(existing.owner_id)
+        )
+
+    # Debug: log user and file identifiers before chain/db ops
+    try:
+        log.info(
+            "store_file: user_id=%s eth=%s filename=%s item_id=%s size=%d mime=%s",
+            str(user.id), user.eth_address, (file.filename or ""), item_id.hex(), size, mime,
+        )
+    except Exception:
+        pass
 
     try:
         tx_hash = chain.register_or_update(
@@ -82,6 +112,23 @@ async def store_file(
             db_file.size = size
             db_file.mime = mime
             db_file.name = file.filename or "untitled"
+
+            # Создаем новую версию
+            from sqlalchemy import select, func
+            latest_version = db.scalar(
+                select(func.max(FileVersion.version))
+                .where(FileVersion.file_id == item_id)
+            ) or 0
+
+            new_version = FileVersion(
+                file_id=item_id,
+                version=latest_version + 1,
+                cid=cid,
+                checksum=checksum32,
+                size=size,
+                mime=mime,
+            )
+            db.add(new_version)
         else:
             # Если файла нет, создаем новую запись (логика register)
             db_file = FileModel(
@@ -94,18 +141,32 @@ async def store_file(
                 checksum=checksum32,
             )
             db.add(db_file)
+            db.flush()  # Чтобы получить ID перед созданием версии
+
+            # Создаем первую версию
+            first_version = FileVersion(
+                file_id=item_id,
+                version=1,
+                cid=cid,
+                checksum=checksum32,
+                size=size,
+                mime=mime,
+            )
+            db.add(first_version)
 
         db.commit()
+        log.info(
+            "File %s saved to database successfully (owner_id=%s)",
+            item_id.hex(), str(user.id)
+        )
 
     except Exception as e:
         db.rollback()
         # Это критическая ошибка: данные есть в блокчейне, но не в нашей БД.
-        # В продакшене здесь нужен алертинг.
-        log.critical(
+        log.error(
             f"DATABASE FAILED after successful chain transaction {tx_hash}: {e}", exc_info=True
         )
-        # Мы все равно возвращаем успех, так как on-chain операция прошла,
-        # но это состояние рассинхронизации нужно будет исправить вручную или фоновым воркером.
+        # Продолжаем, так как on-chain операция прошла
         pass
 
     return StoreOut(
