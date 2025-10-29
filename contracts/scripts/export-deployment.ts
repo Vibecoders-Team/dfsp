@@ -3,20 +3,6 @@ import fs from "fs";
 import path from "path";
 import {artifacts} from "hardhat";
 
-async function readArtifactSafe(name: string) {
-    try {
-        return await artifacts.readArtifact(name);
-    } catch (e1) {
-        // Fallback to fully-qualified name under src/
-        const fqn = `src/${name}.sol:${name}`;
-        try {
-            return await artifacts.readArtifact(fqn);
-        } catch (e2) {
-            throw new Error(`Artifact for ${name} not found. Tried: '${name}', '${fqn}'.`);
-        }
-    }
-}
-
 async function main() {
     const configPath = process.env.CHAIN_CONFIG_PATH || "chain-config.json";
     const outPath = process.env.DEPLOY_OUT || "deployments/deployment.localhost.json";
@@ -30,8 +16,12 @@ async function main() {
 
     const contracts: Record<string, any> = {};
     for (const [name, address] of Object.entries(verifyingContracts)) {
-        const art = await readArtifactSafe(name);
-        contracts[name] = {address, abi: art.abi};
+        try {
+            const art = await artifacts.readArtifact(name);
+            contracts[name] = {address, abi: art.abi};
+        } catch (e) {
+            throw new Error(`Artifact for ${name} not found. Make sure contract name matches artifact name.`);
+        }
     }
 
     const out = {network: networkName, chainId, contracts};
