@@ -1,6 +1,8 @@
 {
   "name": "@dfsp/contracts",
   "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.10.0" },
   "scripts": {
     "clean": "hardhat clean",
     "build": "hardhat compile",
@@ -11,16 +13,20 @@
     "abi:export": "hardhat run scripts/export-abi.ts"
   },
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.0",
     "@types/node": "^20.19.19",
     "dotenv": "^16.4.5",
+    "eslint": "^9.38.0",
     "ethers": "^6.15.0",
-    "hardhat": "^2.26.3",
+    "hardhat": "^3.0.9",
     "rimraf": "^5.0.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^4.9.6"
+  },
+  "overrides": {
+    "glob": "^10"
   }
 }
