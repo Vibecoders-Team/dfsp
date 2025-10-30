@@ -1,0 +1,47 @@
+name: Lint Commit Messages
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  commitlint:
+    name: Validate Commit Messages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commit messages
+        run: |
+          echo "Checking commit messages for Conventional Commits format..."
+          
+          # Get commits in PR
+          COMMITS=$(git log --format=%H origin/${{ github.base_ref }}..HEAD)
+          FAILED=0
+          
+          for commit in $COMMITS; do
+            MSG=$(git log --format=%s -n 1 $commit)
+            
+            # Check format: type(scope): description OR type: description
+            if ! echo "$MSG" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: .+'; then
+              echo "❌ Invalid commit message format: $MSG"
+              echo "   Expected: type(scope): description"
+              echo "   Types: feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert"
+              FAILED=1
+            else
+              echo "✅ Valid: $MSG"
+            fi
+          done
+          
+          if [ $FAILED -ne 0 ]; then
+            echo ""
+            echo "❌ Some commit messages don't follow Conventional Commits"
+            echo "See meta/commit-message.md for guidelines"
+            exit 1
+          fi
+          
+          echo "✅ All commit messages are valid"
+

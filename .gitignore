@@ -32,8 +32,8 @@ dummy.py
 
 frontend/node_modules/
 
-contracts/node_modules/
 contracts/artifacts/
 contracts/artifacts-abi/
 contracts/cache/
-/contracts/typechain-types/
+contracts/typechain-types/
+meta
