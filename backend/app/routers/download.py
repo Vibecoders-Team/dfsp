@@ -12,15 +12,14 @@ from sqlalchemy.orm import Session
 from typing_extensions import Annotated
 from web3 import Web3
 
-from app.deps import get_db, get_chain, rds
+from app.deps import get_db, get_chain
 from app.models import Grant, User, File
-from app.models.meta_tx_requests import MetaTxRequest
 from app.security import parse_token
-from app.relayer import enqueue_forward_request
 
 # --- НОВЫЙ ИМПОРТ ---
 from app.quotas import protect_download, QuotaManager
 from app.services.event_logger import EventLogger
+from app.cache import Cache
 import logging
 
 router = APIRouter(prefix="/download", tags=["download"])
@@ -28,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 # ... (функция require_user остается без изменений)
 AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
+
+ZERO_ADDR = "0x0000000000000000000000000000000000000000"
 
 
 def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_db)) -> User:
@@ -68,11 +69,71 @@ def get_download_info(
         raise HTTPException(404, "grant_not_found")
     if grant.grantee_id != user.id:
         raise HTTPException(403, "not_grantee")
-    now = datetime.now(timezone.utc)
-    expired = False
-    revoked = False
-    exhausted = False
+
     file_id_bytes = grant.file_id
+    file_hex = "0x" + bytes(file_id_bytes).hex()
+    cache_key = f"can_dl:{user.id}:{file_hex}"
+
+    # Quick positive cache to avoid chain calls
+    cached = Cache.get_text(cache_key)
+    if cached == "1":
+        now = datetime.now(timezone.utc)
+        # DB-based checks only (fast path)
+        revoked = grant.revoked_at is not None or (grant.status == "revoked")
+        expired = now > grant.expires_at
+        exhausted = int(grant.used or 0) >= int(grant.max_dl or 0)
+        if revoked or expired or exhausted:
+            # Stale cache → recompute fully
+            cached = None
+        else:
+            # proceed using DB values; chain lookups skipped
+            cid = ""
+            try:
+                cid = chain.cid_of(file_id_bytes) or ""
+            except Exception:
+                pass
+            if not cid:
+                f: Optional[File] = db.get(File, file_id_bytes)
+                if f and f.cid:
+                    cid = f.cid
+            if not cid:
+                raise HTTPException(502, "registry_unavailable")
+            quota_manager.consume_download_bytes(file_id_bytes)
+            try:
+                file_obj: Optional[File] = db.get(File, file_id_bytes)
+                download_size = file_obj.size if file_obj else 0
+                event_logger = EventLogger(db)
+                event_logger.log_grant_used(
+                    cap_id=cap_b,
+                    file_id=file_id_bytes,
+                    user_id=user.id,
+                    download_size=download_size,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to log grant_used event: {e}")
+
+            enc_b64 = base64.b64encode(grant.enc_key).decode("ascii")
+            out = {"encK": enc_b64, "ipfsPath": f"/ipfs/{cid}"}
+            try:
+                ac = chain.get_access_control()
+                to_addr = getattr(ac, "address", None) or Web3.to_checksum_address(ZERO_ADDR)
+                call_data = chain.encode_use_once_call(cap_b)
+                typed = chain.build_forward_typed_data(
+                    from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000
+                )
+                import uuid as _uuid
+                req_name = f"useOnce:{cap_id}:{user.id}"
+                req_uuid = _uuid.uuid5(_uuid.NAMESPACE_URL, req_name)
+                out.update({"requestId": str(req_uuid), "typedData": typed})
+            except Exception:
+                pass
+            return out
+
+    # Full recompute path (or cache miss)
+    now = datetime.now(timezone.utc)
+    revoked = False
+    expired = False
+    exhausted = False
     try:
         ac = chain.get_access_control()
         g = ac.functions.grants(cap_b).call()
@@ -101,11 +162,17 @@ def get_download_info(
         file_id_bytes = grant.file_id
 
     if revoked:
+        Cache.set_text(cache_key, "0", ttl=10)
         raise HTTPException(403, "revoked")
     if expired:
+        Cache.set_text(cache_key, "0", ttl=10)
         raise HTTPException(403, "expired")
     if exhausted:
+        Cache.set_text(cache_key, "0", ttl=10)
         raise HTTPException(403, "exhausted")
+
+    # Allowed → set positive cache
+    Cache.set_text(cache_key, "1", ttl=10)
 
     cid = ""
     try:
@@ -129,7 +196,7 @@ def get_download_info(
     typed = None
     try:
         ac = chain.get_access_control()
-        to_addr = getattr(ac, "address", None) or Web3.to_checksum_address("0x" + "00" * 20)
+        to_addr = getattr(ac, "address", None) or Web3.to_checksum_address(ZERO_ADDR)
         call_data = chain.encode_use_once_call(cap_b)
         typed = chain.build_forward_typed_data(
             from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000
@@ -150,7 +217,6 @@ def get_download_info(
         )
     except Exception as e:
         logger.warning(f"Failed to log grant_used event: {e}")
-
 
     enc_b64 = base64.b64encode(grant.enc_key).decode("ascii")
     out = {"encK": enc_b64, "ipfsPath": f"/ipfs/{cid}"}

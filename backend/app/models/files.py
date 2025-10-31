@@ -17,6 +17,7 @@ class File(Base):
     __table_args__ = (
         UniqueConstraint("checksum", "owner_id", name="uq_files_checksum_owner"),
         Index("ix_files_owner", "owner_id"),
+        Index("ix_files_owner_created", "owner_id", "created_at"),
     )
 
     # PK = bytes32 (on-chain fileId)

@@ -3,10 +3,8 @@ from __future__ import annotations
 import uuid
 from typing import Any, Optional, cast, Union, List
 from typing_extensions import Annotated
-from eth_typing import ChecksumAddress
-from web3.exceptions import ContractLogicError, BadFunctionCallOutput
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from web3 import Web3
@@ -71,6 +69,8 @@ class FileListItem(BaseModel):
 def list_my_files(
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ):
     """
     Возвращает список всех файлов текущего пользователя
@@ -83,7 +83,13 @@ def list_my_files(
 
     # Count total files and per-user count for diagnostics
     total_files = db.query(File).count()
-    user_files_q = select(File).where(File.owner_id == user.id).order_by(File.created_at.desc())
+    user_files_q = (
+        select(File)
+        .where(File.owner_id == user.id)
+        .order_by(File.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     files = db.scalars(user_files_q).all()
     per_user_count = len(files)
 
@@ -142,16 +148,21 @@ def create_file(
         meta: FileCreateIn,
         user: User = Depends(require_user),
         db: Session = Depends(get_db),
-        chain=Depends(get_chain),
 ):
     # Schema validation already enforces fileId/checksum hex32, size<=200MB, mime whitelist, sanitized name
-    fid = Web3.to_bytes(hexstr=cast(HexStr, meta.fileId))
-    checksum = Web3.to_bytes(hexstr=cast(HexStr, meta.checksum))
+    try:
+        fid = Web3.to_bytes(hexstr=cast(HexStr, meta.fileId))
+    except Exception:
+        raise HTTPException(400, "bad_file_id")
+    try:
+        checksum = Web3.to_bytes(hexstr=cast(HexStr, meta.checksum))
+    except Exception:
+        raise HTTPException(400, "bad_checksum")
 
     # Denylist by checksum: Redis set + global DB uniqueness emulation
     try:
         if rds.sismember("denylist:checksum", meta.checksum):
-            raise HTTPException(409, "File with this checksum already exists")
+            raise HTTPException(409, "duplicate_checksum")
     except HTTPException:
         raise
     except Exception:
@@ -164,7 +175,7 @@ def create_file(
     # Global duplicate by checksum across all users
     dup_global = db.scalar(select(File.id).where(File.checksum == checksum))
     if dup_global:
-        raise HTTPException(409, "File with this checksum already exists")
+        raise HTTPException(409, "duplicate_checksum")
 
     file = File(
         id=fid,
@@ -201,34 +212,43 @@ def create_file(
         logger.warning(f"Failed to log file_registered event: {e}")
 
     db.commit()
-    fwd: object | None = None
+
+    # Try to build typed data via chain, fallback to placeholders if chain is unavailable
+    fwd = None
     fwd_addr: Optional[str] = None
+    chain_id_val: int = 31337
+    verifying_contract = "0x0000000000000000000000000000000000000000"
+    nonce_val: int = 0
     try:
+        chain = get_chain()
+        chain_id_val = int(getattr(chain, "chain_id", 31337))
         fwd = chain.contracts.get("MinimalForwarder")
         addr = getattr(fwd, "address", None) if fwd is not None else None
         if isinstance(addr, str):
-            fwd_addr = addr
-    except Exception:
-        fwd = None
-        fwd_addr = None
-    zero_addr: str = "0x" + "00" * 20
-    verifying_contract: str = fwd_addr or zero_addr
-    verifying_cs: ChecksumAddress = Web3.to_checksum_address(verifying_contract)
-    nonce_val: int = 0
-    try:
+            verifying_contract = Web3.to_checksum_address(addr)
+        else:
+            # try eip712Domain on forwarder
+            try:
+                verifying_contract = Web3.to_checksum_address(chain.get_forwarder().address)
+            except Exception:
+                verifying_contract = verifying_contract
         if fwd is not None:
             signer = Web3.to_checksum_address(user.eth_address)
-            nonce_raw = cast(Any, fwd).functions.getNonce(signer).call()
-            nonce_val = int(nonce_raw)
-    except (ContractLogicError, BadFunctionCallOutput, ValueError):
-        nonce_val = 0
+            try:
+                nonce_raw = cast(Any, fwd).functions.getNonce(signer).call()
+                nonce_val = int(nonce_raw)
+            except Exception:
+                nonce_val = 0
+    except Exception as e:
+        logger.warning("create_file: chain unavailable, using placeholders: %s", e)
+
     data_hex32 = meta.checksum
     typed_data = {
         "domain": {
             "name": "MinimalForwarder",
             "version": "0.0.1",
-            "chainId": int(chain.chain_id),
-            "verifyingContract": verifying_cs,
+            "chainId": chain_id_val,
+            "verifyingContract": verifying_contract,
         },
         "types": {
             "ForwardRequest": [
@@ -243,7 +263,7 @@ def create_file(
         "primaryType": "ForwardRequest",
         "message": {
             "from": Web3.to_checksum_address(user.eth_address),
-            "to": Web3.to_checksum_address(chain.address),
+            "to": Web3.to_checksum_address(verifying_contract) if verifying_contract != "0x0000000000000000000000000000000000000000" else Web3.to_checksum_address("0x0000000000000000000000000000000000000000"),
             "value": 0,
             "gas": 200_000,
             "nonce": nonce_val,
@@ -272,14 +292,31 @@ def share_file(
         raise HTTPException(403, "not_owner")
     import json as _json
     key = f"share:req:{body.request_id}"
-    existing = rds.get(key)
-    if isinstance(existing, str) and existing:
+
+    # Reserve idempotency key early to avoid races. If present, return duplicate.
+    try:
+        reserved = rds.set(key, "{}", ex=3600, nx=True)
+    except Exception:
+        reserved = True  # fail-open: proceed normally
+    if not reserved:
         try:
-            data = _json.loads(existing)
-            capIds = data.get("capIds") or []
+            existing = rds.get(key)
         except Exception:
+            existing = None
+        if existing:
+            try:
+                if isinstance(existing, bytes):
+                    existing_str = existing.decode("utf-8", errors="ignore")
+                else:
+                    existing_str = str(existing)
+                data = _json.loads(existing_str)
+                capIds = data.get("capIds") or []
+            except Exception:
+                capIds = []
+        else:
             capIds = []
         return {"status": "duplicate", "capIds": capIds}
+
     addr_lower_to_input = {a.lower(): a for a in body.users}
     enc_map = {k.lower(): v for k, v in (body.encK_map or {}).items()}
     grantees: list[tuple[str, User]] = []
@@ -293,7 +330,7 @@ def share_file(
     ac = chain.get_access_control()
     grantor_addr = Web3.to_checksum_address(user.eth_address)
     try:
-        start_nonce = int(ac.functions.grantNonces(grantor_addr).call())
+        start_nonce = int(chain.read_grant_nonce_cached(grantor_addr))
     except Exception as e:
         raise HTTPException(502, f"chain_unavailable: {e}")
     cap_ids_bytes: list[bytes] = []
@@ -309,7 +346,13 @@ def share_file(
         call_data = chain.encode_grant_call(file_id_bytes, grantee_addr, ttl_sec, int(body.max_dl))
         td = chain.build_forward_typed_data(from_addr=grantor_addr, to_addr=to_addr, data=call_data, gas=180_000)
         typed_list.append(td)
-    rds.set(key, _json.dumps({"grantor": grantor_addr, "fileId": id, "capIds": cap_ids_hex}), ex=3600, nx=True)
+
+    # Overwrite idempotency key with final data (no NX to update placeholder)
+    try:
+        rds.set(key, _json.dumps({"grantor": grantor_addr, "fileId": id, "capIds": cap_ids_hex}), ex=3600)
+    except Exception:
+        pass
+
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=int(body.ttl_days))
     for (grantee_addr, grantee_user), cap_b in zip(grantees, cap_ids_bytes):

@@ -5,12 +5,18 @@ import logging
 import os
 from typing import Any, Dict, Sequence, cast
 
-from eth_utils import to_checksum_address  # was: from eth_utils.address import to_checksum_address
-from eth_abi import encode as abi_encode
+from eth_utils.address import to_checksum_address
+from eth_abi.abi import encode as abi_encode
 from web3 import Web3, HTTPProvider
 from web3.types import TxParams
 
+from app.cache import Cache
+
 log = logging.getLogger(__name__)
+
+
+def _hex32(b: bytes | bytearray) -> str:
+    return "0x" + bytes(b).hex()
 
 
 class Chain:
@@ -100,6 +106,11 @@ class Chain:
             else:
                 raise RuntimeError(f"{primary_name} has unsupported arity: {n}")
             rcpt = self.w3.eth.wait_for_transaction_receipt(txh)
+            # Invalidate file meta cache
+            try:
+                Cache.delete(f"file_meta:{_hex32(item_id)}")
+            except Exception:
+                pass
             return rcpt["transactionHash"].hex()  # ✅ dict-доступ вместо атрибута
         except Exception:
             if "updateCid" not in self._fn:
@@ -114,37 +125,40 @@ class Chain:
             else:
                 raise RuntimeError(f"updateCid has unsupported arity: {n}")
             rcpt = self.w3.eth.wait_for_transaction_receipt(txh)
+            try:
+                Cache.delete(f"file_meta:{_hex32(item_id)}")
+            except Exception:
+                pass
             return rcpt["transactionHash"].hex()  # ✅
 
     def cid_of(self, item_id: bytes) -> str:
+        key = f"file_meta:{_hex32(item_id)}"
+        meta = Cache.get_json(key)
+        if isinstance(meta, dict) and meta.get("cid"):
+            return cast(str, meta.get("cid"))
+        # Fallback to direct call then cache
+        cid = ""
         if "cidOf" in self._fn:
-            return self.contract.functions.cidOf(item_id).call() or ""
-        if "metaOf" in self._fn:
-            fn = self._fn["metaOf"]
-            outs = (fn.get("outputs") or [{}])[0]
-            comps = outs.get("components") or []
-            idx = next((i for i, c in enumerate(comps) if (c.get("name") or "").lower() == "cid"), None)
-            if idx is None:
-                idx = next((i for i, c in enumerate(comps) if c.get("type") == "string"), 1)
-            res = self.contract.functions.metaOf(item_id).call()
-            if isinstance(res, dict):
-                return res.get("cid") or ""
-            if isinstance(res, (list, tuple)) and len(res) > cast(int, idx):
-                # ✅ явно работаем с последовательностью
-                seq: Sequence[Any] = cast(Sequence[Any], res)
-                val = seq[cast(int, idx)]
-                return val or ""
-            return ""
-        if "versionsOf" in self._fn:
+            cid = self.contract.functions.cidOf(item_id).call() or ""
+        elif "metaOf" in self._fn:
+            meta = self.meta_of_full(item_id)
+            cid = str(meta.get("cid") or "")
+        elif "versionsOf" in self._fn:
             arr_val = self.contract.functions.versionsOf(item_id).call()
             if isinstance(arr_val, (list, tuple)) and arr_val:
                 seq: Sequence[Any] = cast(Sequence[Any], arr_val)
-                last = seq[-1]  # ✅ индекс по Sequence
-                return last or ""
-            return ""
-        return ""
+                last = seq[-1]
+                cid = last or ""
+        # store minimal meta if available
+        if cid:
+            Cache.set_json(key, {"cid": cid}, ttl=300)
+        return cid
 
     def meta_of_full(self, item_id: bytes) -> dict:
+        key = f"file_meta:{_hex32(item_id)}"
+        cached = Cache.get_json(key)
+        if isinstance(cached, dict) and cached:
+            return cached
         if "metaOf" not in self._fn:
             raise RuntimeError("Registry has no metaOf")
         fn = self._fn["metaOf"]
@@ -159,7 +173,10 @@ class Chain:
                 return {(c.get("name") or f"f{i}"): vals[i] for i, c in enumerate(comps) if i < len(vals)}
             return {}
 
-        return to_dict(res)
+        out = to_dict(res)
+        if out:
+            Cache.set_json(key, out, ttl=300)  # 5 minutes
+        return out
 
     def versions_of(self, item_id: bytes) -> list[dict]:
         if "versionsOf" not in self._fn:
@@ -269,6 +286,7 @@ class Chain:
         to_addr = to_checksum_address(to_addr)
         verifying = fwd.address if hasattr(fwd, "address") else fwd.functions.eip712Domain().call()[3]
 
+        # getNonce is per-signer; leave uncached (it changes frequently on use)
         nonce = int(fwd.functions.getNonce(from_addr).call())
 
         # ✅ нормализация data → hex без использования hexstr= на str
@@ -312,6 +330,19 @@ class Chain:
         grantor_cs = to_checksum_address(grantor)
         return int(self.get_access_control().functions.grantNonces(grantor_cs).call())
 
+    def read_grant_nonce_cached(self, grantor: str) -> int:
+        grantor_cs = to_checksum_address(grantor)
+        key = f"grant_nonce:{grantor_cs.lower()}"
+        val = Cache.get_text(key)
+        if val is not None:
+            try:
+                return int(val)
+            except Exception:
+                pass
+        n = self.read_grant_nonce(grantor_cs)
+        Cache.set_text(key, str(int(n)), ttl=30)
+        return int(n)
+
     def predict_cap_id(self, grantor: str, grantee: str, file_id: bytes, nonce: int | None = None, offset: int = 0) -> bytes:
         """Compute keccak256(grantor, grantee, fileId, (nonce or grantNonces[grantor]) + offset) → bytes32.
         Matches Solidity: keccak256(abi.encode(address,address,bytes32,uint256)).
@@ -323,7 +354,7 @@ class Chain:
         grantor_cs = to_checksum_address(grantor)
         grantee_cs = to_checksum_address(grantee)
         if nonce is None:
-            nonce_val = self.read_grant_nonce(grantor_cs)
+            nonce_val = self.read_grant_nonce_cached(grantor_cs)
         else:
             nonce_val = int(nonce)
         n = nonce_val + int(offset)

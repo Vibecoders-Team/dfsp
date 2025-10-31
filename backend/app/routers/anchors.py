@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.orm import Session
 
-from app.deps import get_db
+from app.deps import get_db, rds
 from app.schemas.anchors import AnchorResponse, AnchorDetailResponse
 from app.services.anchoring import AnchoringService
 from app.tasks.anchor import anchor_period_task
@@ -82,23 +82,32 @@ def trigger_anchoring(
     """
     Manually trigger anchoring for a specific period.
 
-    This endpoint is primarily for testing and admin purposes.
-
-    Args:
-        period_id: Period ID to anchor
-
-    Returns:
-        Task ID for tracking
+    Idempotent semantics:
+    - If anchor already exists in DB OR scheduling marker exists in Redis, return {status: "already_anchored"}.
+    - Otherwise, mark as scheduled and enqueue the task, return {status: "queued"}.
     """
-    # Check if already anchored
     service = AnchoringService(db)
     existing = service.get_anchor_by_period(period_id)
-
     if existing:
         return {
             "status": "already_anchored",
             "period_id": str(period_id),
             "anchor_id": str(existing.id),
+        }
+
+    # Use Redis marker to ensure idempotency if DB row is not yet written but task already queued
+    key = f"anchor:scheduled:{period_id}"
+    try:
+        # set key for 15 minutes only if not exists
+        was_set = rds.set(key, "1", ex=15 * 60, nx=True)  # type: ignore[call-arg]
+    except Exception:
+        was_set = True  # fail-open: proceed to enqueue
+
+    if not was_set:
+        # Already scheduled by a previous call
+        return {
+            "status": "already_anchored",
+            "period_id": str(period_id),
         }
 
     # Queue anchoring task
@@ -109,4 +118,3 @@ def trigger_anchoring(
         "task_id": result.id,
         "period_id": str(period_id),
     }
-

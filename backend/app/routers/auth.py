@@ -116,7 +116,9 @@ def challenge() -> ChallengeOut:
     return ChallengeOut(challenge_id=challenge_id, nonce=nonce, exp_sec=exp_sec)
 
 
-@router.post("/register", response_model=Tokens, dependencies=[Depends(rate_limit("auth_register", 3, 3600))])
+@router.post("/register", response_model=Tokens, dependencies=[Depends(rate_limit(
+    "auth_register", 3, 3600, require_json_keys=("eth_address", "challenge_id", "signature", "typed_data", "rsa_public")
+))])
 def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Tokens:
     key = f"auth:chal:{payload.challenge_id}"
     raw = rds.get(key)
@@ -170,7 +172,9 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Tokens:
     return Tokens(access=access, refresh=refresh)
 
 
-@router.post("/login", response_model=Tokens, dependencies=[Depends(rate_limit("auth_login", 10, 3600))])
+@router.post("/login", response_model=Tokens, dependencies=[Depends(rate_limit(
+    "auth_login", 10, 3600, require_json_keys=("eth_address", "challenge_id", "signature", "typed_data")
+))])
 def login(payload: LoginIn, db: Session = Depends(get_db)) -> Tokens:
     key = f"auth:chal:{payload.challenge_id}"
     raw = rds.get(key)

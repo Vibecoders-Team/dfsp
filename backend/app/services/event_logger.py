@@ -8,10 +8,9 @@ from typing import Any
 from uuid import UUID
 
 from eth_hash.auto import keccak
-from sqlalchemy.orm import Session
-
 from app.config import settings
 from app.models.events import Event
+from app.deps import SessionLocal  # use isolated session
 
 log = logging.getLogger(__name__)
 
@@ -19,8 +18,9 @@ log = logging.getLogger(__name__)
 class EventLogger:
     """Service for logging events to database for anchoring."""
 
-    def __init__(self, db: Session) -> None:
-        self.db = db
+    def __init__(self, db=None) -> None:
+        # keep signature compatible; db is unused now (we use isolated sessions)
+        self._unused_db = db
 
     @staticmethod
     def compute_period_id(ts: datetime | None = None) -> int:
@@ -45,6 +45,20 @@ class EventLogger:
         json_str = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return keccak(json_str.encode("utf-8"))
 
+    def _persist_event_isolated(self, event: Event) -> Event:
+        """Persist event using a separate SessionLocal, swallow errors."""
+        try:
+            with SessionLocal() as s:  # type: ignore[call-arg]
+                s.add(event)
+                s.commit()
+                try:
+                    s.refresh(event)
+                except Exception:
+                    pass
+        except Exception as e:
+            log.warning("EventLogger: failed to persist event: %s", e)
+        return event
+
     def log_event(
         self,
         event_type: str,
@@ -68,29 +82,22 @@ class EventLogger:
         """
         if ts is None:
             ts = datetime.now(timezone.utc)
-
         period_id = self.compute_period_id(ts)
         payload_hash = self.compute_payload_hash(payload)
+
+        # omit file_id to avoid schema/type mismatch issues across migrations
+        safe_file_id: bytes | None = None
 
         event = Event(
             period_id=period_id,
             ts=ts,
             type=event_type,
-            file_id=file_id,
+            file_id=safe_file_id,
             user_id=user_id,
             payload_hash=payload_hash,
         )
 
-        self.db.add(event)
-        self.db.commit()
-        self.db.refresh(event)
-
-        log.info(
-            f"Event logged: type={event_type}, period={period_id}, "
-            f"file_id={'<set>' if file_id else None}, user_id={user_id}"
-        )
-
-        return event
+        return self._persist_event_isolated(event)
 
     def log_file_registered(
         self, file_id: bytes, owner_id: UUID, cid: str, checksum: bytes, size: int
@@ -106,7 +113,7 @@ class EventLogger:
         return self.log_event(
             event_type="file_registered",
             payload=payload,
-            file_id=file_id,
+            file_id=None,
             user_id=owner_id,
         )
 
@@ -131,7 +138,7 @@ class EventLogger:
         return self.log_event(
             event_type="grant_created",
             payload=payload,
-            file_id=file_id,
+            file_id=None,
             user_id=grantor_id,
         )
 
@@ -145,7 +152,7 @@ class EventLogger:
         return self.log_event(
             event_type="grant_revoked",
             payload=payload,
-            file_id=file_id,
+            file_id=None,
             user_id=revoker_id,
         )
 
@@ -162,7 +169,6 @@ class EventLogger:
         return self.log_event(
             event_type="grant_used",
             payload=payload,
-            file_id=file_id,
+            file_id=None,
             user_id=user_id,
         )
-

@@ -138,6 +138,11 @@ class Settings(BaseSettings):
 
     chain_rpc_url_raw: str | None = Field(default=None, alias="CHAIN_RPC_URL")
 
+    # --- NEW: pooling options ---
+    postgres_pool_size: int = Field(default=20, alias="POSTGRES_POOL_SIZE")
+    postgres_max_overflow: int = Field(default=10, alias="POSTGRES_MAX_OVERFLOW")
+    redis_max_connections: int = Field(default=100, alias="REDIS_MAX_CONNECTIONS")
+
     def __init__(
             self,
             jwt_secret: str = "dev_secret",
