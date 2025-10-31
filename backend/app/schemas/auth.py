@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+
+from app.validators import (
+    validate_hex32,
+    validate_mime,
+    sanitize_filename,
+    MAX_FILE_SIZE_BYTES,
+    validate_eth_address,
+    validate_rsa_spki_pem,
+)
 
 
 class ChallengeOut(BaseModel):
@@ -21,6 +30,39 @@ class FileCreateIn(BaseModel):
     mime: str
     cid: str
     checksum: str  # 0x...32
+
+    @field_validator("fileId")
+    @classmethod
+    def _v_file_id(cls, v: str) -> str:
+        if not validate_hex32(v):
+            raise ValueError("bad_file_id")
+        return v
+
+    @field_validator("checksum")
+    @classmethod
+    def _v_checksum(cls, v: str) -> str:
+        if not validate_hex32(v):
+            raise ValueError("bad_checksum")
+        return v
+
+    @field_validator("size")
+    @classmethod
+    def _v_size(cls, v: int) -> int:
+        if not isinstance(v, int) or v < 0 or v > MAX_FILE_SIZE_BYTES:
+            raise ValueError("file_too_large")
+        return v
+
+    @field_validator("mime")
+    @classmethod
+    def _v_mime(cls, v: str) -> str:
+        if not validate_mime(v):
+            raise ValueError("bad_mime")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def _v_name(cls, v: str) -> str:
+        return sanitize_filename(v)
 
 
 class TypedDataOut(BaseModel):
@@ -52,8 +94,6 @@ class VerifyOut(BaseModel):
 import json
 from typing import Dict, Any
 
-from pydantic import BaseModel, field_validator
-
 
 class TypedData(BaseModel):
     domain: Dict[str, Any]
@@ -70,6 +110,20 @@ class RegisterIn(BaseModel):
     # Храним в модели уже TypedData (сериализация/валидация сделает экземпляр)
     typed_data: TypedData
     signature: str
+
+    @field_validator("eth_address")
+    @classmethod
+    def _v_addr(cls, v: str) -> str:
+        if not validate_eth_address(v):
+            raise ValueError("bad_eth_address")
+        return v
+
+    @field_validator("rsa_public")
+    @classmethod
+    def _v_rsa(cls, v: str) -> str:
+        if not validate_rsa_spki_pem(v):
+            raise ValueError("bad_rsa_public")
+        return v
 
     @field_validator("typed_data", mode="before")
     def parse_typed_data(cls, v):
@@ -96,6 +150,13 @@ class LoginIn(BaseModel):
     eth_address: str
     typed_data: TypedData
     signature: str
+
+    @field_validator("eth_address")
+    @classmethod
+    def _v_addr(cls, v: str) -> str:
+        if not validate_eth_address(v):
+            raise ValueError("bad_eth_address")
+        return v
 
     @field_validator("typed_data", mode="before")
     def parse_typed_data(cls, v):

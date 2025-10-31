@@ -14,8 +14,25 @@ from .routers.verify import router as verify_router
 from .routers.download import router as download_router
 from .routers.grants import router as grants_router
 from .routers.users import router as users_router
+from .routers.anchors import router as anchors_router
+
+# NEW: telemetry
+from app.telemetry.logging import init_logging
+from app.telemetry.metrics import router as metrics_router
+from app.middleware.observability import ObservabilityMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
+
+# Initialize structured logging
+init_logging()
 
 app = FastAPI(title="DFSP API")
+
+# Observability middleware (request metrics + structured logs)
+app.add_middleware(ObservabilityMiddleware)
+
+# Global rate limit for public endpoints (no Authorization header)
+app.add_middleware(RateLimitMiddleware, limit_per_minute=100)
 
 app.add_middleware(
     CORSMiddleware,  # type: ignore[arg-type]
@@ -31,7 +48,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Security headers for all responses
+app.add_middleware(SecurityHeadersMiddleware)
+
 app.include_router(health_router)
+app.include_router(metrics_router)  # /metrics
 app.include_router(auth_router)
 app.include_router(storage_router)
 app.include_router(mtx_router)
@@ -39,5 +60,6 @@ app.include_router(verify_router)
 app.include_router(files_router)
 app.include_router(download_router)
 app.include_router(grants_router)
+app.include_router(anchors_router)
 app.include_router(users_router)
 app.include_router(pow_router.router)

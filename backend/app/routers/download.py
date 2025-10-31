@@ -20,8 +20,11 @@ from app.relayer import enqueue_forward_request
 
 # --- НОВЫЙ ИМПОРТ ---
 from app.quotas import protect_download, QuotaManager
+from app.services.event_logger import EventLogger
+import logging
 
 router = APIRouter(prefix="/download", tags=["download"])
+logger = logging.getLogger(__name__)
 
 # ... (функция require_user остается без изменений)
 AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
@@ -132,7 +135,22 @@ def get_download_info(
             from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000
         )
     except Exception:
-        typed = None
+        pass
+
+    # Log grant usage event
+    try:
+        file_obj: Optional[File] = db.get(File, file_id_bytes)
+        download_size = file_obj.size if file_obj else 0
+        event_logger = EventLogger(db)
+        event_logger.log_grant_used(
+            cap_id=cap_b,
+            file_id=file_id_bytes,
+            user_id=user.id,
+            download_size=download_size,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to log grant_used event: {e}")
+
 
     enc_b64 = base64.b64encode(grant.enc_key).decode("ascii")
     out = {"encK": enc_b64, "ipfsPath": f"/ipfs/{cid}"}

@@ -15,8 +15,11 @@ from app.models import Grant, User, File
 from app.models.meta_tx_requests import MetaTxRequest
 from app.security import parse_token
 from app.relayer import enqueue_forward_request
+from app.services.event_logger import EventLogger
+import logging
 
 router = APIRouter(prefix="/grants", tags=["grants"])
+logger = logging.getLogger(__name__)
 
 AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 
@@ -161,8 +164,21 @@ def revoke_grant(
         ac = chain.get_access_control()
         to_addr = getattr(ac, "address", None) or Web3.to_checksum_address("0x" + "00" * 20)
         call_data = chain.encode_revoke_call(cap_b)
+    except Exception as e:
+        raise HTTPException(502, f"Failed to build revoke call data: {e}")
+
+    # Log grant revocation event
+    typed = None  # Initialize with a default value
+    try:
+        event_logger = EventLogger(db)
+        event_logger.log_grant_revoked(
+            cap_id=cap_b,
+            file_id=grant.file_id,
+            revoker_id=user.id,
+        )
         typed = chain.build_forward_typed_data(from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000)
     except Exception as e:
+        logger.warning(f"Failed to log grant_revoked event or build typed data: {e}")
         raise HTTPException(502, f"chain_unavailable: {e}")
 
     response.status_code = 200

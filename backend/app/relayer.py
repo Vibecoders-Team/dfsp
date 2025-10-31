@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 # Queue names (env-overridable)
 HIGH_Q = getattr(settings, "relayer_high_queue", None) or "relayer.high"
 DEFAULT_Q = getattr(settings, "relayer_default_queue", None) or "relayer.default"
+ANCHOR_Q = "anchor"
 
 celery = Celery("relayer", broker=settings.redis_dsn, backend=settings.redis_dsn)
 celery.conf.task_serializer = "json"
@@ -26,6 +27,7 @@ celery.conf.accept_content = ["json"]
 celery.conf.task_queues = (
     Queue(HIGH_Q),
     Queue(DEFAULT_Q),
+    Queue(ANCHOR_Q),
 )
 
 # route by task name + payload (useOnce/revoke → high)

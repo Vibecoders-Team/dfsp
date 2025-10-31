@@ -18,11 +18,7 @@ from app.deps import get_db, rds
 from app.models import User
 from app.schemas.auth import ChallengeOut, RegisterIn, LoginIn, Tokens
 from app.security import make_token
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-)
+from app.middleware.rate_limit import rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +116,7 @@ def challenge() -> ChallengeOut:
     return ChallengeOut(challenge_id=challenge_id, nonce=nonce, exp_sec=exp_sec)
 
 
-@router.post("/register", response_model=Tokens)
+@router.post("/register", response_model=Tokens, dependencies=[Depends(rate_limit("auth_register", 3, 3600))])
 def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Tokens:
     key = f"auth:chal:{payload.challenge_id}"
     raw = rds.get(key)
@@ -174,7 +170,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Tokens:
     return Tokens(access=access, refresh=refresh)
 
 
-@router.post("/login", response_model=Tokens)
+@router.post("/login", response_model=Tokens, dependencies=[Depends(rate_limit("auth_login", 10, 3600))])
 def login(payload: LoginIn, db: Session = Depends(get_db)) -> Tokens:
     key = f"auth:chal:{payload.challenge_id}"
     raw = rds.get(key)

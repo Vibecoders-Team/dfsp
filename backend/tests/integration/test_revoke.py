@@ -83,15 +83,17 @@ def test_revoke_happy_and_noop(
 
     # Act: revoke by grantor (PoW не нужен для /revoke)
     r1 = client.post(f"/grants/{cap_id}/revoke", headers=auth_headers)
-    assert r1.status_code == 202, f"expected 202 queued, got {r1.status_code}: {r1.text}"
+    assert r1.status_code == 200, f"expected 200 prepared, got {r1.status_code}: {r1.text}"
     j1 = r1.json()
-    assert j1.get("status") == "queued"
+    assert j1.get("status") == "prepared"
+    assert "typedData" in j1, "typedData should be returned for signing"
+    assert "requestId" in j1
 
-    # Repeat revoke (PoW не нужен)
+    # Repeat revoke - should still return prepared (idempotent)
     r2 = client.post(f"/grants/{cap_id}/revoke", headers=auth_headers)
-    assert r2.status_code == 200, f"expected 200 noop, got {r2.status_code}: {r2.text}"
+    assert r2.status_code == 200, f"expected 200 prepared, got {r2.status_code}: {r2.text}"
     j2 = r2.json()
-    assert j2.get("status") == "noop"
+    assert j2.get("status") == "prepared"
 
 
 def test_revoke_not_grantor_403(

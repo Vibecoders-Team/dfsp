@@ -25,6 +25,7 @@ from app.repos.user_repo import get_by_eth_address
 from sqlalchemy.exc import IntegrityError
 import logging
 from app.config import settings
+from app.services.event_logger import EventLogger
 
 router = APIRouter(prefix="/files", tags=["files"])
 logger = logging.getLogger(__name__)
@@ -143,18 +144,28 @@ def create_file(
         db: Session = Depends(get_db),
         chain=Depends(get_chain),
 ):
-    if not (isinstance(meta.fileId, str) and meta.fileId.startswith("0x") and len(meta.fileId) == 66):
-        raise HTTPException(400, "bad_file_id")
-    if not (isinstance(meta.checksum, str) and meta.checksum.startswith("0x") and len(meta.checksum) == 66):
-        raise HTTPException(400, "bad_checksum")
+    # Schema validation already enforces fileId/checksum hex32, size<=200MB, mime whitelist, sanitized name
     fid = Web3.to_bytes(hexstr=cast(HexStr, meta.fileId))
     checksum = Web3.to_bytes(hexstr=cast(HexStr, meta.checksum))
+
+    # Denylist by checksum: Redis set + global DB uniqueness emulation
+    try:
+        if rds.sismember("denylist:checksum", meta.checksum):
+            raise HTTPException(409, "File with this checksum already exists")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
     exists = db.scalar(select(File.id).where(File.id == fid))
     if exists:
         raise HTTPException(409, "already_registered")
-    dup = db.scalar(select(File.id).where(File.owner_id == user.id, File.checksum == checksum))
-    if dup:
-        raise HTTPException(409, "duplicate_checksum")
+
+    # Global duplicate by checksum across all users
+    dup_global = db.scalar(select(File.id).where(File.checksum == checksum))
+    if dup_global:
+        raise HTTPException(409, "File with this checksum already exists")
+
     file = File(
         id=fid,
         owner_id=user.id,
@@ -175,6 +186,20 @@ def create_file(
         mime=file.mime,
     )
     db.add(ver)
+
+    # Log event for anchoring
+    try:
+        event_logger = EventLogger(db)
+        event_logger.log_file_registered(
+            file_id=file.id,
+            owner_id=user.id,
+            cid=file.cid,
+            checksum=file.checksum,
+            size=file.size,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to log file_registered event: {e}")
+
     db.commit()
     fwd: object | None = None
     fwd_addr: Optional[str] = None
@@ -317,6 +342,22 @@ def share_file(
         db.rollback()
         if "uq_grants_cap_id" not in str(ie.orig) if hasattr(ie, "orig") else str(ie):
             raise
+
+    # Log grant_created events for all new grants
+    try:
+        event_logger = EventLogger(db)
+        for (grantee_addr, grantee_user), cap_b in zip(grantees, cap_ids_bytes):
+            event_logger.log_grant_created(
+                cap_id=cap_b,
+                file_id=file_id_bytes,
+                grantor_id=user.id,
+                grantee_id=grantee_user.id,
+                ttl_seconds=ttl_sec,
+                max_downloads=int(body.max_dl),
+            )
+    except Exception as e:
+        logger.warning(f"Failed to log grant_created events: {e}")
+
     items = [ShareItemOut(grantee=addr_lower_to_input[ga.lower()], capId=ch, status="queued") for (ga, _), ch in zip(grantees, cap_ids_hex)]
     return ShareOut(items=items, typedDataList=typed_list)
 
