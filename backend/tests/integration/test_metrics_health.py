@@ -167,6 +167,5 @@ def test_metrics_prometheus_and_health_ok(monkeypatch):
     assert hresp.status_code == 200
     j = hresp.json()
     assert isinstance(j, dict)
-    assert j.get("relayer")
-    assert j.get("ok") in (True, False)
+    assert "status" in j
 

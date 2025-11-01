@@ -16,8 +16,7 @@ function writeJSON(p: string, obj: any) {
 
 async function main() {
   // HH3: подключаемся к выбранной сети и берём ethers из соединения
-  const connection = await hre.network.connect();
-  const { ethers } = connection;
+  const { ethers } = hre;
 
   const [deployer] = await ethers.getSigners();
 

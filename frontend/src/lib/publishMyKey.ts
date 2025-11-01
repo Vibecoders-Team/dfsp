@@ -23,3 +23,4 @@ export async function publishMyKeyCard(): Promise<PublishOut> {
   // storeFile возвращает { id_hex, cid, url } — забираем CID/URL
   return { cid: out.cid, url: out.url };
 }
+

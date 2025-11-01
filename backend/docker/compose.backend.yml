@@ -16,6 +16,7 @@ networks:
 
 volumes:
   pgdata:
+  redis_data:
 
 services:
   # ----------- опциональная локальная БД (включается профилем localdb) ----------
@@ -63,6 +64,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    volumes:
+      - redis_data:/data
     networks: [ dfsp ]
 
   # ------------------------ Миграции (run-once, опционально) --------------------

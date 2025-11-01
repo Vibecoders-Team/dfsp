@@ -70,3 +70,4 @@ export async function getOptionalPowHeader(forceNew = true): Promise<string | un
     throw e;
   }
 }
+

@@ -1,0 +1,62 @@
+{
+  "uid": "dfsp-api-overview",
+  "title": "DFSP • API Overview",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Request rate (rps)",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum by (method,endpoint)(rate(api_requests_total[1m]))", "legendFormat": "{{method}} {{endpoint}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Error rate (5xx share)",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "(sum(rate(api_requests_total{status=~\"5..\"}[1m])) by () ) / (sum(rate(api_requests_total[1m])) by () )", "legendFormat": "5xx share" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency p50/p95/p99 (s)",
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(api_request_duration_seconds_bucket[1m])))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(api_request_duration_seconds_bucket[1m])))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(api_request_duration_seconds_bucket[1m])))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Active users",
+      "gridPos": { "x": 0, "y": 16, "w": 6, "h": 6 },
+      "targets": [ { "expr": "active_users_total" } ]
+    },
+    {
+      "type": "stat",
+      "title": "Active grants",
+      "gridPos": { "x": 6, "y": 16, "w": 6, "h": 6 },
+      "targets": [ { "expr": "active_grants_total" } ]
+    },
+    {
+      "type": "stat",
+      "title": "Relayer queue (high)",
+      "gridPos": { "x": 12, "y": 16, "w": 6, "h": 6 },
+      "targets": [ { "expr": "relayer_queue_length{queue=\"relayer.high\"}" } ]
+    },
+    {
+      "type": "stat",
+      "title": "Relayer queue (default)",
+      "gridPos": { "x": 18, "y": 16, "w": 6, "h": 6 },
+      "targets": [ { "expr": "relayer_queue_length{queue=\"relayer.default\"}" } ]
+    }
+  ]
+}
+

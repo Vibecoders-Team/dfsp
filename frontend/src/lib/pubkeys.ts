@@ -21,3 +21,4 @@ export function findKey(address: string): string | null {
   const rec = loadAll().find(x => x.address === a);
   return rec?.pem ?? null;
 }
+

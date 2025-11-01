@@ -13,3 +13,4 @@ export function getErrorMessage(e: unknown, fallback = "Request failed"): string
   if (e instanceof Error && e.message) return e.message;
   return fallback;
 }
+

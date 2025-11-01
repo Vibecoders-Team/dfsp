@@ -88,10 +88,7 @@ class Settings(BaseSettings):
     )
 
     # --- База/Redis ---
-    postgres_dsn: str = Field(
-        default="postgresql+psycopg://dfsp:dfsp@dfsp-db:5432/dfsp",
-        alias="POSTGRES_DSN",
-    )
+    postgres_dsn: str = Field(alias="POSTGRES_DSN")
     # поддерживаем и REDIS_URL, и REDIS_DSN — возьмём первый не-пустой
     redis_url_raw: Optional[str] = Field(default=None, alias="REDIS_URL")
     redis_dsn_raw: Optional[str] = Field(default=None, alias="REDIS_DSN")

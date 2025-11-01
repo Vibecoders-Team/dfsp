@@ -1,7 +1,3 @@
-/// <reference lib="webworker" />
-// src/workers/pow.worker.ts
-
-type MsgIn = { challenge: string; difficulty: number; start?: number; step?: number };
 type MsgOut = { nonce: string };
 
 function hexOf(bytes: Uint8Array): string {
@@ -45,3 +41,4 @@ self.onmessage = async (e: MessageEvent<MsgIn>) => {
     await new Promise((r) => setTimeout(r, 0));
   }
 };
+

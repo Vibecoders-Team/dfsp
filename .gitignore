@@ -36,4 +36,5 @@ contracts/artifacts/
 contracts/artifacts-abi/
 contracts/cache/
 contracts/typechain-types/
+contracts/types/
 meta

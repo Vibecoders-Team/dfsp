@@ -23,6 +23,7 @@ const config: HardhatUserConfig = {
   },
   networks: {
     localhost: { url: HARDHAT_URL },
+    docker: { url: HARDHAT_URL },
   },
   mocha: {
     timeout: 60_000,
