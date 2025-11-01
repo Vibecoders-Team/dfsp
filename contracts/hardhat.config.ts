@@ -4,6 +4,7 @@ import * as dotenv from "dotenv";
 
 // Use canonical toolbox (bundles ethers + chai matchers) for Hardhat v2
 import "@nomicfoundation/hardhat-toolbox";
+import "hardhat-gas-reporter";
 
 dotenv.config();
 
@@ -25,6 +26,14 @@ const config: HardhatUserConfig = {
   },
   mocha: {
     timeout: 60_000,
+  },
+  gasReporter: {
+    enabled: true,
+    outputFile: "gas-report.txt",
+    noColors: true,
+    currency: "USD",
+    // coinmarketcap: process.env.COINMARKETCAP_API_KEY, // optional for price lookup
+    // token: "ETH",
   },
 };
 

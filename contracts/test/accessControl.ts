@@ -1,7 +1,6 @@
 import { expect } from "chai";
 
 import hre from "hardhat";
-console.log("hre has ethers?", "ethers" in hre);
 const { ethers } = hre;
 
 const types = {
