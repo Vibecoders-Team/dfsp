@@ -1,5 +1,7 @@
-import {ethers} from "hardhat";
 import {expect} from "chai";
+import hre from "hardhat";
+
+const {ethers} = hre;
 
 describe("DFSPAnchoring", () => {
     it("only owner can anchor", async () => {
@@ -11,7 +13,8 @@ describe("DFSPAnchoring", () => {
         await expect(anch.connect(other).anchorMerkleRoot(ethers.ZeroHash, 1)).to.be.reverted;
 
         await expect(anch.connect(owner).anchorMerkleRoot(ethers.ZeroHash, 1))
-            .to.emit(anch, "Anchored").withArgs(ethers.ZeroHash, 1);
+            .to.emit(anch, "Anchored")
+            .withArgs(ethers.ZeroHash, 1);
     });
 
     it("transferOwnership: only new owner can anchor", async () => {
@@ -22,7 +25,8 @@ describe("DFSPAnchoring", () => {
 
         // Old owner can anchor
         await expect(anch.connect(owner).anchorMerkleRoot(ethers.id("root1"), 42))
-            .to.emit(anch, "Anchored").withArgs(ethers.id("root1"), 42);
+            .to.emit(anch, "Anchored")
+            .withArgs(ethers.id("root1"), 42);
 
         // Transfer ownership
         await anch.connect(owner).transferOwnership(await newOwner.getAddress());
@@ -32,7 +36,8 @@ describe("DFSPAnchoring", () => {
 
         // New owner can anchor
         await expect(anch.connect(newOwner).anchorMerkleRoot(ethers.id("root3"), 44))
-            .to.emit(anch, "Anchored").withArgs(ethers.id("root3"), 44);
+            .to.emit(anch, "Anchored")
+            .withArgs(ethers.id("root3"), 44);
 
         // Random other cannot
         await expect(anch.connect(other).anchorMerkleRoot(ethers.id("root4"), 45)).to.be.reverted;

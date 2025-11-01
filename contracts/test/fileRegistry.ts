@@ -1,5 +1,7 @@
-import {ethers} from "hardhat";
 import {expect} from "chai";
+import hre from "hardhat";
+
+const {ethers} = hre;
 
 describe("FileRegistry", () => {
     it("owner can updateCid; others cannot", async () => {
@@ -37,9 +39,14 @@ describe("FileRegistry", () => {
         await reg.waitForDeployment();
 
         const fid = ethers.id("f-dup");
-        await reg.connect(alice).register(fid, "cidA", ethers.id("chkA"), 10, "application/octet-stream");
+        await reg
+            .connect(alice)
+            .register(fid, "cidA", ethers.id("chkA"), 10, "application/octet-stream");
+
         await expect(
-            reg.connect(alice).register(fid, "cidB", ethers.id("chkB"), 20, "application/octet-stream")
+            reg
+                .connect(alice)
+                .register(fid, "cidB", ethers.id("chkB"), 20, "application/octet-stream")
         ).to.be.revertedWithCustomError(reg, "AlreadyRegistered");
 
         // One version on register
@@ -47,7 +54,10 @@ describe("FileRegistry", () => {
         expect(versions.length).to.eq(1);
 
         // Update and verify versions grow
-        await reg.connect(alice).updateCid(fid, "cidC", ethers.id("chkC"), 30, "application/octet-stream");
+        await reg
+            .connect(alice)
+            .updateCid(fid, "cidC", ethers.id("chkC"), 30, "application/octet-stream");
+
         versions = await reg.versionsOf(fid);
         expect(versions.length).to.eq(2);
         expect(versions[1].cid).to.eq("cidC");

@@ -1,6 +1,8 @@
-// test/forwarder.e2e.ts
-import { ethers } from "hardhat";
 import { expect } from "chai";
+import hre from "hardhat";
+
+// Всегда используем hre.ethers в HH v3
+const { ethers } = hre;
 
 const types = {
   ForwardRequest: [
@@ -15,15 +17,17 @@ const types = {
 
 const selectorOf = (signature: string) => ethers.id(signature).slice(0, 10);
 
-// ✅ ethers v6: forwarder.execute.staticCall(...)
+// Проверка, что вызов через форвардер ревертится внутри целевого контракта,
+// и селектор ошибки совпадает.
 async function expectForwardedRevert(
   forwarder: any,
   req: any,
   sig: string,
   expectedSelector: string
 ) {
-  const res = await forwarder.execute.staticCall(req, sig); // v6 style
-  // OZ MinimalForwarder: function execute(...) returns (bool success, bytes memory returndata)
+  // ethers v6: staticCall доступен как метод функции
+  const res = await forwarder.execute.staticCall(req, sig);
+  // OZ MinimalForwarder: returns (bool success, bytes returndata)
   const ok: boolean = (res as any).success ?? res[0];
   const ret: string = (res as any).returndata ?? res[1];
 
@@ -162,7 +166,7 @@ describe("ERC-2771 meta-tx -> FileRegistry", () => {
     // Проверяем revert через staticCall + селектор кастомной ошибки
     await expectForwardedRevert(forwarder, req2, sig2, selectorOf("NotOwner()"));
 
-    // Реальный execute (не ревертит сам форвардер) — состояние не меняется
+    // Реальный execute (форвардер сам не ревертит) — состояние не меняется
     await (await forwarder.execute(req2, sig2)).wait();
     expect((await registry.metaOf(fileId)).cid).to.eq("cid1");
   });
