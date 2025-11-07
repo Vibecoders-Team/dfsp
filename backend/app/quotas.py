@@ -3,12 +3,13 @@ from __future__ import annotations
 import hashlib
 import secrets
 from datetime import date, timedelta
+from typing import Any
 
 import redis
 from fastapi import Depends, HTTPException, Header
 
 from app.config import Settings
-from app.deps import get_chain, rds, get_settings, get_redis
+from app.deps import get_chain, get_settings, get_redis
 from app.models import User
 from app.security import get_current_user
 from app.blockchain.web3_client import Chain
@@ -17,6 +18,17 @@ from app.blockchain.web3_client import Chain
 # --- Метрики ---
 def _count_rejection(reason: str, redis_client: redis.Redis):
     redis_client.incr(f"metrics:pow_quota_rejections:{reason}")
+
+
+def _as_int(val: Any) -> int:
+    try:
+        if val is None:
+            return 0
+        if isinstance(val, (bytes, bytearray)):
+            val = val.decode("utf-8", errors="ignore")
+        return int(val)  # type: ignore[arg-type]
+    except Exception:
+        return 0
 
 
 # --- Основной сервис ---
@@ -32,10 +44,10 @@ class QuotaManager:
         self._today = date.today().isoformat()
 
     def consume_meta_tx(self):
-        quota_limit = self.settings.quotas_effective.meta_tx_per_day
+        quota_limit = int(self.settings.quotas_effective.meta_tx_per_day)
         key = f"quota:tx:{self.user.id}:{self._today}"
-        current_usage = self.rds.get(key)
-        if current_usage and int(current_usage) >= quota_limit:
+        current_usage = _as_int(self.rds.get(key))
+        if current_usage >= quota_limit:
             _count_rejection("meta_tx_quota", self.rds)
             raise HTTPException(status_code=429, detail="meta_tx_quota_exceeded")
         pipe = self.rds.pipeline()
@@ -44,7 +56,7 @@ class QuotaManager:
         pipe.execute()
 
     def consume_download_bytes(self, file_id: bytes):
-        quota_limit = self.settings.quotas_effective.download_bytes_day
+        quota_limit = int(self.settings.quotas_effective.download_bytes_day)
         key = f"quota:dl_bytes:{self.user.id}:{self._today}"
         try:
             meta = self.chain.meta_of_full(file_id)
@@ -53,8 +65,8 @@ class QuotaManager:
                 return
         except Exception:
             return
-        current_usage = self.rds.get(key)
-        if current_usage and (int(current_usage) + file_size) > quota_limit:
+        current_usage = _as_int(self.rds.get(key))
+        if (current_usage + file_size) > quota_limit:
             _count_rejection("download_quota", self.rds)
             raise HTTPException(status_code=429, detail="download_quota_exceeded")
         pipe = self.rds.pipeline()
@@ -64,54 +76,80 @@ class QuotaManager:
 
 
 class PoWValidator:
-    """Сервис для PoW. Теперь это ОБЫЧНЫЙ класс без __call__."""
+    """
+    Сервис для PoW. Теперь это ОБЫЧНЫЙ класс без __call__.
+    """
 
     def __init__(
         self, redis_client: redis.Redis = Depends(get_redis), settings: Settings = Depends(get_settings)
     ):
         self.rds = redis_client
         self.settings = settings
-        self.difficulty = settings.pow_difficulty_base
-        self.prefix = "0" * ((self.difficulty + 3) // 4)
+        self.difficulty = int(settings.pow_difficulty_base)
+        # compute hex prefix length deterministically as int to satisfy type checkers
+        _nibbles = int((self.difficulty + 3) // 4)
+        self.prefix = "0" * _nibbles
 
     def get_challenge(self) -> dict:
-        """Генерирует и сохраняет новый challenge."""
+        """
+        Генерирует и сохраняет новый challenge.
+        Также увеличивает счётчик выданных PoW-челленджей для метрик.
+        """
         challenge = secrets.token_hex(16)
-        ttl = self.settings.pow_challenge_ttl_seconds
+        ttl = int(self.settings.pow_challenge_ttl_seconds)
         self.rds.set(f"pow:challenge:{challenge}", "valid", ex=ttl)
+        # Метрика: количество выданных PoW-челленджей
+        try:
+            self.rds.incr("metrics:pow_challenges_total")
+        except Exception:
+            pass
         return {"challenge": challenge, "difficulty": self.difficulty, "ttl": ttl}
 
     def verify_token(self, pow_token: str | None):
-        """Проверяет PoW токен. Эту логику мы вынесли из __call__."""
+        """
+        Проверяет PoW токен. Эту логику мы вынесли из __call__.
+        При успешной верификации инкрементируем счётчик успешных проверок.
+        При ошибках соответствующие счётчики увеличиваются через _count_rejection.
+        """
         if not self.settings.pow_enabled:
             return
-        if not pow_token:
+        token = pow_token or ""
+        if not token:
             _count_rejection("pow_token_missing", self.rds)
             raise HTTPException(status_code=429, detail="pow_token_required")
-        try:
-            challenge, nonce = pow_token.split(".", 1)
-        except ValueError:
+        parts = token.split(".", 1)
+        if len(parts) != 2:
             _count_rejection("pow_token_bad_format", self.rds)
             raise HTTPException(status_code=429, detail="pow_token_bad_format")
+        challenge, nonce = parts[0], parts[1]
         key = f"pow:challenge:{challenge}"
         if self.rds.get(key) is None:
             _count_rejection("pow_expired_or_invalid", self.rds)
             raise HTTPException(status_code=429, detail="pow_expired_or_invalid")
-        h = hashlib.sha256(f"{challenge}{nonce}".encode()).hexdigest()
-        if not h.startswith(self.prefix):
+        h = hashlib.sha256((challenge + nonce).encode("utf-8")).hexdigest()
+        if not h.startswith(str(self.prefix)):
             _count_rejection("pow_incorrect_solution", self.rds)
             raise HTTPException(status_code=429, detail="pow_incorrect_solution")
         if self.rds.delete(key) == 0:
             _count_rejection("pow_reused", self.rds)
             raise HTTPException(status_code=429, detail="pow_reused")
+        # Успешная проверка
+        try:
+            self.rds.incr("metrics:pow_verifications_total:ok")
+        except Exception:
+            pass
 
 
-# --- НОВАЯ ФУНКЦИЯ-ЗАВИСИМОСТЬ для проверки ---
+# --- Новая функция-зависимость для проверки ---
+
+
 def validate_pow_token(
     pow_validator: PoWValidator = Depends(PoWValidator),
     pow_token: str | None = Header(None, alias="X-PoW-Token"),
 ):
-    """Эта зависимость теперь отвечает ТОЛЬКО за проверку токена."""
+    """
+    Эта зависимость теперь отвечает ТОЛЬКО за проверку токена.
+    """
     pow_validator.verify_token(pow_token)
 
 

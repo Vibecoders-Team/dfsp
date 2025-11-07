@@ -17,10 +17,18 @@ def get_settings():
     return settings
 
 
-engine = create_engine(settings.postgres_dsn, future=True)
+engine = create_engine(
+    settings.postgres_dsn,
+    future=True,
+    pool_size=int(getattr(settings, "postgres_pool_size", 20)),
+    max_overflow=int(getattr(settings, "postgres_max_overflow", 10)),
+)
 SessionLocal = sessionmaker(engine, autoflush=False, autocommit=False, future=True)
 
-rds = redis.from_url(settings.redis_dsn, decode_responses=True)
+# Redis connection with pool
+_pool = redis.ConnectionPool.from_url(settings.redis_dsn, max_connections=int(getattr(settings, "redis_max_connections", 100)))
+rds = redis.Redis(connection_pool=_pool, decode_responses=True)
+
 
 def get_redis() -> redis.Redis:
     """Dependency to get the Redis client instance."""

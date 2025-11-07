@@ -37,5 +37,8 @@ RUN chmod +x docker/entrypoint.sh
 
 EXPOSE 8000
 
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/ready || exit 1
+
 # команда по умолчанию — запускается через compose
 CMD ["bash", "-lc", "./docker/entrypoint.sh api"]

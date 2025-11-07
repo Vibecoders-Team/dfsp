@@ -46,22 +46,17 @@ def wait_for_api(client: httpx.Client):
     """
     Автоматически запускается в начале сессии и ждет, пока API станет доступен.
     """
-    health_url = "/health"
+    ready_url = "/ready"
 
     def is_api_ready(response: httpx.Response) -> bool:
-        if not response.is_success:
-            return False
-        try:
-            return response.json()["api"]["ok"] is True
-        except Exception:
-            return False
+        return response.is_success
 
     wait_until_ok(
-        lambda: client.get(health_url),
+        lambda: client.get(ready_url),
         predicate=is_api_ready,
         timeout=60,
         interval=2,
-        description=f"API is not ready at {client.base_url}{health_url}",
+        description=f"API is not ready at {client.base_url}{ready_url}",
     )
 
 

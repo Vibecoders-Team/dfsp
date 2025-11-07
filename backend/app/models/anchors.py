@@ -21,6 +21,9 @@ class Anchor(Base):
     # 32 байта (bytea)
     root: Mapped[bytes] = mapped_column(sa.LargeBinary(32), nullable=False)
 
+    # Transaction hash on blockchain (optional, for future integration)
+    tx_hash: Mapped[str | None] = mapped_column(sa.String(66), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         server_default=func.now(),

@@ -88,10 +88,7 @@ class Settings(BaseSettings):
     )
 
     # --- База/Redis ---
-    postgres_dsn: str = Field(
-        default="postgresql+psycopg://dfsp:dfsp@dfsp-db:5432/dfsp",
-        alias="POSTGRES_DSN",
-    )
+    postgres_dsn: str = Field(alias="POSTGRES_DSN")
     # поддерживаем и REDIS_URL, и REDIS_DSN — возьмём первый не-пустой
     redis_url_raw: Optional[str] = Field(default=None, alias="REDIS_URL")
     redis_dsn_raw: Optional[str] = Field(default=None, alias="REDIS_DSN")
@@ -137,6 +134,11 @@ class Settings(BaseSettings):
     pow_enabled: bool = Field(default=True, alias="POW_ENABLED") # Глобальный переключатель
 
     chain_rpc_url_raw: str | None = Field(default=None, alias="CHAIN_RPC_URL")
+
+    # --- NEW: pooling options ---
+    postgres_pool_size: int = Field(default=20, alias="POSTGRES_POOL_SIZE")
+    postgres_max_overflow: int = Field(default=10, alias="POSTGRES_MAX_OVERFLOW")
+    redis_max_connections: int = Field(default=100, alias="REDIS_MAX_CONNECTIONS")
 
     def __init__(
             self,

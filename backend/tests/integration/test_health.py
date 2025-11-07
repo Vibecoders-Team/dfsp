@@ -23,7 +23,7 @@ def test_health_ok_minimal(client: httpx.Client):
     )
 
     data = response.json()
-    assert data.get("api", {}).get("ok") is True, "API status should be 'ok: True'"
+    assert data.get("status") in ("healthy", "degraded"), "API status should be 'healthy' or 'degraded'"
 
 
 def test_health_dependencies(client: httpx.Client):
@@ -33,26 +33,27 @@ def test_health_dependencies(client: httpx.Client):
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
+    checks = data.get("checks", {})
 
     # Проверяем базу данных
-    assert data.get("db", {}).get("ok") is True, "Database connection should be OK"
+    assert checks.get("db") == "ok", "Database connection should be OK"
 
     # Проверяем Redis
-    assert data.get("redis", {}).get("ok") is True, "Redis connection should be OK"
+    assert checks.get("redis") == "ok", "Redis connection should be OK"
 
     # Проверяем подключение к блокчейну
-    chain_info = data.get("chain", {})
+    chain_info = checks.get("chain", {})
     assert chain_info.get("ok") is True, "Blockchain connection should be OK"
     assert chain_info.get("chainId") == DEV_CHAIN_ID, (
         f"Expected chainId {DEV_CHAIN_ID}, got {chain_info.get('chainId')}"
     )
 
     # Проверяем загруженные контракты
-    contracts_info = data.get("contracts", {})
+    contracts_info = checks.get("contracts", {})
     assert contracts_info.get("ok") is True, "Contracts should be loaded correctly"
     assert isinstance(contracts_info.get("names"), list), "'contracts.names' should be a list"
     assert len(contracts_info.get("names", [])) >= 1, "At least one contract should be loaded"
 
     # Проверяем IPFS
-    ipfs_info = data.get("ipfs", {})
+    ipfs_info = checks.get("ipfs", {})
     assert ipfs_info.get("ok") is True, "IPFS connection should be OK in dev environment"

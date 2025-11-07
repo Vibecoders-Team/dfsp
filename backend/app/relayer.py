@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 # Queue names (env-overridable)
 HIGH_Q = getattr(settings, "relayer_high_queue", None) or "relayer.high"
 DEFAULT_Q = getattr(settings, "relayer_default_queue", None) or "relayer.default"
+ANCHOR_Q = "anchor"
 
 celery = Celery("relayer", broker=settings.redis_dsn, backend=settings.redis_dsn)
 celery.conf.task_serializer = "json"
@@ -26,6 +27,7 @@ celery.conf.accept_content = ["json"]
 celery.conf.task_queues = (
     Queue(HIGH_Q),
     Queue(DEFAULT_Q),
+    Queue(ANCHOR_Q),
 )
 
 # route by task name + payload (useOnce/revoke → high)
@@ -86,15 +88,34 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain, db: Optional[
     """
     Parse events from receipt and update grants table in DB.
     Handles: Used, Revoked, Granted events.
+    Also invalidates Redis caches: can_dl and grant_nonce.
     """
     if db is None:
         return
 
     try:
         from app.models.grants import Grant
+        from app.models.users import User
         from datetime import datetime, timezone
 
         ac = chain.get_access_control()
+
+        def _invalidate_for_grant(gr: "Grant"):
+            try:
+                file_hex = "0x" + bytes(gr.file_id).hex()
+                # Invalidate can_dl for grantee
+                rds.delete(f"can_dl:{gr.grantee_id}:{file_hex}")
+                # Invalidate can_dl for grantor too (defensive)
+                rds.delete(f"can_dl:{gr.grantor_id}:{file_hex}")
+                # Invalidate grant_nonce for grantor (need address)
+                grantor_user = db.get(User, gr.grantor_id)
+                if grantor_user and getattr(grantor_user, "eth_address", None):
+                    from eth_utils.address import to_checksum_address as _to_cs
+                    addr = _to_cs(str(grantor_user.eth_address))
+                    key = f"grant_nonce:{addr.lower()}"
+                    rds.delete(key)
+            except Exception:
+                pass
 
         # Process Used events
         try:
@@ -108,6 +129,7 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain, db: Optional[
                     if grant:
                         grant.used = int(used_count)
                         db.add(grant)
+                        _invalidate_for_grant(grant)
         except Exception:
             pass  # Event might not exist in receipt
 
@@ -123,6 +145,7 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain, db: Optional[
                         grant.revoked_at = datetime.now(timezone.utc)
                         grant.status = "revoked"
                         db.add(grant)
+                        _invalidate_for_grant(grant)
         except Exception:
             pass  # Event might not exist in receipt
 
@@ -139,6 +162,7 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain, db: Optional[
                         grant.confirmed_at = datetime.now(timezone.utc)
                         grant.tx_hash = receipt.get("transactionHash", b"").hex() if receipt.get("transactionHash") else None
                         db.add(grant)
+                        _invalidate_for_grant(grant)
         except Exception:
             pass  # Event might not exist in receipt
 

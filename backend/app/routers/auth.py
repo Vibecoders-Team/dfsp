@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import secrets
+from os import getenv
 from typing import Any, Dict, cast
 
 from eth_account import Account
@@ -18,17 +19,14 @@ from app.deps import get_db, rds
 from app.models import User
 from app.schemas.auth import ChallengeOut, RegisterIn, LoginIn, Tokens
 from app.security import make_token
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-)
+from app.middleware.rate_limit import rate_limit
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 LOGIN_DOMAIN: Dict[str, str] = {"name": "DFSP-Login", "version": "1"}
+EXPECTED_CHAIN_ID = int(getenv("CHAIN_ID", "0") or 0) or None
 
 # --- Валидаторы ---
 ADDR_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
@@ -110,6 +108,32 @@ def build_login_typed_data(nonce_hex: str, eth_address: str) -> Dict[str, Any]:
     }
 
 
+def validate_login_typed_data(td: Dict[str, Any], nonce_hex: str, eth_address: str) -> None:
+    """Гибкая проверка структуры typed_data: допускает domain.chainId (опционально)."""
+    _require(isinstance(td, dict), "typed_data_invalid")
+    domain = td.get("domain")
+    types = td.get("types")
+    primary = td.get("primaryType")
+    message = td.get("message")
+    _require(primary == "LoginChallenge", "bad_primary_type")
+    _require(isinstance(domain, dict), "bad_domain")
+    _require(domain.get("name") == LOGIN_DOMAIN["name"], "bad_domain_name")
+    _require(domain.get("version") == LOGIN_DOMAIN["version"], "bad_domain_version")
+    # Если chainId присутствует — проверим на совпадение с ожидаемым (если задан)
+    if "chainId" in domain and EXPECTED_CHAIN_ID is not None:
+        _require(int(domain["chainId"]) == EXPECTED_CHAIN_ID, "bad_domain_chainId")
+    _require(isinstance(types, dict), "bad_types")
+    lc = types.get("LoginChallenge")
+    _require(isinstance(lc, list) and len(lc) == 2, "bad_types_login")
+    names = [f.get("name") for f in lc if isinstance(f, dict)]
+    types_ = [f.get("type") for f in lc if isinstance(f, dict)]
+    _require(names == ["address", "nonce"], "bad_types_fields")
+    _require(types_ == ["address", "bytes32"], "bad_types_field_types")
+    _require(isinstance(message, dict), "bad_message")
+    _require(message.get("address") == eth_address, "bad_message_address")
+    _require(message.get("nonce") == nonce_hex, "bad_message_nonce")
+
+
 @router.post("/challenge", response_model=ChallengeOut)
 def challenge() -> ChallengeOut:
     challenge_id = secrets.token_hex(16)
@@ -120,7 +144,9 @@ def challenge() -> ChallengeOut:
     return ChallengeOut(challenge_id=challenge_id, nonce=nonce, exp_sec=exp_sec)
 
 
-@router.post("/register", response_model=Tokens)
+@router.post("/register", response_model=Tokens, dependencies=[Depends(rate_limit(
+    "auth_register", 3, 3600, require_json_keys=("eth_address", "challenge_id", "signature", "typed_data", "rsa_public")
+))])
 def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Tokens:
     key = f"auth:chal:{payload.challenge_id}"
     raw = rds.get(key)
@@ -142,11 +168,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Tokens:
         if hasattr(payload.typed_data, "model_dump")
         else cast(Dict[str, Any], payload.typed_data)
     )
-    expected = build_login_typed_data(data["nonce"], payload.eth_address)
-
-    if td != expected:
-        logger.warning("typed_data_mismatch\nexpected=%s\nprovided=%s", expected, td)
-        raise HTTPException(400, "typed_data_mismatch")
+    validate_login_typed_data(td, data["nonce"], payload.eth_address)
 
     signer = _verify_login_signature(td, payload.signature)
     logger.info("login verify: signer=%s provided=%s", signer, payload.eth_address)
@@ -174,7 +196,9 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Tokens:
     return Tokens(access=access, refresh=refresh)
 
 
-@router.post("/login", response_model=Tokens)
+@router.post("/login", response_model=Tokens, dependencies=[Depends(rate_limit(
+    "auth_login", 10, 3600, require_json_keys=("eth_address", "challenge_id", "signature", "typed_data")
+))])
 def login(payload: LoginIn, db: Session = Depends(get_db)) -> Tokens:
     key = f"auth:chal:{payload.challenge_id}"
     raw = rds.get(key)
@@ -194,10 +218,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)) -> Tokens:
         if hasattr(payload.typed_data, "model_dump")
         else cast(Dict[str, Any], payload.typed_data)
     )
-    expected = build_login_typed_data(data["nonce"], payload.eth_address)
-    if td != expected:
-        logger.warning("typed_data_mismatch (login)\nexpected=%s\nprovided=%s", expected, td)
-        raise HTTPException(400, "typed_data_mismatch")
+    validate_login_typed_data(td, data["nonce"], payload.eth_address)
 
     signer = _verify_login_signature(td, payload.signature)
     logger.info("login verify: signer=%s provided=%s", signer, payload.eth_address)
