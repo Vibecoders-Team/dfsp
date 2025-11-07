@@ -4,8 +4,9 @@ import { useAuth } from '../AuthContext';
 import { Button } from '../ui/button';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Key, AlertCircle } from 'lucide-react';
-import { hasEOA } from '../../lib/keychain';
-import { getErrorMessage } from '../../lib/errors';
+import { hasEOA } from '@/lib/keychain';
+import { getErrorMessage } from '@/lib/errors';
+import AgentSelector from '../AgentSelector';
 
 type LoginState = 'idle' | 'checking' | 'signing' | 'error' | 'success';
 
@@ -16,31 +17,19 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [keysExist, setKeysExist] = useState<boolean | null>(null);
 
-  // Check if keys exist on mount
+  // Check if keys exist on mount (optional)
   useEffect(() => {
     hasEOA().then(setKeysExist);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     try {
       setState('checking');
       setErrorMessage('');
-      
-      // Check if keys exist
-      const exists = await hasEOA();
-      if (!exists) {
-        setErrorMessage('No keys found. Please register first or restore from backup.');
-        setState('error');
-        return;
-      }
-
+      // Do not require local keys strictly: external agents may be used
       setState('signing');
-      
-      // Login with existing keys from IndexedDB
       await login();
-
       setState('success');
       navigate('/files');
     } catch (error) {
@@ -72,10 +61,11 @@ export default function LoginPage() {
             <Key className="h-8 w-8 text-blue-600" />
           </div>
           <h1 className="mb-2">Login</h1>
+          <div className="flex justify-center mt-2"><AgentSelector /></div>
           <p className="text-gray-600">
             {keysExist === false 
-              ? 'No account found on this device' 
-              : 'Sign in with your local keys'}
+              ? 'No local keys found — you can still login with MetaMask/WalletConnect'
+              : 'Sign in with your selected signer'}
           </p>
         </div>
 
@@ -85,7 +75,7 @@ export default function LoginPage() {
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  No keys found. Please register or restore from backup.
+                  No local keys found. You can login with MetaMask/WalletConnect, or restore from backup.
                 </AlertDescription>
               </Alert>
             )}
@@ -93,7 +83,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               className="w-full"
-              disabled={isLoading || keysExist === false}
+              disabled={isLoading}
             >
               {isLoading ? getStateMessage() : 'Login'}
             </Button>

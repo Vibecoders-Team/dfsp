@@ -5,15 +5,16 @@ import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Progress } from '../ui/progress';
-import { ArrowLeft, Download, Pause, Play, X, AlertCircle, CheckCircle2, Key } from 'lucide-react';
+import { ArrowLeft, Download, Key, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchDownload, fetchGrantByCapId, submitMetaTx } from '../../lib/api';
-import { ensureRSA, ensureEOA } from '../../lib/keychain';
-import { getErrorMessage } from '../../lib/errors';
-import { getOptionalPowHeader } from '../../lib/pow';
+import { fetchDownload, fetchGrantByCapId, submitMetaTx } from '@/lib/api';
+import { ensureRSA } from '@/lib/keychain';
+import { getErrorMessage } from '@/lib/errors';
+import { getOptionalPowHeader } from '@/lib/pow';
 import { isAxiosError } from 'axios';
+import { getAgent } from '@/lib/agent/manager';
 
-const IPFS_GATEWAY = import.meta.env.VITE_IPFS_PUBLIC_GATEWAY ?? 'http://localhost:8080';
+const IPFS_GATEWAY = (import.meta as any).env?.VITE_IPFS_PUBLIC_GATEWAY ?? 'http://localhost:8080';
 
 function b64ToU8(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -29,8 +30,7 @@ export default function DownloadPage() {
   const [err, setErr] = useState('');
   const [progress, setProgress] = useState(0);
   const [powProgress, setPowProgress] = useState(0);
-  const [fileName, setFileName] = useState('');
-  const [grantInfo, setGrantInfo] = useState<any | null>(null);
+  const [grantInfo, setGrantInfo] = useState<{ status?: string } | null>(null);
   const pollingRef = useRef<number | null>(null);
 
   // require RSA private key
@@ -101,17 +101,17 @@ export default function DownloadPage() {
       setPowProgress(100);
 
       setPhase('fetch');
-      let encK: string; let ipfsPath: string; let requestId: string | undefined; let typedData: any | undefined;
+      let encK: string; let ipfsPath: string; let requestId: string | undefined; let typedData: Record<string, unknown> | undefined;
       try {
         const res = await fetchDownload(capId, powHeader);
-        encK = res.encK; ipfsPath = res.ipfsPath; requestId = res.requestId; typedData = res.typedData as any;
+        encK = res.encK; ipfsPath = res.ipfsPath; requestId = res.requestId; typedData = res.typedData as unknown as Record<string, unknown> | undefined;
       } catch (e) {
         if (isAxiosError(e) && e.response?.status === 429) {
-          const detail = (e.response?.data as any)?.detail as string | undefined;
+          const detail = e.response?.data && (e.response.data as { detail?: string }).detail;
           if (detail && detail.startsWith('pow_')) {
             powHeader = await getOptionalPowHeader(true);
             const res2 = await fetchDownload(capId, powHeader);
-            encK = res2.encK; ipfsPath = res2.ipfsPath; requestId = res2.requestId; typedData = res2.typedData as any;
+            encK = res2.encK; ipfsPath = res2.ipfsPath; requestId = res2.requestId; typedData = res2.typedData as unknown as Record<string, unknown> | undefined;
           } else {
             throw e;
           }
@@ -124,8 +124,12 @@ export default function DownloadPage() {
       if (requestId && typedData) {
         (async () => {
           try {
-            const w = await ensureEOA();
-            const sig = await w.signTypedData(typedData.domain, typedData.types, typedData.message);
+            const agent = await getAgent();
+            const sig = await agent.signTypedData(
+              typedData.domain as any,
+              typedData.types as any,
+              typedData.message as any
+            );
             await submitMetaTx(requestId, typedData, sig);
           } catch {}
         })();
@@ -134,7 +138,7 @@ export default function DownloadPage() {
       setPhase('decrypt');
       // decrypt symmetric key with RSA private key
       const { privateKey } = await ensureRSA();
-      const encBytes = b64ToU8(encK);
+      const encBytes = b64ToU8(encK).buffer as ArrayBuffer;
       let K_file_buf: ArrayBuffer;
       try {
         K_file_buf = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privateKey as CryptoKey, encBytes);
@@ -168,7 +172,8 @@ export default function DownloadPage() {
       }
 
       setPhase('saving');
-      const blob = new Blob(chunks);
+      const parts: BlobPart[] = chunks.map((c) => c.buffer);
+      const blob = new Blob(parts);
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = capId;

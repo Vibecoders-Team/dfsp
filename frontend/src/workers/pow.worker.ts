@@ -1,4 +1,5 @@
 type MsgOut = { nonce: string };
+type MsgIn = { challenge: string; difficulty: number; start?: number; step?: number };
 
 function hexOf(bytes: Uint8Array): string {
   let s = "";
@@ -41,4 +42,3 @@ self.onmessage = async (e: MessageEvent<MsgIn>) => {
     await new Promise((r) => setTimeout(r, 0));
   }
 };
-

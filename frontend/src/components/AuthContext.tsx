@@ -1,22 +1,13 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import {
-  hasEOA,
-  ensureEOA,
-  ensureRSA,
-  signLoginTyped,
-  createBackupBlob,
-  restoreFromBackup,
-  type LoginMessage
-} from '../lib/keychain';
-import {
-  postChallenge,
-  postLogin,
-  postRegister,
-  ACCESS_TOKEN_KEY,
-  type RegisterPayload
-} from '../lib/api';
-import { ethers } from 'ethers';
-import { LOGIN_DOMAIN, LOGIN_TYPES } from '../lib/keychain';
+import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type LoginMessage, LOGIN_TYPES as KC_LOGIN_TYPES, LOGIN_DOMAIN as KC_LOGIN_DOMAIN } from '@/lib/keychain';
+import { postChallenge, postLogin, postRegister, ACCESS_TOKEN_KEY, type RegisterPayload, type TypedLoginData } from '@/lib/api';
+import { ethers, type TypedDataDomain, type TypedDataField } from 'ethers';
+import { getAgent } from '@/lib/agent/manager';
+
+const LOGIN_DOMAIN: TypedDataDomain = KC_LOGIN_DOMAIN;
+const LOGIN_TYPES: Record<string, TypedDataField[]> = KC_LOGIN_TYPES;
+const EXPECTED_CHAIN_ID = Number((import.meta as any).env?.VITE_CHAIN_ID || 0);
 
 interface User {
   address: string;
@@ -38,7 +29,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Helper to convert types for ethers v6
-function toEthersTypes(src: Record<string, readonly any[]>): Record<string, any[]> {
+function toEthersTypes(src: Record<string, readonly ethers.TypedDataField[]>): Record<string, ethers.TypedDataField[]> {
   return Object.fromEntries(
     Object.entries(src)
       .filter(([k]) => k !== "EIP712Domain")
@@ -83,155 +74,94 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async () => {
-    try {
-      // 1. Get challenge from backend
-      const challenge = await postChallenge();
-
-      // 2. Ensure we have EOA keys
-      const eoa = await ensureEOA();
-      const address = eoa.address as `0x${string}`;
-
-      // 3. Prepare login message
-      const message: LoginMessage = {
-        address,
-        nonce: challenge.nonce as `0x${string}`
-      };
-
-      // 4. Sign with local keys
-      const signature = await signLoginTyped(message);
-
-      // 5. Verify signature locally
-      const TYPES = toEthersTypes(LOGIN_TYPES);
-      const recovered = ethers.verifyTypedData(LOGIN_DOMAIN, TYPES, message, signature);
-
-      if (recovered.toLowerCase() !== address.toLowerCase()) {
-        throw new Error(`Signature verification failed: recovered ${recovered} ≠ ${address}`);
-      }
-
-      // 6. Send to backend
-      const payload = {
-        challenge_id: challenge.challenge_id,
-        eth_address: address,
-        typed_data: {
-          domain: LOGIN_DOMAIN,
-          types: TYPES,
-          primaryType: "LoginChallenge" as const,
-          message,
-        },
-        signature,
-      };
-
-      const tokens = await postLogin(payload);
-
-      // 7. Save tokens and user data
-      localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
-      localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
-
-      const storedName = localStorage.getItem('dfsp_display_name');
-
-      setUser({
-        address,
-        displayName: storedName || undefined,
-        hasBackup: true,
-      });
-    } catch (error) {
-      console.error('Login failed:', error);
-      throw error;
-    }
-  };
+       const challenge = await postChallenge();
+       const agent = await getAgent();
+       if (EXPECTED_CHAIN_ID && agent.kind === 'metamask' && agent.getChainId) {
+         const current = await agent.getChainId();
+         if (current !== EXPECTED_CHAIN_ID) {
+           throw new Error(`MetaMask: неверная сеть (${current}). Нажмите 'Switch' в панели Signer и повторите попытку.`);
+         }
+       }
+       const address = await agent.getAddress();
+       const message: LoginMessage = { address, nonce: challenge.nonce as `0x${string}` };
+       const curCid = agent.getChainId ? await agent.getChainId() : undefined;
+       const domain: TypedDataDomain = (agent.kind === 'metamask' && curCid)
+         ? { ...LOGIN_DOMAIN, chainId: curCid }
+         : LOGIN_DOMAIN;
+       const TYPES: Record<string, TypedDataField[]> = toEthersTypes(LOGIN_TYPES);
+       const signature = await agent.signTypedData(domain, TYPES, message as unknown as Record<string, unknown>);
+       const recovered = ethers.verifyTypedData(domain, TYPES, message, signature);
+        if (recovered.toLowerCase() !== address.toLowerCase()) {
+          throw new Error(`Signature verification failed: recovered ${recovered} ≠ ${address}`);
+        }
+        const payload = {
+          challenge_id: challenge.challenge_id,
+          eth_address: address,
+          typed_data: {
+           domain,
+            types: TYPES,
+            primaryType: "LoginChallenge" as const,
+            message,
+          } satisfies TypedLoginData,
+          signature,
+        };
+        const tokens = await postLogin(payload);
+        localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
+        localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
+        const storedName = localStorage.getItem('dfsp_display_name');
+        setUser({ address, displayName: storedName || undefined, hasBackup: true });
+   };
 
   const register = async (
     password: string,
     confirmPassword: string,
     displayName?: string
   ): Promise<{ backupData: Blob }> => {
-    try {
-      if (password !== confirmPassword) {
-        throw new Error('Passwords do not match');
-      }
-
-      if (password.length < 12) {
-        throw new Error('Password must be at least 12 characters');
-      }
-
-      // 1. Get challenge
-      const challenge = await postChallenge();
-
-      // 2. Generate keys (EOA + RSA)
-      const eoa = await ensureEOA();
-      const { publicPem } = await ensureRSA();
-      const address = eoa.address as `0x${string}`;
-
-      // 3. Prepare and sign login message
-      const message: LoginMessage = {
-        address,
-        nonce: challenge.nonce as `0x${string}`
-      };
-
-      const signature = await signLoginTyped(message);
-
-      // 4. Verify locally
-      const TYPES = toEthersTypes(LOGIN_TYPES);
-      const recovered = ethers.verifyTypedData(LOGIN_DOMAIN, TYPES, message, signature);
-
-      if (recovered.toLowerCase() !== address.toLowerCase()) {
-        throw new Error('Signature verification failed');
-      }
-
-      // 5. Register on backend
-      const payload: RegisterPayload = {
-        challenge_id: challenge.challenge_id,
-        eth_address: address,
-        rsa_public: publicPem,
-        display_name: displayName || '',
-        typed_data: {
-          domain: LOGIN_DOMAIN,
-          types: TYPES,
-          primaryType: "LoginChallenge",
-          message,
-        },
-        signature,
-      };
-
-      const tokens = await postRegister(payload);
-
-      // 6. Save tokens
-      localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
-      localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
-      if (displayName) {
-        localStorage.setItem('dfsp_display_name', displayName);
-      }
-
-      // 7. Create backup
-      const backupData = await createBackupBlob(password);
-
-      // 8. Set user
-      setUser({
-        address,
-        displayName,
-        hasBackup: false, // will be true after they download backup
-      });
-
-      return { backupData };
-    } catch (error) {
-      console.error('Registration failed:', error);
-      throw error;
-    }
-  };
+       if (password !== confirmPassword) throw new Error('Passwords do not match');
+       if (password.length < 12) throw new Error('Password must be at least 12 characters');
+       const challenge = await postChallenge();
+       const { publicPem } = await ensureRSA();
+       const agent = await getAgent();
+       if (EXPECTED_CHAIN_ID && agent.kind === 'metamask' && agent.getChainId) {
+         const current = await agent.getChainId();
+         if (current !== EXPECTED_CHAIN_ID) {
+           throw new Error(`MetaMask: неверная сеть (${current}). Нажмите 'Switch' и повторите регистрацию.`);
+         }
+       }
+       const address = await agent.getAddress();
+       const message: LoginMessage = { address, nonce: challenge.nonce as `0x${string}` };
+       const curCid = agent.getChainId ? await agent.getChainId() : undefined;
+       const domain: TypedDataDomain = (agent.kind === 'metamask' && curCid)
+         ? { ...LOGIN_DOMAIN, chainId: curCid }
+         : LOGIN_DOMAIN;
+       const TYPES: Record<string, TypedDataField[]> = toEthersTypes(LOGIN_TYPES);
+       const signature = await agent.signTypedData(domain, TYPES, message as unknown as Record<string, unknown>);
+       const recovered = ethers.verifyTypedData(domain, TYPES, message, signature);
+        if (recovered.toLowerCase() !== address.toLowerCase()) throw new Error('Signature verification failed');
+        const payload: RegisterPayload = {
+          challenge_id: challenge.challenge_id,
+          eth_address: address,
+          rsa_public: publicPem,
+          display_name: displayName || '',
+          typed_data: { domain, types: TYPES, primaryType: "LoginChallenge", message },
+          signature,
+        };
+        const tokens = await postRegister(payload);
+        localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
+        localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
+        if (displayName) localStorage.setItem('dfsp_display_name', displayName);
+        // Ensure local EOA exists so backup includes it (until RSA-only backup is implemented)
+        await ensureEOA();
+        const backupData = await createBackupBlob(password);
+        setUser({ address, displayName, hasBackup: false });
+        return { backupData };
+   };
 
   const restoreAccount = async (file: File, password: string) => {
-    try {
-      const { address } = await restoreFromBackup(file, password);
-
-      // After restore, need to login
-      await login();
-
-      setUser(prev => prev ? { ...prev, hasBackup: true } : null);
-    } catch (error) {
-      console.error('Account restore failed:', error);
-      throw error;
-    }
-  };
+    await restoreFromBackup(file, password);
+    await login();
+    setUser(prev => prev ? { ...prev, hasBackup: true } : null);
+   };
 
   const logout = () => {
     localStorage.removeItem(ACCESS_TOKEN_KEY);
@@ -263,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/* eslint-disable react-refresh/only-export-components */
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {

@@ -13,10 +13,11 @@ import { toast } from 'sonner';
 import { fetchGranteePubKey, shareFile, type ShareItem, submitMetaTx, type ForwardTyped } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { getOrCreateFileKey } from '../../lib/fileKey';
-import { pemToArrayBuffer, arrayBufferToBase64, ensureEOA } from '../../lib/keychain';
+import { pemToArrayBuffer, arrayBufferToBase64 } from '../../lib/keychain';
 import { getOptionalPowHeader } from '../../lib/pow';
 import { importKeyFromCid } from '../../lib/importKeyCard';
 import { isAxiosError } from 'axios';
+import { getAgent } from '../../lib/agent/manager';
 
 interface Recipient {
   address: string;
@@ -144,7 +145,7 @@ export default function SharePage() {
           powHeader
         )) as { items: ShareItem[]; typedDataList?: ForwardTyped[] };
       } catch (e: unknown) {
-        const detail = isAxiosError(e) ? ((e.response?.data as any)?.detail as string | undefined) : undefined;
+        const detail = isAxiosError(e) ? (e.response?.data && (e.response.data as { detail?: string }).detail) : undefined;
         if (isAxiosError(e) && e.response?.status === 429 && detail && detail.startsWith('pow_')) {
           powHeader = await getOptionalPowHeader(true);
           resp = (await shareFile(
@@ -167,10 +168,11 @@ export default function SharePage() {
       try {
         const tdl = (resp?.typedDataList || []) as ForwardTyped[];
         if (tdl.length > 0) {
-          const w = await ensureEOA();
+          const agent = await getAgent();
+          const addr = await agent.getAddress();
           await Promise.all(
             tdl.map(async (td: ForwardTyped) => {
-              const sig = await w.signTypedData(td.domain, td.types, td.message);
+              const sig = await agent.signTypedData(td.domain, td.types, td.message);
               const reqId = crypto.randomUUID();
               await submitMetaTx(reqId, td, sig);
             })
@@ -180,7 +182,7 @@ export default function SharePage() {
         console.warn('Grant meta-tx submit failed:', e);
       }
 
-      setResults((resp?.items || []).map((it) => ({ grantee: it.grantee, capId: it.capId, status: it.status })));
+      setResults((resp?.items || []).map((it) => ({ grantee: it.grantee, capId: it.capId, status: it.status === 'queued' ? 'queued' : it.status === 'confirmed' ? 'queued' : it.status === 'revoked' ? 'error' : it.status === 'expired' ? 'error' : it.status === 'exhausted' ? 'error' : 'queued' })));
       toast.success(`File shared with ${recipients.length} recipient(s)`);
       setTimeout(() => navigate(`/files/${fileId}`), 1500);
     } catch (err) {

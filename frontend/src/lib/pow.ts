@@ -31,18 +31,21 @@ export async function getPowToken(forceNew = true): Promise<PowToken> {
     const onMsg = (ev: MessageEvent<{ nonce: string }>) => {
       resolve(ev.data.nonce);
     };
-    const onErr = (err: any) => {
-      reject(err instanceof Error ? err : new Error("Worker error"));
-    };
+    const onErr = () => reject(new Error("Worker error"));
     w.onmessage = onMsg;
     w.onerror = onErr;
     w.postMessage({ challenge: ch.challenge, difficulty: ch.difficulty, start: i, step: cores });
   }));
 
   const timer = new Promise<string>((_, reject) => setTimeout(() => reject(new Error("PoW timeout")), 30_000));
+  // emulate Promise.any: wrap each promise to never reject (map to resolve with token 'REJECTED') and then filter
+  const guarded = promises.map(p => p.then(v => ({ ok: true as const, v })).catch(() => ({ ok: false as const })));
 
   try {
-    const nonce = await Promise.race([Promise.any(promises), timer]);
+    const winner = await Promise.race<[Promise<unknown>, Promise<string>]>([Promise.race(guarded) as any, timer] as any);
+    const result = (winner as unknown as { ok?: boolean; v?: string });
+    if (!result || !result.ok || !result.v) throw new Error('No PoW solution');
+    const nonce = result.v;
     stopAll();
     const token: PowToken = { challenge: ch.challenge, nonce };
     const ttlMs = Math.max(0, (ch.ttl ?? 0) * 1000);
@@ -70,4 +73,3 @@ export async function getOptionalPowHeader(forceNew = true): Promise<string | un
     throw e;
   }
 }
-

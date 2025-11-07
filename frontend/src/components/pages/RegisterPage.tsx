@@ -16,6 +16,7 @@ import {
 } from '../ui/dialog';
 import { Eye, EyeOff, Key, AlertCircle, CheckCircle2, Download } from 'lucide-react';
 import { Progress } from '../ui/progress';
+import AgentSelector from '../AgentSelector';
 
 type RegisterState = 'idle' | 'generating' | 'backup_required' | 'registering' | 'success' | 'error';
 
@@ -118,7 +119,6 @@ export default function RegisterPage() {
       setState('registering');
       // After registration, keys are already in IndexedDB, just login
       await login();
-      await login(password);
       updateBackupStatus(hasBackup);
       
       setState('success');
@@ -153,8 +153,9 @@ export default function RegisterPage() {
           </div>
           <h1 className="mb-2">Create Account</h1>
           <p className="text-gray-600">
-            Set up your secure decentralized file sharing account
+            Set up your secure decentralized file sharing account. You can sign with Local keys, MetaMask, or WalletConnect.
           </p>
+          <div className="flex justify-center mt-2"><AgentSelector /></div>
         </div>
 
         <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
