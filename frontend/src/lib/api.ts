@@ -33,7 +33,8 @@ api.interceptors.response.use(
             const status = err.response?.status;
             if (status === 401 || status === 403) {
                 // например, редирект или логаут
-                // window.location.href = "/login";
+                localStorage.removeItem(ACCESS_TOKEN_KEY);
+                window.location.href = "/login";
             }
         }
         return Promise.reject(err);
@@ -302,4 +303,40 @@ export type GrantStatus = {
 export async function fetchGrantByCapId(capId: string): Promise<GrantStatus> {
   const { data } = await api.get<GrantStatus>(`/grants/${capId}`);
   return data;
+}
+
+// === Files List ===
+export type FileListItem = {
+  id: string;
+  name: string;
+  size: number;
+  mime: string;
+  cid: string;
+  checksum: string;
+  created_at: string;
+};
+
+export async function fetchMyFiles(): Promise<FileListItem[]> {
+  const { data } = await api.get<FileListItem[]>("/files");
+  return data;
+}
+
+// === Grants list (current user) ===
+export type MyGrantItem = {
+  fileId: string;
+  fileName?: string;
+  capId: string;
+  grantor: string; // UUID
+  grantee: string; // UUID
+  maxDownloads: number;
+  usedDownloads: number;
+  status: "queued" | "pending" | "confirmed" | "revoked" | "expired" | "exhausted";
+  expiresAt: string; // ISO
+  grantorAddr?: string; // optional, if backend later includes it
+  granteeAddr?: string; // optional
+};
+
+export async function fetchMyGrants(role: "received" | "granted" = "received"): Promise<MyGrantItem[]> {
+  const { data } = await api.get<{ items: MyGrantItem[] }>(`/grants`, { params: { role } });
+  return data.items || [];
 }

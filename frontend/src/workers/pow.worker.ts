@@ -1,8 +1,5 @@
-/// <reference lib="webworker" />
-// src/workers/pow.worker.ts
-
-type MsgIn = { challenge: string; difficulty: number; start?: number; step?: number };
 type MsgOut = { nonce: string };
+type MsgIn = { challenge: string; difficulty: number; start?: number; step?: number };
 
 function hexOf(bytes: Uint8Array): string {
   let s = "";

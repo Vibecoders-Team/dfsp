@@ -1,16 +1,23 @@
-import { defineConfig } from 'vitest/config'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
 
 export default defineConfig({
   server: {
     port: 5173,
-    host: true,           // чтобы слушал 0.0.0.0 в контейнере
+    host: true,
   },
   plugins: [react()],
-  test: {
-    environment: 'jsdom',     // jsdom для DOM API
-    globals: true,            // делает test/expect global'ными
-    setupFiles: './src/setupTests.ts' // файл подготовки
-  }
-})
-
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  worker: {
+    format: 'es',
+  },
+  build: {
+    target: 'esnext',
+    outDir: 'build',
+  },
+});

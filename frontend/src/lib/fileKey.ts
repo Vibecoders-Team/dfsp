@@ -5,3 +5,4 @@ export function getOrCreateFileKey(fileId: string): Uint8Array {
   localStorage.setItem(`dfsp:filekey:${fileId}`, JSON.stringify(Array.from(key)));
   return key;
 }
+

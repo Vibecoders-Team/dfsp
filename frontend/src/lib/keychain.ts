@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {Wallet, type TypedDataDomain, type TypedDataField} from "ethers";
 
 /** EIP-712 логин: домен/типы должны строго совпадать с бэкендом */
@@ -249,4 +250,3 @@ export function arrayBufferToBase64(buf: ArrayBuffer): string {
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 }
-
