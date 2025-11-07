@@ -24,6 +24,7 @@ services:
       VITE_IPFS_PUBLIC_GATEWAY: "${VITE_IPFS_PUBLIC_GATEWAY:-http://localhost:8080}"
       VITE_CHAIN_ID: "${VITE_CHAIN_ID:-${CHAIN_ID:-31337}}"
       PNPM_STORE_DIR: /pnpm-store
+      VITE_WALLETCONNECT_PROJECT_ID: "${VITE_WALLETCONNECT_PROJECT_ID:-}"
     ports:
       - "${VITE_PORT:-5173}:5173"
     # ВАЖНО: /app — это volume (держит node_modules и dist),
