@@ -48,14 +48,16 @@ contract AccessControlDFSP is ERC2771Context {
 
         uint64 exp = uint64(block.timestamp) + ttlSec;
 
-        // ✅ детерминированный capId: зависит только от состояния (нонса), а не от blockhash/времени
-        uint256 n = grantNonces[_msgSender()];
-        capId = keccak256(abi.encode(_msgSender(), grantee, fileId, n)); // n — текущий нонс грантора
+        // cache sender for gas (used multiple times)
+        address sender = _msgSender();
+        uint256 n = grantNonces[sender];
+        // ✅ детерминированный capId
+        capId = keccak256(abi.encode(sender, grantee, fileId, n));
 
         if (grants[capId].createdAt != 0) revert AlreadyExists();
 
         Grant memory g = Grant({
-            grantor: _msgSender(),
+            grantor: sender,
             grantee: grantee,
             fileId: fileId,
             expiresAt: exp,
@@ -69,7 +71,7 @@ contract AccessControlDFSP is ERC2771Context {
         _grantsOf[grantee].push(capId);
 
         // ✅ инкремент после фиксации capId
-        unchecked {grantNonces[_msgSender()] = n + 1;}
+        unchecked { grantNonces[sender] = n + 1; }
 
         emit Granted(capId, g.grantor, g.grantee, g.fileId, g.expiresAt, g.maxDownloads);
     }
@@ -84,11 +86,13 @@ contract AccessControlDFSP is ERC2771Context {
 
     function useOnce(bytes32 capId) external {
         Grant storage g = grants[capId];
-        if (g.grantee != _msgSender()) revert NotGrantee();
+        address sender = _msgSender();
+        if (g.grantee != sender) revert NotGrantee();
         if (g.revoked) revert RevokedGrant();
         if (block.timestamp > g.expiresAt) revert ExpiredGrant();
-        if (g.used >= g.maxDownloads) revert ExhaustedGrant();
-        unchecked {g.used += 1;}
+        // Guard on the increment boundary explicitly to avoid edge optimizer differences
+        if (g.used + 1 > g.maxDownloads) revert ExhaustedGrant();
+        g.used = g.used + 1;
         emit Used(capId, g.used);
     }
 
