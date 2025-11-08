@@ -4,10 +4,12 @@ import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type
 import { postChallenge, postLogin, postRegister, ACCESS_TOKEN_KEY, type RegisterPayload, type TypedLoginData } from '@/lib/api';
 import { ethers, type TypedDataDomain, type TypedDataField } from 'ethers';
 import { getAgent } from '@/lib/agent/manager';
+import React from 'react';
 
 const LOGIN_DOMAIN: TypedDataDomain = KC_LOGIN_DOMAIN;
 const LOGIN_TYPES: Record<string, TypedDataField[]> = KC_LOGIN_TYPES;
 const EXPECTED_CHAIN_ID = Number((import.meta as any).env?.VITE_CHAIN_ID || 0);
+const ADDRESS_KEY = 'dfsp_address';
 
 interface User {
   address: string;
@@ -46,55 +48,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const checkAuth = async () => {
       try {
         const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-
-        if (token && await hasEOA()) {
-          const eoa = await ensureEOA();
-          const address = eoa.address;
-
-          // Try to get display name from localStorage
-          const storedName = localStorage.getItem('dfsp_display_name');
-
-          setUser({
-            address,
-            displayName: storedName || undefined,
-            hasBackup: true // assume true if keys exist
-          });
+        if (!token) { setIsLoading(false); return; }
+        const address = localStorage.getItem(ADDRESS_KEY) || null;
+        const storedName = localStorage.getItem('dfsp_display_name');
+        const backup = await hasEOA();
+        if (address) {
+          setUser({ address, displayName: storedName || undefined, hasBackup: backup });
         }
       } catch (error) {
-        console.error('Auth check failed:', error);
-        // Clear invalid session
-        localStorage.removeItem(ACCESS_TOKEN_KEY);
-        localStorage.removeItem('REFRESH_TOKEN');
+        console.error('Auth check failed (non-fatal):', error);
       } finally {
         setIsLoading(false);
       }
     };
-
     checkAuth();
   }, []);
 
   const login = async () => {
        const challenge = await postChallenge();
        const agent = await getAgent();
+       // Enforce chain only for metamask with expected chain id; skip for walletconnect to allow signing even if network mismatch
        if (EXPECTED_CHAIN_ID && agent.kind === 'metamask' && agent.getChainId) {
          const current = await agent.getChainId();
          if (current !== EXPECTED_CHAIN_ID) {
-           throw new Error(`MetaMask: неверная сеть (${current}). Нажмите 'Switch' в панели Signer и повторите попытку.`);
+           throw new Error(`MetaMask: wrong network (${current}). Switch to ${EXPECTED_CHAIN_ID} and retry.`);
          }
        }
        const address = await agent.getAddress();
        const message: LoginMessage = { address, nonce: challenge.nonce as `0x${string}` };
        const curCid = agent.getChainId ? await agent.getChainId() : undefined;
+       // For walletconnect do NOT inject chainId to domain to avoid add/switch requirement during simple login
        const domain: TypedDataDomain = (agent.kind === 'metamask' && curCid)
          ? { ...LOGIN_DOMAIN, chainId: curCid }
          : LOGIN_DOMAIN;
        const TYPES: Record<string, TypedDataField[]> = toEthersTypes(LOGIN_TYPES);
-       const signature = await agent.signTypedData(domain, TYPES, message as unknown as Record<string, unknown>);
+       let signature: string;
+       try {
+         signature = await agent.signTypedData(domain, TYPES, message as unknown as Record<string, unknown>);
+       } catch (e) {
+         throw new Error(`Login signing failed: ${(e as Error).message}`);
+       }
        const recovered = ethers.verifyTypedData(domain, TYPES, message, signature);
-        if (recovered.toLowerCase() !== address.toLowerCase()) {
+       if (recovered.toLowerCase() !== address.toLowerCase()) {
           throw new Error(`Signature verification failed: recovered ${recovered} ≠ ${address}`);
-        }
-        const payload = {
+       }
+       const payload = {
           challenge_id: challenge.challenge_id,
           eth_address: address,
           typed_data: {
@@ -105,11 +103,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } satisfies TypedLoginData,
           signature,
         };
-        const tokens = await postLogin(payload);
-        localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
-        localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
-        const storedName = localStorage.getItem('dfsp_display_name');
-        setUser({ address, displayName: storedName || undefined, hasBackup: true });
+       const tokens = await postLogin(payload);
+       localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
+       localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
+       localStorage.setItem(ADDRESS_KEY, address);
+       const storedName = localStorage.getItem('dfsp_display_name');
+       const backup = await hasEOA();
+       setUser({ address, displayName: storedName || undefined, hasBackup: backup });
    };
 
   const register = async (
@@ -125,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        if (EXPECTED_CHAIN_ID && agent.kind === 'metamask' && agent.getChainId) {
          const current = await agent.getChainId();
          if (current !== EXPECTED_CHAIN_ID) {
-           throw new Error(`MetaMask: неверная сеть (${current}). Нажмите 'Switch' и повторите регистрацию.`);
+           throw new Error(`MetaMask: wrong network (${current}). Switch and retry registration.`);
          }
        }
        const address = await agent.getAddress();
@@ -135,10 +135,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
          ? { ...LOGIN_DOMAIN, chainId: curCid }
          : LOGIN_DOMAIN;
        const TYPES: Record<string, TypedDataField[]> = toEthersTypes(LOGIN_TYPES);
-       const signature = await agent.signTypedData(domain, TYPES, message as unknown as Record<string, unknown>);
+       let signature: string;
+       try {
+         signature = await agent.signTypedData(domain, TYPES, message as unknown as Record<string, unknown>);
+       } catch (e) {
+         throw new Error(`Registration signing failed: ${(e as Error).message}`);
+       }
        const recovered = ethers.verifyTypedData(domain, TYPES, message, signature);
-        if (recovered.toLowerCase() !== address.toLowerCase()) throw new Error('Signature verification failed');
-        const payload: RegisterPayload = {
+       if (recovered.toLowerCase() !== address.toLowerCase()) throw new Error('Signature verification failed');
+       const payload: RegisterPayload = {
           challenge_id: challenge.challenge_id,
           eth_address: address,
           rsa_public: publicPem,
@@ -146,15 +151,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           typed_data: { domain, types: TYPES, primaryType: "LoginChallenge", message },
           signature,
         };
-        const tokens = await postRegister(payload);
-        localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
-        localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
-        if (displayName) localStorage.setItem('dfsp_display_name', displayName);
-        // Ensure local EOA exists so backup includes it (until RSA-only backup is implemented)
-        await ensureEOA();
-        const backupData = await createBackupBlob(password);
-        setUser({ address, displayName, hasBackup: false });
-        return { backupData };
+       const tokens = await postRegister(payload);
+       localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
+       localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
+       localStorage.setItem(ADDRESS_KEY, address);
+       if (displayName) localStorage.setItem('dfsp_display_name', displayName);
+       let backupData: Blob;
+       if (agent.kind === 'local') {
+         await ensureEOA();
+         backupData = await createBackupBlob(password);
+       } else {
+         backupData = new Blob([JSON.stringify({ notice: 'External wallet – create full backup after local EOA generation if needed.' }, null, 2)], { type: 'application/json' });
+       }
+       setUser({ address, displayName, hasBackup: false });
+       return { backupData };
    };
 
   const restoreAccount = async (file: File, password: string) => {
@@ -166,38 +176,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem('REFRESH_TOKEN');
+    localStorage.removeItem(ADDRESS_KEY);
     setUser(null);
   };
 
   const updateBackupStatus = (hasBackup: boolean) => {
-    if (user) {
-      setUser({ ...user, hasBackup });
-    }
+    setUser(prev => prev ? { ...prev, hasBackup } : prev);
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated: !!user,
-        isLoading,
-        login,
-        register,
-        logout,
-        restoreAccount,
-        updateBackupStatus
-      }}
-    >
+    <AuthContext.Provider value={{
+      user,
+      isAuthenticated: !!user,
+      isLoading,
+      login,
+      register,
+      logout,
+      restoreAccount,
+      updateBackupStatus,
+    }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-/* eslint-disable react-refresh/only-export-components */
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return context;
+export function useAuth(): AuthContextType {
+  const ctx = React.useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
 }

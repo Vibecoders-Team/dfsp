@@ -16,6 +16,7 @@ import HealthPage from './components/pages/HealthPage';
 import NotFoundPage from './components/pages/NotFoundPage';
 import ForbiddenPage from './components/pages/ForbiddenPage';
 import ServerErrorPage from './components/pages/ServerErrorPage';
+import UnlockPortal from './components/UnlockPortal';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -160,6 +161,7 @@ function AppRoutes() {
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
       <Toaster />
+      <UnlockPortal />
     </>
   );
 }

@@ -7,14 +7,15 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Progress } from '../ui/progress';
 import { ArrowLeft, Download, Key, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchDownload, fetchGrantByCapId, submitMetaTx } from '@/lib/api';
+import { fetchDownload, fetchGrantByCapId, submitMetaTx, type ForwardTyped } from '@/lib/api';
 import { ensureRSA } from '@/lib/keychain';
 import { getErrorMessage } from '@/lib/errors';
 import { getOptionalPowHeader } from '@/lib/pow';
 import { isAxiosError } from 'axios';
 import { getAgent } from '@/lib/agent/manager';
+import { ensureUnlockedOrThrow } from '@/lib/unlock';
 
-const IPFS_GATEWAY = (import.meta as any).env?.VITE_IPFS_PUBLIC_GATEWAY ?? 'http://localhost:8080';
+const IPFS_GATEWAY = ((import.meta as unknown as { env?: { VITE_IPFS_PUBLIC_GATEWAY?: string } }).env?.VITE_IPFS_PUBLIC_GATEWAY) ?? 'http://localhost:8080';
 
 function b64ToU8(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -52,7 +53,7 @@ export default function DownloadPage() {
       try {
         const g = await fetchGrantByCapId(capId);
         if (!cancelled) setGrantInfo(g);
-      } catch {}
+      } catch { /* ignore polling errors */ }
       finally {
         if (!cancelled) {
           const s = grantInfo?.status;
@@ -101,17 +102,17 @@ export default function DownloadPage() {
       setPowProgress(100);
 
       setPhase('fetch');
-      let encK: string; let ipfsPath: string; let requestId: string | undefined; let typedData: Record<string, unknown> | undefined;
+      let encK: string; let ipfsPath: string; let requestId: string | undefined; let typedData: ForwardTyped | undefined;
       try {
         const res = await fetchDownload(capId, powHeader);
-        encK = res.encK; ipfsPath = res.ipfsPath; requestId = res.requestId; typedData = res.typedData as unknown as Record<string, unknown> | undefined;
+        encK = res.encK; ipfsPath = res.ipfsPath; requestId = res.requestId; typedData = res.typedData as unknown as ForwardTyped | undefined;
       } catch (e) {
         if (isAxiosError(e) && e.response?.status === 429) {
           const detail = e.response?.data && (e.response.data as { detail?: string }).detail;
           if (detail && detail.startsWith('pow_')) {
             powHeader = await getOptionalPowHeader(true);
             const res2 = await fetchDownload(capId, powHeader);
-            encK = res2.encK; ipfsPath = res2.ipfsPath; requestId = res2.requestId; typedData = res2.typedData as unknown as Record<string, unknown> | undefined;
+            encK = res2.encK; ipfsPath = res2.ipfsPath; requestId = res2.requestId; typedData = res2.typedData as unknown as ForwardTyped | undefined;
           } else {
             throw e;
           }
@@ -125,26 +126,42 @@ export default function DownloadPage() {
         (async () => {
           try {
             const agent = await getAgent();
-            const sig = await agent.signTypedData(
-              typedData.domain as any,
-              typedData.types as any,
-              typedData.message as any
-            );
+            const sign = async (): Promise<string> => {
+              try {
+                return await agent.signTypedData(
+                  typedData.domain,
+                  typedData.types,
+                  typedData.message
+                );
+              } catch (e: unknown) {
+                const emsg = (e as { message?: string; code?: string }) || {};
+                if (String(emsg.message || '').includes('EOA locked') || emsg.code === 'EOA_LOCKED') {
+                  try { await ensureUnlockedOrThrow(); } catch { /* no-op */ }
+                  return await agent.signTypedData(
+                    typedData.domain,
+                    typedData.types,
+                    typedData.message
+                  );
+                }
+                throw e;
+              }
+            };
+            const sig = await sign();
             await submitMetaTx(requestId, typedData, sig);
-          } catch {}
+          } catch {
+            // non-blocking meta-tx failure
+          }
         })();
       }
 
       setPhase('decrypt');
-      // decrypt symmetric key with RSA private key
+      // decrypt symmetric key with RSA private key (placeholder for future use)
       const { privateKey } = await ensureRSA();
       const encBytes = b64ToU8(encK).buffer as ArrayBuffer;
-      let K_file_buf: ArrayBuffer;
       try {
-        K_file_buf = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privateKey as CryptoKey, encBytes);
+        await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privateKey as CryptoKey, encBytes);
       } catch {
-        // carry on without decryption in MVP
-        K_file_buf = new ArrayBuffer(32);
+        // ignore
       }
 
       setPhase('download');

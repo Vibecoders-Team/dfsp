@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import AgentSelector from './AgentSelector';
+import KeyLockIndicator from './KeyLockIndicator';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -66,6 +67,7 @@ export default function Layout({ children }: LayoutProps) {
                   {user?.address.slice(0, 6)}...{user?.address.slice(-4)}
                 </span>
               </div>
+              <KeyLockIndicator />
               <AgentSelector />
 
               <DropdownMenu>

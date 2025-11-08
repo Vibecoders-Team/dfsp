@@ -4,6 +4,7 @@ import type {LoginMessage} from "./keychain";
 import { ensureEOA, ensureRSA } from "./keychain";
 import { findKey } from "./pubkeys";
 import { saveKey } from "./pubkeys";
+import { getAgent } from './agent/manager';
 
 
 // export const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE });
@@ -195,8 +196,21 @@ export async function fetchGranteePubKey(addr: string): Promise<string> {
   const a = addr.trim();
   if (!/^0x[0-9a-fA-F]{40}$/.test(a)) throw new Error("Invalid address format");
 
-  // self-share: мой адрес -> локальный PEM из IndexedDB
-  const me = (await ensureEOA()).address;
+  // Determine caller address depending on agent kind (avoid local EOA unlock for external wallets)
+  let me: string;
+  try {
+    const agent = await getAgent();
+    if (agent.kind === 'local') {
+      me = (await ensureEOA()).address;
+    } else {
+      me = await agent.getAddress();
+    }
+  } catch (e) {
+    // Fallback to local ensureEOA if agent retrieval fails
+    me = (await ensureEOA()).address;
+  }
+
+  // self-share: my address -> local PEM from IndexedDB
   if (a.toLowerCase() === me.toLowerCase()) {
     const { publicPem } = await ensureRSA();
     return publicPem;

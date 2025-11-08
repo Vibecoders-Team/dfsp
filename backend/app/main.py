@@ -18,6 +18,7 @@ from .routers.download import router as download_router
 from .routers.grants import router as grants_router
 from .routers.users import router as users_router
 from .routers.anchors import router as anchors_router
+from .routers.chain_info import router as chain_info_router
 
 # NEW: telemetry
 from app.telemetry.logging import init_logging
@@ -91,3 +92,4 @@ app.include_router(anchors_router)
 app.include_router(users_router)
 app.include_router(admin_router)
 app.include_router(pow_router.router)
+app.include_router(chain_info_router)

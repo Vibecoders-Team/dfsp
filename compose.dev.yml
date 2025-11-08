@@ -23,6 +23,8 @@ services:
       VITE_API_BASE: "${VITE_API_BASE:-http://localhost:${API_HOST_PORT:-8000}}"
       VITE_IPFS_PUBLIC_GATEWAY: "${VITE_IPFS_PUBLIC_GATEWAY:-http://localhost:8080}"
       VITE_CHAIN_ID: "${VITE_CHAIN_ID:-${CHAIN_ID:-31337}}"
+      VITE_CHAIN_RPC_URL: "${VITE_CHAIN_RPC_URL:-https://hardhat.localhost:8546}"
+      VITE_CHAIN_PUBLIC_RPC_URL: "${VITE_CHAIN_PUBLIC_RPC_URL:-https://hardhat.localhost:8546}"
       PNPM_STORE_DIR: /pnpm-store
       VITE_WALLETCONNECT_PROJECT_ID: "${VITE_WALLETCONNECT_PROJECT_ID:-}"
     ports:
@@ -107,6 +109,7 @@ services:
       ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
       CHAIN_RPC_URL: "${CHAIN_RPC_URL:-http://chain:8545}"
       CHAIN_ID: "${CHAIN_ID:-31337}"
+      CHAIN_PUBLIC_RPC_URL: "${CHAIN_PUBLIC_RPC_URL:-https://hardhat.localhost:8546}"
       CONTRACTS_DEPLOYMENT_JSON: "${CONTRACTS_DEPLOYMENT_JSON:-/app/shared/deployment.localhost.json}"
       REGISTRY_CONTRACT_NAME: "${REGISTRY_CONTRACT_NAME:-FileRegistry}"
       IPFS_PUBLIC_GATEWAY_URL: "${IPFS_PUBLIC_GATEWAY_URL:-http://localhost:8080}"
@@ -257,6 +260,29 @@ services:
     depends_on:
       prometheus:
         condition: service_started
+    networks: [ dfsp ]
+
+  rpc_https:
+    image: caddy:2.7
+    container_name: hardhat-https
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "8546:8546"
+    depends_on:
+      - chain
+    networks: [ dfsp ]
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok-rpc
+    environment:
+      NGROK_AUTHTOKEN: "${NGROK_AUTH_TOKEN:-}"
+    command: ["http", "--log=stdout", "--region=${NGROK_REGION:-eu}", "http://rpc_https:8546"]
+    depends_on:
+      - rpc_https
+    ports:
+      - "4040:4040"
     networks: [ dfsp ]
 
 networks:

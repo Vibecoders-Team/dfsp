@@ -26,6 +26,8 @@ import { ArrowLeft, Copy, Share2, CheckCircle2, XCircle, AlertCircle } from 'luc
 import { toast } from 'sonner';
 import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
+import { getAgent } from '@/lib/agent/manager';
+import { ensureUnlockedOrThrow } from '@/lib/unlock';
 import { ensureEOA } from '../../lib/keychain';
 import { Alert, AlertDescription } from '../ui/alert';
 
@@ -155,8 +157,11 @@ export default function FileDetailsPage() {
     if (!selectedCapId) return;
     try {
       const prep = await prepareRevoke(selectedCapId); // { requestId, typedData }
-      const w = await ensureEOA();
-      const sig = await w.signTypedData(prep.typedData.domain as any, prep.typedData.types as any, prep.typedData.message as any);
+      const agent = await getAgent();
+      if (agent.kind === 'local') {
+        try { await ensureUnlockedOrThrow(); } catch { throw new Error('Unlock cancelled'); }
+      }
+      const sig = await agent.signTypedData(prep.typedData.domain as any, prep.typedData.types as any, prep.typedData.message as any);
       await submitMetaTx(prep.requestId, prep.typedData as any, sig);
       toast.success('Revoke submitted');
       setRevokeDialogOpen(false);

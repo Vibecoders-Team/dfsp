@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { ArrowLeft, X, Plus, AlertCircle, CheckCircle2, Info } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchGranteePubKey, shareFile, type ShareItem, submitMetaTx, type ForwardTyped } from '../../lib/api';
+import { fetchGranteePubKey, shareFile, type ShareItem, submitMetaTx, type ForwardTyped, listGrants } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { getOrCreateFileKey } from '../../lib/fileKey';
 import { pemToArrayBuffer, arrayBufferToBase64 } from '../../lib/keychain';
@@ -18,6 +18,10 @@ import { getOptionalPowHeader } from '../../lib/pow';
 import { importKeyFromCid } from '../../lib/importKeyCard';
 import { isAxiosError } from 'axios';
 import { getAgent } from '../../lib/agent/manager';
+import { ensureUnlockedOrThrow } from '../../lib/unlock';
+import { signForwardTyped } from '../../lib/signing';
+import { NetworkStatus } from '../NetworkStatus';
+import type { SignerAgent } from '../../lib/agent/agent';
 
 interface Recipient {
   address: string;
@@ -48,6 +52,18 @@ export default function SharePage() {
   // When a grantee key is missing, prompt to import by CID/URL
   const [needPemFor, setNeedPemFor] = useState<string | null>(null);
   const [cidInput, setCidInput] = useState('');
+
+  const [metaTxErrors, setMetaTxErrors] = useState<string[]>([]);
+  const [pendingMetaTx, setPendingMetaTx] = useState<ForwardTyped[] | null>(null);
+  const [networkHint, setNetworkHint] = useState<string>('');
+  const [awaitingMetaTxSign, setAwaitingMetaTxSign] = useState(false);
+  const [polling, setPolling] = useState(false);
+  const [pollAttempts, setPollAttempts] = useState(0);
+  const [expectedChainId] = useState<number | null>(null); // removed setter unused
+  const [currentChainId, setCurrentChainId] = useState<number | null>(null);
+  const [debugMode] = useState<boolean>(() => localStorage.getItem('dfsp_debug_meta') === '1');
+  const [rawTypedData, setRawTypedData] = useState<ForwardTyped[] | null>(null);
+  const [metaSubmitted, setMetaSubmitted] = useState(false);
 
   const validateAddress = (address: string): boolean => isAddr(address);
 
@@ -94,6 +110,15 @@ export default function SharePage() {
 
       const ttl = parseInt(ttlDays);
       const maxDl = parseInt(maxDownloads);
+
+      // Ensure unlocked early only for local agent.
+      const agent = await getAgent();
+      const isLocal = agent.kind === 'local';
+      if (isLocal) {
+        await ensureUnlockedOrThrow().catch(() => { throw new Error('Unlock cancelled'); });
+      } else {
+        setNetworkHint('');
+      }
 
       // 1) Local file symmetric key (persisted per fileId)
       const K_file = getOrCreateFileKey(fileId);
@@ -167,24 +192,38 @@ export default function SharePage() {
       // 4) Submit meta-tx for each typedData if present (non-blocking)
       try {
         const tdl = (resp?.typedDataList || []) as ForwardTyped[];
+        setPendingMetaTx(tdl);
+        setRawTypedData(tdl);
+        setMetaTxErrors([]);
         if (tdl.length > 0) {
-          const agent = await getAgent();
-          const addr = await agent.getAddress();
+          if (isLocal) {
+            try { await ensureUnlockedOrThrow(); } catch { throw new Error('Unlock cancelled'); }
+          }
           await Promise.all(
             tdl.map(async (td: ForwardTyped) => {
-              const sig = await agent.signTypedData(td.domain, td.types, td.message);
+              const agentNow = await getAgent();
+              const { signature, typedData } = await signForwardTyped(agentNow as SignerAgent, td, true, isLocal ? 'strict' : 'override-to-active');
               const reqId = crypto.randomUUID();
-              await submitMetaTx(reqId, td, sig);
+              await submitMetaTx(reqId, typedData, signature);
             })
           );
+          setMetaSubmitted(true);
+          startPolling();
         }
       } catch (e) {
-        console.warn('Grant meta-tx submit failed:', e);
+        console.warn('Grant meta-tx submit failed (initial phase):', e);
+        setMetaTxErrors([getErrorMessage(e, 'Meta-tx signing failed')]);
       }
 
-      setResults((resp?.items || []).map((it) => ({ grantee: it.grantee, capId: it.capId, status: it.status === 'queued' ? 'queued' : it.status === 'confirmed' ? 'queued' : it.status === 'revoked' ? 'error' : it.status === 'expired' ? 'error' : it.status === 'exhausted' ? 'error' : 'queued' })));
+      setResults((resp?.items || []).map((it) => ({ grantee: it.grantee, capId: it.capId, status: it.status })));
       toast.success(`File shared with ${recipients.length} recipient(s)`);
-      setTimeout(() => navigate(`/files/${fileId}`), 1500);
+      // Don't navigate immediately; wait for meta-tx signing completion
+      if ((resp?.typedDataList || []).length > 0) {
+        setAwaitingMetaTxSign(true);
+      } else {
+        // If no typed data, we can navigate after short delay
+        setTimeout(() => navigate(`/files/${fileId}`), 1500);
+      }
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to share file'));
     } finally {
@@ -223,6 +262,112 @@ export default function SharePage() {
     if (str.length <= length) return str;
     return str.slice(0, length / 2) + '...' + str.slice(-length / 2);
   };
+
+  const retryMetaTx = async () => {
+    if (!pendingMetaTx || pendingMetaTx.length === 0) return;
+    try {
+      const agent = await getAgent();
+      const isLocal = agent.kind === 'local';
+      const errs: string[] = [];
+      await Promise.all(pendingMetaTx.map(async (td) => {
+        try {
+          if (isLocal) { await ensureUnlockedOrThrow().catch(() => { throw new Error('Unlock cancelled'); }); }
+          const { signature, typedData } = await signForwardTyped(agent as SignerAgent, td, true, isLocal ? 'strict' : 'override-to-active');
+          const reqId = crypto.randomUUID();
+          await submitMetaTx(reqId, typedData, signature);
+        } catch (e) {
+          errs.push(getErrorMessage(e, 'Retry failed'));
+        }
+      }));
+      setMetaTxErrors(errs);
+      if (errs.length === 0) toast.success('Meta-transactions submitted');
+    } catch (e) {
+      toast.error(getErrorMessage(e, 'Retry meta-tx failed'));
+    }
+  };
+
+  const signPendingMetaTx = async () => {
+    if (!pendingMetaTx || pendingMetaTx.length === 0) return;
+    const agent = await getAgent();
+    const isLocal = agent.kind === 'local';
+    const errs: string[] = [];
+    try {
+      if (isLocal) {
+        try { await ensureUnlockedOrThrow(); } catch { throw new Error('Unlock cancelled'); }
+      } else {
+        setNetworkHint('');
+      }
+      for (const td of pendingMetaTx) {
+        try {
+          const { signature, typedData } = await signForwardTyped(agent as SignerAgent, td, true, isLocal ? 'strict' : 'override-to-active');
+          const reqId = crypto.randomUUID();
+          await submitMetaTx(reqId, typedData, signature);
+        } catch (e) {
+          errs.push(getErrorMessage(e, 'Sign/submit failed'));
+        }
+      }
+      setMetaTxErrors(errs);
+      if (errs.length === 0) {
+        toast.success('Meta-tx submitted');
+        setMetaSubmitted(true);
+        startPolling();
+        setAwaitingMetaTxSign(false);
+      }
+    } catch (e) {
+      errs.push(getErrorMessage(e, 'Sign process failed'));
+      setMetaTxErrors(errs);
+    }
+  };
+
+  const switchNetworkAndSign = async () => {
+    if (!pendingMetaTx || pendingMetaTx.length === 0 || expectedChainId == null) return;
+    const agent = await getAgent();
+    if (agent.kind === 'local') return; // not applicable
+    try {
+      if (agent.switchChain) {
+        await agent.switchChain(expectedChainId);
+        setCurrentChainId(expectedChainId);
+        setNetworkHint('');
+      }
+      await signPendingMetaTx();
+    } catch (e) {
+      toast.error(getErrorMessage(e, 'Failed to switch network'));
+    }
+  };
+
+  function startPolling() {
+    if (polling) return;
+    setPolling(true);
+    setPollAttempts(0);
+    pollOnce();
+  }
+  async function pollOnce() {
+    try {
+      setPollAttempts(p => p + 1);
+      const gr = await listGrants(fileId);
+      // update statuses in results
+      setResults(prev => prev.map(r => {
+        const found = gr.find(g => g.capId === r.capId);
+        return found ? { ...r, status: found.status as typeof r.status } : r;
+      }));
+      const allConfirmedOrTerminal = gr.length > 0 && gr.every(g => ['confirmed','revoked','expired','exhausted'].includes(g.status));
+      if (allConfirmedOrTerminal) {
+        toast.success('Grants finalized');
+        setTimeout(() => navigate(`/files/${fileId}`), 1200);
+        setPolling(false);
+        return;
+      }
+    } catch {
+      // ignore transient errors
+    }
+    if (pollAttempts < 20) {
+      setTimeout(pollOnce, 3000);
+    } else {
+      toast.message('Polling timeout');
+      setPolling(false);
+      // allow manual navigation
+    }
+  }
 
   if (results.length > 0) {
     return (
@@ -279,6 +424,8 @@ export default function SharePage() {
             Sharing requires a published RSA public key. Recipients must be registered on the platform.
           </AlertDescription>
         </Alert>
+
+        <NetworkStatus />
 
         {needPemFor && (
           <Card>
@@ -379,6 +526,71 @@ export default function SharePage() {
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>{error}</AlertDescription>
           </Alert>
+        )}
+
+        {metaTxErrors.length > 0 && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <div className="space-y-2">
+                {metaTxErrors.map((e,i)=>(<div key={i} className="text-xs break-all">{e}</div>))}
+                <Button size="sm" variant="outline" onClick={retryMetaTx}>Retry Meta-tx</Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {networkHint && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-xs">{networkHint}</AlertDescription>
+          </Alert>
+        )}
+
+        {awaitingMetaTxSign && !networkHint && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-xs flex flex-col gap-2">
+              Meta-transaction needs signing.
+              <Button size="sm" variant="outline" onClick={signPendingMetaTx}>Sign & Submit Meta-tx</Button>
+            </AlertDescription>
+          </Alert>
+        )}
+        {awaitingMetaTxSign && networkHint && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-xs flex flex-col gap-2">
+              {networkHint}
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={signPendingMetaTx}>Retry Sign & Submit</Button>
+                <Button size="sm" onClick={switchNetworkAndSign}>
+                  Switch to {expectedChainId ?? '?'} & Sign
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {results.length>0 && polling && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-xs">Polling grant statuses... attempt {pollAttempts}/20</AlertDescription>
+          </Alert>
+        )}
+
+        {debugMode && rawTypedData && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Debug: TypedDataList</CardTitle>
+              <CardDescription>Chain insight and raw payloads</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 text-xs max-h-64 overflow-auto font-mono">
+              <div>expectedChainId: {expectedChainId ?? 'n/a'} | currentChainId: {currentChainId ?? 'n/a'} | metaSubmitted: {String(metaSubmitted)}</div>
+              {rawTypedData.map((td, i) => (
+                <pre key={i}>{JSON.stringify(td, null, 2)}</pre>
+              ))}
+            </CardContent>
+          </Card>
         )}
 
         <div className="flex gap-3 justify-end">

@@ -52,7 +52,11 @@ export class MetaMaskAgent implements SignerAgent {
   }
 
   async signTypedData(domain: TypedDataDomain, types: Record<string, TypedDataField[]>, message: Record<string, unknown>): Promise<string> {
-    await this.assertExpectedChain();
+    // If domain has chainId and differs from expected, do not assert here – caller handles switching
+    const desired = (domain && (domain as any).chainId) ? Number((domain as any).chainId) : undefined;
+    if (!desired || (this.expectedChainId && desired === this.expectedChainId)) {
+      await this.assertExpectedChain();
+    }
     const typesNoDomain = stripEip712Domain(types);
 
     const attempt = async (): Promise<string> => {
@@ -70,7 +74,6 @@ export class MetaMaskAgent implements SignerAgent {
         if (err.code === 4100) throw new Error('Unauthorized: please connect MetaMask to this site');
         if (err.code === 4902) throw new Error('Unknown chain: please add/switch network in MetaMask');
         if (err.message && /CHAIN_ID_MISMATCH/i.test(err.message)) {
-            // пробуем восстановиться: инвалидируем провайдер (forge new provider), ждём и проверяем сеть
             this.invalidateProvider();
             await new Promise(r => setTimeout(r, 250 * (i + 1)));
             continue;
@@ -78,7 +81,7 @@ export class MetaMaskAgent implements SignerAgent {
         throw e;
       }
     }
-    throw new Error('MetaMask: повторные попытки подписи завершились CHAIN_ID_MISMATCH — обновите сеть вручную и попробуйте снова');
+    throw new Error('MetaMask: repeated attempts failed due to CHAIN_ID_MISMATCH — switch network and try again');
   }
 
   async switchChain(chainId: number): Promise<void> {

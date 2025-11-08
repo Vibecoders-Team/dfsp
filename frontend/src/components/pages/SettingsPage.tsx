@@ -11,8 +11,11 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Progress } from '../ui/progress';
 import { Key, User, Shield, Download, Upload, AlertCircle, CheckCircle2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
-import { ensureRSA, createBackupBlob } from '../../lib/keychain';
+import { ensureRSA, createBackupBlob, createBackupBlobRSAOnly } from '../../lib/keychain';
 import { publishMyKeyCard } from '../../lib/publishMyKey';
+import { reencryptEOA } from '../../lib/keychain';
+
+const AUTOLOCK_KEY = 'dfsp_autolock_enabled';
 
 function SettingsNav() {
   const location = useLocation();
@@ -346,6 +349,19 @@ export function KeysSettings() {
               <Download className="h-4 w-4" />
               {backupBusy ? 'Preparing…' : 'Download Backup (.dfspkey)'}
             </Button>
+            <Button variant="secondary" onClick={async()=>{
+              try{
+                if(!backupPassword || backupPassword.length<12){ setError('Set a strong password (>= 12 chars)'); return; }
+                setBackupBusy(true);
+                const blob = await createBackupBlobRSAOnly(backupPassword);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href=url; a.download = `dfsp-backup-rsa-${Date.now()}.dfspkey`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                toast.success('RSA-only backup downloaded');
+              }catch(e){ setError(e instanceof Error? e.message : 'Failed to create RSA-only backup'); }
+              finally{ setBackupBusy(false); }
+            }} disabled={backupBusy}>
+              <Download className="h-4 w-4" /> RSA-only
+            </Button>
 
             <input ref={fileInputRef} type="file" accept=".dfspkey" onChange={handleFileSelect} className="hidden" />
             <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-2">
@@ -392,6 +408,12 @@ export function SecuritySettings() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [autolockEnabled, setAutolockEnabled] = useState<boolean>(() => {
+    const v = localStorage.getItem(AUTOLOCK_KEY);
+    return v ? v === '1' : true;
+  });
+
+  useEffect(()=>{ localStorage.setItem(AUTOLOCK_KEY, autolockEnabled ? '1' : '0'); }, [autolockEnabled]);
 
   const getPasswordStrength = (): 'weak' | 'medium' | 'strong' | null => {
     if (!newPassword) return null;
@@ -426,8 +448,7 @@ export function SecuritySettings() {
     setError('');
     setSuccess(false);
     try {
-      // TODO: re-encrypt local keys with new password
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await reencryptEOA(currentPassword, newPassword);
       setSuccess(true);
       setCurrentPassword('');
       setNewPassword('');
@@ -521,6 +542,24 @@ export function SecuritySettings() {
               {isProcessing ? 'Processing...' : 'Change Password'}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Auto‑lock</CardTitle>
+          <CardDescription>Automatically lock local EOA after inactivity</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-3">
+            <Label htmlFor="autolock">Enable auto‑lock</Label>
+            <input id="autolock" type="checkbox" checked={autolockEnabled} onChange={(e)=>setAutolockEnabled(e.target.checked)} />
+            <Button size="sm" variant="outline" onClick={()=>{
+              localStorage.setItem(AUTOLOCK_KEY, autolockEnabled ? '1' : '0');
+              toast.success('Auto‑lock setting applied');
+            }}>Apply</Button>
+          </div>
+          <p className="text-xs text-gray-500">If disabled, your local private key remains unlocked until you lock it manually or reloads the page.</p>
         </CardContent>
       </Card>
     </div>
