@@ -241,6 +241,11 @@ export async function fetchGranteePubKey(addr: string): Promise<string> {
 }
 
 export async function listGrants(fileId: string): Promise<Grant[]> {
+  // Avoid hitting backend when unauthenticated (e.g., after logout route switch)
+  try {
+    const tok = localStorage.getItem(ACCESS_TOKEN_KEY);
+    if (!tok) return [];
+  } catch { /* ignore */ }
   try {
     const { data } = await api.get<{ items: Grant[] }>(`/files/${fileId}/grants`);
     return data.items;

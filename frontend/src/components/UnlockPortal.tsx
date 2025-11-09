@@ -4,6 +4,8 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
 import { isEOAUnlocked, unlockEOA } from '@/lib/keychain';
+import { getErrorMessage } from '@/lib/errors';
+import { rememberLastUnlockPassword } from '@/lib/unlock';
 
 export default function UnlockPortal() {
   const [open, setOpen] = useState(false);
@@ -21,16 +23,21 @@ export default function UnlockPortal() {
     setBusy(true);
     try {
       await unlockEOA(pwd);
-      try {
-        window.dispatchEvent(new CustomEvent('dfsp:unlocked'));
-      } catch {
-        // ignore dispatch errors in non-DOM env
-      }
+      rememberLastUnlockPassword(pwd);
+      try { window.dispatchEvent(new CustomEvent('dfsp:unlocked')); } catch (e) { console.debug('dispatch unlocked failed', e); }
       toast.success('Key unlocked');
       setOpen(false);
       setPwd('');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Unlock error');
+      // Map common WebCrypto/AES-GCM failure messages to user-friendly text
+      let msg = getErrorMessage(e, 'Unlock error');
+      if (e instanceof DOMException && /Operation failed|decrypt/.test(e.message)) {
+        msg = 'Incorrect password. Please try again.';
+      }
+      if (msg === 'Unlock error' && e instanceof Error && !e.message) {
+        msg = 'Failed to unlock key. Check your password.';
+      }
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -42,15 +49,16 @@ export default function UnlockPortal() {
   }, [open]);
 
   return (
-    <Dialog open={open} onOpenChange={o => { if(!o && !isEOAUnlocked()) { try { window.dispatchEvent(new CustomEvent('dfsp:unlock-cancel')); } catch {} } setOpen(o); if (!o) setPwd(''); }}>
+    <Dialog open={open} onOpenChange={o => { if(!o && !isEOAUnlocked()) { try { window.dispatchEvent(new CustomEvent('dfsp:unlock-cancel')); } catch (e) { console.debug('dispatch unlock-cancel failed', e); } } setOpen(o); if (!o) setPwd(''); }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Unlock local key</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <Input type="password" placeholder="Password" value={pwd} onChange={e => setPwd(e.target.value)} disabled={busy} />
+          {busy && <div className="text-xs text-gray-500">Unlocking...</div>}
           <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => { setOpen(false); try { window.dispatchEvent(new CustomEvent('dfsp:unlock-cancel')); } catch {} }} disabled={busy}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setOpen(false); try { window.dispatchEvent(new CustomEvent('dfsp:unlock-cancel')); } catch (e) { console.debug('dispatch unlock-cancel failed', e); } }} disabled={busy}>Cancel</Button>
             <Button onClick={handleUnlock} disabled={busy || !pwd}>{busy ? '...' : 'Unlock'}</Button>
           </div>
         </div>

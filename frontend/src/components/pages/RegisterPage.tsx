@@ -17,10 +17,9 @@ import {
 import { Eye, EyeOff, Key, AlertCircle, CheckCircle2, Download } from 'lucide-react';
 import { Progress } from '../ui/progress';
 import AgentSelector from '../AgentSelector';
+import { getErrorMessage } from '@/lib/errors';
 
 type RegisterState = 'idle' | 'generating' | 'backup_required' | 'registering' | 'success' | 'error';
-
-type PasswordStrength = 'weak' | 'medium' | 'strong';
 
 export default function RegisterPage() {
   const [password, setPassword] = useState('');
@@ -37,56 +36,44 @@ export default function RegisterPage() {
   const { register: registerUser, login, updateBackupStatus } = useAuth();
   const navigate = useNavigate();
 
-  const getPasswordStrength = (): PasswordStrength => {
+  const getPasswordStrength = (): 'weak' | 'medium' | 'strong' => {
     if (password.length < 12) return 'weak';
-    
     const hasUpper = /[A-Z]/.test(password);
     const hasLower = /[a-z]/.test(password);
     const hasDigit = /\d/.test(password);
     const hasSpecial = /[^A-Za-z0-9]/.test(password);
-    
     const score = [hasUpper, hasLower, hasDigit, hasSpecial].filter(Boolean).length;
-    
     if (score >= 3 && password.length >= 16) return 'strong';
     if (score >= 2 && password.length >= 12) return 'medium';
     return 'weak';
   };
-
   const passwordStrength = password ? getPasswordStrength() : null;
   const passwordsMatch = password && confirmPassword && password === confirmPassword;
 
-  const isFormValid = () => {
-    return (
-      password.length >= 12 &&
-      passwordsMatch &&
-      acceptTerms &&
-      /[A-Z]/.test(password) &&
-      /[a-z]/.test(password) &&
-      /\d/.test(password)
-    );
-  };
+  const isFormValid = () => (
+    acceptTerms &&
+    password.length >= 12 &&
+    /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password) &&
+    passwordsMatch
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!isFormValid()) {
-      setErrorMessage('Please fill in all required fields correctly');
+      setErrorMessage('Please provide a password (min 12 chars, upper/lowercase, digit) and accept Terms');
       setState('error');
       return;
     }
-
     try {
       setState('generating');
       setErrorMessage('');
-      
       const result = await registerUser(password, confirmPassword, displayName || undefined);
-      
       setBackupData(result.backupData);
       setState('backup_required');
       setShowBackupModal(true);
     } catch (error) {
       setState('error');
-      setErrorMessage(error instanceof Error ? error.message : 'Registration failed');
+      setErrorMessage(getErrorMessage(error, 'Registration failed'));
     }
   };
 
@@ -125,7 +112,7 @@ export default function RegisterPage() {
       navigate('/files');
     } catch (error) {
       setState('error');
-      setErrorMessage(error instanceof Error ? error.message : 'Registration failed');
+      setErrorMessage(getErrorMessage(error, 'Registration failed'));
     }
   };
 
@@ -173,51 +160,22 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">Password (for local key encryption)</Label>
               <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={isLoading}
-                  placeholder="Minimum 12 characters"
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  disabled={isLoading}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                <Input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} disabled={isLoading} placeholder="Minimum 12 characters" className="pr-10" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" disabled={isLoading}>
+                  {showPassword ? (<EyeOff className="h-4 w-4" />) : (<Eye className="h-4 w-4" />)}
                 </button>
               </div>
               {password && passwordStrength && (
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <Progress
-                      value={
-                        passwordStrength === 'weak' ? 33 :
-                        passwordStrength === 'medium' ? 66 : 100
-                      }
-                      className="h-1.5"
-                    />
-                    <span className={`text-xs ${
-                      passwordStrength === 'weak' ? 'text-red-600' :
-                      passwordStrength === 'medium' ? 'text-yellow-600' :
-                      'text-green-600'
-                    }`}>
+                    <Progress value={passwordStrength === 'weak' ? 33 : passwordStrength === 'medium' ? 66 : 100} className="h-1.5" />
+                    <span className={`text-xs ${passwordStrength === 'weak' ? 'text-red-600' : passwordStrength === 'medium' ? 'text-yellow-600' : 'text-green-600'}`}>
                       {passwordStrength.charAt(0).toUpperCase() + passwordStrength.slice(1)}
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500">
-                    Use mixed case, digits, and special characters
-                  </p>
+                  <p className="text-xs text-gray-500">Use mixed case, digits, and special characters</p>
                 </div>
               )}
             </div>
@@ -225,26 +183,9 @@ export default function RegisterPage() {
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm Password</Label>
               <div className="relative">
-                <Input
-                  id="confirmPassword"
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  disabled={isLoading}
-                  placeholder="Re-enter your password"
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  disabled={isLoading}
-                >
-                  {showConfirmPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                <Input id="confirmPassword" type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} disabled={isLoading} placeholder="Re-enter your password" className="pr-10" />
+                <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" disabled={isLoading}>
+                  {showConfirmPassword ? (<EyeOff className="h-4 w-4" />) : (<Eye className="h-4 w-4" />)}
                 </button>
               </div>
               {confirmPassword && (

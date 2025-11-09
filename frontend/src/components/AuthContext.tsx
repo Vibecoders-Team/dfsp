@@ -5,11 +5,16 @@ import { postChallenge, postLogin, postRegister, ACCESS_TOKEN_KEY, type Register
 import { ethers, type TypedDataDomain, type TypedDataField } from 'ethers';
 import { getAgent } from '@/lib/agent/manager';
 import React from 'react';
+import { ensureUnlockedOrThrow } from '@/lib/unlock';
 
 const LOGIN_DOMAIN: TypedDataDomain = KC_LOGIN_DOMAIN;
 const LOGIN_TYPES: Record<string, TypedDataField[]> = KC_LOGIN_TYPES;
 const EXPECTED_CHAIN_ID = Number((import.meta as any).env?.VITE_CHAIN_ID || 0);
 const ADDRESS_KEY = 'dfsp_address';
+const SESSION_GEN_KEY = 'SESSION_GEN';
+function bumpSessionGen() {
+  try { localStorage.setItem(SESSION_GEN_KEY, crypto.randomUUID()); } catch { /* ignore */ }
+}
 
 interface User {
   address: string;
@@ -22,7 +27,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: () => Promise<void>;
-  register: (password: string, confirmPassword: string, displayName?: string) => Promise<{ backupData: Blob }>;
+  register: (password: string, confirmPassword: string, displayName?: string) => Promise<{ backupData: Blob }>; // restore confirm
   logout: () => void;
   restoreAccount: (file: File, password: string) => Promise<void>;
   updateBackupStatus: (hasBackup: boolean) => void;
@@ -55,6 +60,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (address) {
           setUser({ address, displayName: storedName || undefined, hasBackup: backup });
         }
+        // ensure session gen exists
+        const gen = localStorage.getItem(SESSION_GEN_KEY);
+        if (!gen) bumpSessionGen();
       } catch (error) {
         console.error('Auth check failed (non-fatal):', error);
       } finally {
@@ -67,11 +75,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async () => {
        const challenge = await postChallenge();
        const agent = await getAgent();
-       // Enforce chain only for metamask with expected chain id; skip for walletconnect to allow signing even if network mismatch
-       if (EXPECTED_CHAIN_ID && agent.kind === 'metamask' && agent.getChainId) {
-         const current = await agent.getChainId();
-         if (current !== EXPECTED_CHAIN_ID) {
-           throw new Error(`MetaMask: wrong network (${current}). Switch to ${EXPECTED_CHAIN_ID} and retry.`);
+       // For local agent: prompt unlock dialog and wait before proceeding
+       if (agent.kind === 'local') {
+         try { await ensureUnlockedOrThrow(); } catch { throw new Error('Unlock cancelled'); }
+       }
+       // Network handling: MetaMask strict, WalletConnect lenient with short stabilization
+       if (EXPECTED_CHAIN_ID && agent.getChainId) {
+         const current0 = await agent.getChainId();
+         if (agent.kind === 'metamask') {
+           if (current0 !== EXPECTED_CHAIN_ID) {
+             if ((agent as any).switchChain) {
+               try { await (agent as any).switchChain(EXPECTED_CHAIN_ID); }
+               catch { throw new Error(`Wrong network (${current0}). Please switch to ${EXPECTED_CHAIN_ID} and retry.`); }
+             } else {
+               throw new Error(`Wrong network (${current0}). Please switch to ${EXPECTED_CHAIN_ID} and retry.`);
+             }
+           }
+         } else if (agent.kind === 'walletconnect') {
+           // temporarily disable chain enforcement inside agent to avoid network-changed race
+           if ((agent as any).setChainEnforcement) { try { (agent as any).setChainEnforcement(false); } catch { /* ignore */ } }
+           let stabilized = current0;
+           for (let i=0; i<6; i++) { // ~1.2s max
+             if (stabilized === EXPECTED_CHAIN_ID) break;
+             await new Promise(r=>setTimeout(r,200));
+             try { stabilized = await agent.getChainId() ?? stabilized; } catch { /* ignore */ }
+           }
          }
        }
        const address = await agent.getAddress();
@@ -87,6 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
          signature = await agent.signTypedData(domain, TYPES, message as unknown as Record<string, unknown>);
        } catch (e) {
          throw new Error(`Login signing failed: ${(e as Error).message}`);
+       } finally {
+         if ((agent as any).setChainEnforcement) { try { (agent as any).setChainEnforcement(true); } catch { /* ignore */ } }
        }
        const recovered = ethers.verifyTypedData(domain, TYPES, message, signature);
        if (recovered.toLowerCase() !== address.toLowerCase()) {
@@ -107,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
        localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
        localStorage.setItem(ADDRESS_KEY, address);
+       bumpSessionGen();
        const storedName = localStorage.getItem('dfsp_display_name');
        const backup = await hasEOA();
        setUser({ address, displayName: storedName || undefined, hasBackup: backup });
@@ -118,10 +149,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     displayName?: string
   ): Promise<{ backupData: Blob }> => {
        if (password !== confirmPassword) throw new Error('Passwords do not match');
-       if (password.length < 12) throw new Error('Password must be at least 12 characters');
+       const hasUpper = /[A-Z]/.test(password);
+       const hasLower = /[a-z]/.test(password);
+       const hasDigit = /\d/.test(password);
+       if (password.length < 12 || !(hasUpper && hasLower && hasDigit)) {
+         throw new Error('Password must be at least 12 characters and include upper/lower case and a digit');
+       }
        const challenge = await postChallenge();
        const { publicPem } = await ensureRSA();
        const agent = await getAgent();
+       // Pre-unlock local EOA with provided password to avoid unlock dialog
+       if (agent.kind === 'local') {
+         await ensureEOA(password);
+       }
        if (EXPECTED_CHAIN_ID && agent.kind === 'metamask' && agent.getChainId) {
          const current = await agent.getChainId();
          if (current !== EXPECTED_CHAIN_ID) {
@@ -158,7 +198,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        if (displayName) localStorage.setItem('dfsp_display_name', displayName);
        let backupData: Blob;
        if (agent.kind === 'local') {
-         await ensureEOA();
+         // EOA already ensured; create full backup with the same password
          backupData = await createBackupBlob(password);
        } else {
          backupData = new Blob([JSON.stringify({ notice: 'External wallet – create full backup after local EOA generation if needed.' }, null, 2)], { type: 'application/json' });
@@ -174,11 +214,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    };
 
   const logout = () => {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    localStorage.removeItem('REFRESH_TOKEN');
-    localStorage.removeItem(ADDRESS_KEY);
-    setUser(null);
-  };
+     // soft logout: leave wallet session intact, just clear auth tokens
+     localStorage.removeItem(ACCESS_TOKEN_KEY);
+     localStorage.removeItem('REFRESH_TOKEN');
+     // Do not clear address/display name so UI can prefill
+     // localStorage.removeItem(ADDRESS_KEY);
+     // localStorage.removeItem('dfsp_display_name');
+    bumpSessionGen();
+    try { window.dispatchEvent(new CustomEvent('dfsp:logout')); } catch { /* ignore */ }
+     setUser(null);
+   };
 
   const updateBackupStatus = (hasBackup: boolean) => {
     setUser(prev => prev ? { ...prev, hasBackup } : prev);

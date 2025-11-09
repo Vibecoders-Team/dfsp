@@ -4,6 +4,7 @@ import { LocalAgent } from './local';
 const KEY = 'dfsp_agent_kind';
 let cached: SignerAgent | null = null;
 let cachedKind: AgentKind | null = null;
+let pending: Promise<SignerAgent> | null = null;
 
 export function getSelectedAgentKind(): AgentKind {
   const k = (localStorage.getItem(KEY) as AgentKind | null) || 'local';
@@ -16,25 +17,31 @@ export function setSelectedAgentKind(kind: AgentKind) {
   // reset cache so next getAgent() re-initializes
   cached = null;
   cachedKind = null;
+  pending = null;
 }
 
 export async function getAgent(): Promise<SignerAgent> {
   const sel = getSelectedAgentKind();
   if (cached && cachedKind === sel) return cached;
-  if (sel === 'local') {
-    cached = new LocalAgent();
+  if (pending) return pending;
+  pending = (async () => {
+    let agent: SignerAgent;
+    if (sel === 'local') {
+      agent = new LocalAgent();
+    } else if (sel === 'metamask') {
+      const { MetaMaskAgent } = await import('./metamask');
+      agent = new MetaMaskAgent();
+    } else {
+      const { WalletConnectAgent } = await import('./walletconnect');
+      agent = new WalletConnectAgent();
+    }
+    cached = agent;
     cachedKind = sel;
-    return cached;
+    return agent;
+  })();
+  try {
+    return await pending;
+  } finally {
+    pending = null;
   }
-  if (sel === 'metamask') {
-    const { MetaMaskAgent } = await import('./metamask');
-    cached = new MetaMaskAgent();
-    cachedKind = sel;
-    return cached;
-  }
-  const { WalletConnectAgent } = await import('./walletconnect');
-  cached = new WalletConnectAgent();
-  cachedKind = 'walletconnect';
-  return cached;
 }
-

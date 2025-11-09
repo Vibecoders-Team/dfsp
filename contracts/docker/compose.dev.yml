@@ -15,7 +15,7 @@ volumes:
 services:
   # ----------------------- Hardhat node (локальная сеть) -----------------------
   chain:
-    image: node:${NODE_VERSION:-20}
+    image: node:${NODE_VERSION:-22}
     working_dir: /app
     command: sh -lc "npm ci && npx hardhat node --hostname 0.0.0.0"
     # /app — volume, исходники монтируем поверх
@@ -38,7 +38,7 @@ services:
 
   # ----------------------- Деплой контрактов и экспорт ABI ---------------------
   contracts:
-    image: node:${NODE_VERSION:-20}
+    image: node:${NODE_VERSION:-22}
     working_dir: /app
     depends_on:
       chain:
@@ -49,6 +49,8 @@ services:
       NPM_CONFIG_CACHE: /npm-cache
     command: >
       sh -lc "npm ci &&
+              npm ls ts-node >/dev/null 2>&1 || npm i -D ts-node &&
+              export NODE_OPTIONS='--loader ts-node/esm' &&
               npx hardhat run scripts/deploy-local.ts --network docker &&
               npm run abi:export && npm run export:deployment"
     networks: [ dfsp ]

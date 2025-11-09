@@ -63,12 +63,12 @@ export default function Layout({ children }: LayoutProps) {
             <div className="flex items-center gap-4">
               <div className="text-sm text-gray-600">
                 {user?.displayName && <span className="mr-2">{user.displayName}</span>}
-                <span className="text-xs text-gray-400">
+                <Link to="/settings/profile" className="text-xs text-blue-600 hover:underline" title="Open profile">
                   {user?.address.slice(0, 6)}...{user?.address.slice(-4)}
-                </span>
+                </Link>
               </div>
               <KeyLockIndicator />
-              <AgentSelector />
+              <AgentSelector compact={!!user} />
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

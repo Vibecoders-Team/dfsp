@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import Layout from '../Layout';
 import { Button } from '../ui/button';
@@ -31,12 +31,15 @@ interface Recipient {
 interface ShareResult {
   grantee: string;
   capId: string;
-  status: 'queued' | 'duplicate' | 'error';
+  status: 'queued' | 'pending' | 'confirmed' | 'revoked' | 'expired' | 'exhausted' | 'duplicate' | 'error';
   error?: string;
 }
 
 const addrRe = /^0x[a-fA-F0-9]{40}$/;
 const isAddr = (v: string) => addrRe.test(v.trim());
+type ViteEnv = { VITE_CHAIN_ID?: string; VITE_EXPECTED_CHAIN_ID?: string };
+const VENV: ViteEnv = (import.meta as unknown as { env: ViteEnv }).env || {};
+const EXPECTED_CHAIN_ID = Number(VENV.VITE_CHAIN_ID || VENV.VITE_EXPECTED_CHAIN_ID || 31337);
 
 export default function SharePage() {
   const { id: fileId = '' } = useParams();
@@ -59,7 +62,7 @@ export default function SharePage() {
   const [awaitingMetaTxSign, setAwaitingMetaTxSign] = useState(false);
   const [polling, setPolling] = useState(false);
   const [pollAttempts, setPollAttempts] = useState(0);
-  const [expectedChainId] = useState<number | null>(null); // removed setter unused
+  const [expectedChainId] = useState<number | null>(EXPECTED_CHAIN_ID);
   const [currentChainId, setCurrentChainId] = useState<number | null>(null);
   const [debugMode] = useState<boolean>(() => localStorage.getItem('dfsp_debug_meta') === '1');
   const [rawTypedData, setRawTypedData] = useState<ForwardTyped[] | null>(null);
@@ -118,6 +121,24 @@ export default function SharePage() {
         await ensureUnlockedOrThrow().catch(() => { throw new Error('Unlock cancelled'); });
       } else {
         setNetworkHint('');
+        // enforce expected chain for external wallets
+        if (expectedChainId != null && 'getChainId' in agent && typeof agent.getChainId === 'function') {
+          const cid = await agent.getChainId();
+          if (cid !== expectedChainId) {
+            if ('switchChain' in agent && typeof agent.switchChain === 'function') {
+              try { await agent.switchChain(expectedChainId); }
+              catch {
+                setNetworkHint(`Wrong network (${cid}). Please switch to ${expectedChainId} in your wallet and retry.`);
+                setIsSubmitting(false);
+                return;
+              }
+            } else {
+              setNetworkHint(`Wrong network (${cid}). Please switch to ${expectedChainId} in your wallet and retry.`);
+              setIsSubmitting(false);
+              return;
+            }
+          }
+        }
       }
 
       // 1) Local file symmetric key (persisted per fileId)
@@ -202,9 +223,29 @@ export default function SharePage() {
           await Promise.all(
             tdl.map(async (td: ForwardTyped) => {
               const agentNow = await getAgent();
-              const { signature, typedData } = await signForwardTyped(agentNow as SignerAgent, td, true, isLocal ? 'strict' : 'override-to-active');
+              // Enforce chain for ForwardRequest (external wallets)
+              if (agentNow.kind !== 'local' && (td as any).domain?.chainId && 'getChainId' in agentNow && typeof agentNow.getChainId === 'function') {
+                const desired = Number((td as any).domain.chainId);
+                const current = await agentNow.getChainId();
+                if (current !== desired) {
+                  if ('switchChain' in agentNow && typeof agentNow.switchChain === 'function') {
+                    try { await agentNow.switchChain(desired); }
+                    catch {
+                      setNetworkHint(`Wrong network (${current}). Please switch to ${desired} in your wallet and retry.`);
+                      throw new Error('Network mismatch for meta-tx');
+                    }
+                    const after = await agentNow.getChainId();
+                    if (after !== desired) { setNetworkHint(`Wrong network (${after}). Please switch to ${desired} in your wallet and retry.`); throw new Error('Network mismatch for meta-tx'); }
+                  } else {
+                    setNetworkHint(`Wrong network (${current}). Please switch to ${desired} in your wallet and retry.`);
+                    throw new Error('Network mismatch for meta-tx');
+                  }
+                }
+              }
+              const { signature, typedData } = await signForwardTyped(agentNow as SignerAgent, td, true);
               const reqId = crypto.randomUUID();
-              await submitMetaTx(reqId, typedData, signature);
+              const res = await submitMetaTx(reqId, typedData, signature);
+              console.info('MetaTx submitted', { reqId, status: res.status, task: res.task_id });
             })
           );
           setMetaSubmitted(true);
@@ -215,7 +256,7 @@ export default function SharePage() {
         setMetaTxErrors([getErrorMessage(e, 'Meta-tx signing failed')]);
       }
 
-      setResults((resp?.items || []).map((it) => ({ grantee: it.grantee, capId: it.capId, status: it.status })));
+      setResults((resp?.items || []).map((it) => ({ grantee: it.grantee, capId: it.capId, status: it.status as ShareResult['status'] })));
       toast.success(`File shared with ${recipients.length} recipient(s)`);
       // Don't navigate immediately; wait for meta-tx signing completion
       if ((resp?.typedDataList || []).length > 0) {
@@ -272,7 +313,7 @@ export default function SharePage() {
       await Promise.all(pendingMetaTx.map(async (td) => {
         try {
           if (isLocal) { await ensureUnlockedOrThrow().catch(() => { throw new Error('Unlock cancelled'); }); }
-          const { signature, typedData } = await signForwardTyped(agent as SignerAgent, td, true, isLocal ? 'strict' : 'override-to-active');
+          const { signature, typedData } = await signForwardTyped(agent as SignerAgent, td, true);
           const reqId = crypto.randomUUID();
           await submitMetaTx(reqId, typedData, signature);
         } catch (e) {
@@ -299,7 +340,7 @@ export default function SharePage() {
       }
       for (const td of pendingMetaTx) {
         try {
-          const { signature, typedData } = await signForwardTyped(agent as SignerAgent, td, true, isLocal ? 'strict' : 'override-to-active');
+          const { signature, typedData } = await signForwardTyped(agent as SignerAgent, td, true);
           const reqId = crypto.randomUUID();
           await submitMetaTx(reqId, typedData, signature);
         } catch (e) {
@@ -369,6 +410,16 @@ export default function SharePage() {
     }
   }
 
+  useEffect(()=>{
+    const onLogout = () => {
+      setPolling(false);
+      setResults([]);
+      setPendingMetaTx(null);
+    };
+    window.addEventListener('dfsp:logout', onLogout);
+    return ()=> window.removeEventListener('dfsp:logout', onLogout);
+  },[]);
+
   if (results.length > 0) {
     return (
       <Layout>
@@ -391,7 +442,7 @@ export default function SharePage() {
                       <code className="text-sm">{truncate(result.grantee, 16)}</code>
                       <div className="text-xs text-gray-500 mt-1">Cap ID: {result.capId}</div>
                     </div>
-                    <Badge variant={result.status === 'queued' ? 'default' : 'secondary'}>{result.status}</Badge>
+                    <Badge variant={result.status === 'queued' ? 'default' : result.status === 'confirmed' ? 'secondary' : 'outline'}>{result.status}</Badge>
                   </div>
                 ))}
               </div>

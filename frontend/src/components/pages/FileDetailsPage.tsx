@@ -118,6 +118,16 @@ export default function FileDetailsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  useEffect(() => {
+    const onLogout = () => {
+      setFile(null);
+      setError(null);
+      setLoading(false);
+    };
+    window.addEventListener('dfsp:logout', onLogout);
+    return () => window.removeEventListener('dfsp:logout', onLogout);
+  }, []);
+
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     toast.success(`${label} copied to clipboard`);

@@ -1,6 +1,6 @@
-http://:8546 {
+# HTTP reverse proxy for local Hardhat RPC (ngrok will provide public HTTPS)
+:8546 {
   encode gzip
-  # Forward all requests to internal Hardhat JSON-RPC
   reverse_proxy http://chain:8545
   header Access-Control-Allow-Origin "*"
   header Access-Control-Allow-Methods "GET, POST, OPTIONS"

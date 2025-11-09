@@ -4,11 +4,12 @@ import { useAuth } from '../AuthContext';
 import { Button } from '../ui/button';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Key, AlertCircle } from 'lucide-react';
-import { hasEOA } from '@/lib/keychain';
+import { hasEOA, isEOAUnlocked } from '@/lib/keychain';
+import { getAgent } from '@/lib/agent/manager';
 import { getErrorMessage } from '@/lib/errors';
 import AgentSelector from '../AgentSelector';
 
-type LoginState = 'idle' | 'checking' | 'signing' | 'error' | 'success';
+type LoginState = 'idle' | 'checking' | 'unlocking' | 'signing' | 'error' | 'success';
 
 export default function LoginPage() {
   const [state, setState] = useState<LoginState>('idle');
@@ -27,8 +28,13 @@ export default function LoginPage() {
     try {
       setState('checking');
       setErrorMessage('');
-      // Do not require local keys strictly: external agents may be used
-      setState('signing');
+      // Prepare UI state based on agent
+      const agent = await getAgent();
+      if (agent.kind === 'local' && !isEOAUnlocked()) {
+        setState('unlocking');
+      } else {
+        setState('signing');
+      }
       await login();
       setState('success');
       navigate('/files');
@@ -42,6 +48,8 @@ export default function LoginPage() {
     switch (state) {
       case 'checking':
         return 'Loading keys...';
+      case 'unlocking':
+        return 'Waiting for unlock...';
       case 'signing':
         return 'Signing challenge...';
       case 'success':
@@ -51,7 +59,7 @@ export default function LoginPage() {
     }
   };
 
-  const isLoading = state === 'checking' || state === 'signing';
+  const isLoading = state === 'checking' || state === 'unlocking' || state === 'signing';
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">

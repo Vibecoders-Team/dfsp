@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { isEOAUnlocked, lockEOA } from '../lib/keychain';
 import { Button } from './ui/button';
 import { Lock, Unlock } from 'lucide-react';
@@ -7,16 +7,31 @@ import { getSelectedAgentKind } from '../lib/agent/manager';
 
 export default function KeyLockIndicator() {
   const agentKind = getSelectedAgentKind();
-  const unlocked = useMemo(() => isEOAUnlocked(), []);
+  const [unlocked, setUnlocked] = useState<boolean>(() => isEOAUnlocked());
+
+  useEffect(() => {
+    const onUnlocked = () => setUnlocked(true);
+    const onLocked = () => setUnlocked(false);
+    const onCancel = () => setUnlocked(isEOAUnlocked());
+    window.addEventListener('dfsp:unlocked', onUnlocked);
+    window.addEventListener('dfsp:locked', onLocked);
+    window.addEventListener('dfsp:unlock-cancel', onCancel);
+    return () => {
+      window.removeEventListener('dfsp:unlocked', onUnlocked);
+      window.removeEventListener('dfsp:locked', onLocked);
+      window.removeEventListener('dfsp:unlock-cancel', onCancel);
+    };
+  }, []);
 
   if (agentKind !== 'local') return null;
 
   const handleUnlockClick = () => {
-    try { window.dispatchEvent(new CustomEvent('dfsp:unlock-dialog')); } catch {}
+    try { window.dispatchEvent(new CustomEvent('dfsp:unlock-dialog')); } catch (e) { console.debug('dispatch unlock-dialog failed', e); }
   };
 
   const handleLock = () => {
     lockEOA();
+    try { window.dispatchEvent(new CustomEvent('dfsp:locked')); } catch (e) { console.debug('dispatch locked failed', e); }
     toast.message('Key locked');
   };
 

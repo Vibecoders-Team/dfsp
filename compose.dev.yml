@@ -123,6 +123,7 @@ services:
       QUOTA_META_TX_PER_DAY: "${QUOTA_META_TX_PER_DAY:-50}"
       QUOTA_DOWNLOAD_BYTES_PER_DAY: "${QUOTA_DOWNLOAD_BYTES_PER_DAY:-2147483648}"
       POW_DIFFICULTY_BASE: "${POW_DIFFICULTY_BASE:-18}"
+      RELAYER_SYNC_DEV: "${RELAYER_SYNC_DEV:-1}"
     depends_on:
       redis:
         condition: service_healthy
@@ -153,7 +154,7 @@ services:
       RELAYER_PRIVATE_KEY: "${RELAYER_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
       RELAYER_HIGH_QUEUE: "${RELAYER_HIGH_QUEUE:-relayer.high}"
       RELAYER_DEFAULT_QUEUE: "${RELAYER_DEFAULT_QUEUE:-relayer.default}"
-      RELAYER_SYNC_DEV: "${RELAYER_SYNC_DEV:-0}"
+      RELAYER_SYNC_DEV: "${RELAYER_SYNC_DEV:-1}"
     depends_on:
       redis:
         condition: service_healthy
@@ -272,6 +273,11 @@ services:
     depends_on:
       - chain
     networks: [ dfsp ]
+    healthcheck:
+      test: ["CMD-SHELL","wget -qO- http://localhost:8546 -S --spider 2>&1 | grep -q 'HTTP/'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   ngrok:
     image: ngrok/ngrok:latest
@@ -280,7 +286,8 @@ services:
       NGROK_AUTHTOKEN: "${NGROK_AUTH_TOKEN:-}"
     command: ["http", "--log=stdout", "--region=${NGROK_REGION:-eu}", "http://rpc_https:8546"]
     depends_on:
-      - rpc_https
+      rpc_https:
+        condition: service_healthy
     ports:
       - "4040:4040"
     networks: [ dfsp ]
