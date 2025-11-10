@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { BrowserProvider, type TypedDataDomain, type TypedDataField } from 'ethers';
 import type { SignerAgent } from './agent';
-import { stripEip712Domain } from './agent';
 
 export class WalletConnectAgent implements SignerAgent {
   kind = 'walletconnect' as const;
@@ -112,7 +111,7 @@ export class WalletConnectAgent implements SignerAgent {
 
   async getAddress(): Promise<`0x${string}`> {
     // Используем прямые EIP-1193 вызовы, чтобы исключить гонки сети в BrowserProvider
-    const prov = await this.ensureWcProvider(); // ensure init
+    await this.ensureWcProvider(); // ensure init
     const wcAny = this.wc as any;
     for (let attempt=0; attempt<3; attempt++) {
       try {
@@ -152,8 +151,7 @@ export class WalletConnectAgent implements SignerAgent {
     const payload = [ address, JSON.stringify(typedData) ];
     for (let attempt=0; attempt<3; attempt++) {
       try {
-        const sig: string = await wcAny.request({ method: 'eth_signTypedData_v4', params: payload });
-        return sig;
+        return await wcAny.request({ method: 'eth_signTypedData_v4', params: payload });
       } catch (e:any) {
         const msg = String(e?.message||'');
         if (/network changed:/i.test(msg) || e?.code === 'NETWORK_ERROR') {
@@ -174,7 +172,7 @@ export class WalletConnectAgent implements SignerAgent {
       return hex?.startsWith('0x') ? parseInt(hex, 16) : Number(hex);
     } catch {
       // fallback через BrowserProvider, если что-то пошло не так
-      try { const prov = await this.ensureWcProvider(); const net = await (prov as BrowserProvider).getNetwork(); return Number(net.chainId); } catch { return undefined; }
+      try { const net = await (this.provider as BrowserProvider).getNetwork(); return Number(net.chainId); } catch { return undefined; }
     }
   }
 
@@ -199,7 +197,10 @@ export class WalletConnectAgent implements SignerAgent {
       if (e?.code === 4902 || /Unrecognized chain|Invalid chainId/i.test(msg)) {
         if (!this.httpsRpc) throw new Error(`WalletConnect: cannot add network ${hex} — HTTPS RPC not set.`);
         const chainName: string = env?.VITE_CHAIN_NAME || `Hardhat Local ${chainId}`;
+        const explorer: string | undefined = env.VITE_CHAIN_BLOCK_EXPLORER_URL;
+        const explorerValid = typeof explorer === 'string' && /^(https?:\/\/\S+)$/.test(explorer);
         const params: any = { chainId: hex, chainName, rpcUrls: [this.httpsRpc], nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 } };
+        if (explorerValid) params.blockExplorerUrls = [explorer];
         try {
           await wcAny.request({ method: 'wallet_addEthereumChain', params: [params] });
           await wcAny.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hex }] });

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import type { ChangeEvent } from 'react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
-import { useAuth } from '../AuthContext';
+import { useAuth } from '../useAuth';
 import Layout from '../Layout';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';

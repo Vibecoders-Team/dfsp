@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 import MetaMaskFull from './icons/MetaMaskFull';
 import WalletConnectFull from './icons/WalletConnectFull';
-import { useAuth } from './AuthContext';
+import { useAuth } from './useAuth';
 const EXPECTED_CHAIN_ID = Number((import.meta as any).env?.VITE_CHAIN_ID || (import.meta as any).env?.VITE_EXPECTED_CHAIN_ID || 0);
 
 export default function AgentSelector({ compact = false }: { compact?: boolean }) {
@@ -35,7 +35,7 @@ export default function AgentSelector({ compact = false }: { compact?: boolean }
         const cid = await agent.getChainId();
         setChainId(cid ?? null);
       }
-    } catch (e) {
+    } catch {
       // Do not show error on silent read
     }
   };

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../AuthContext';
+import { useAuth } from '../useAuth';
 import { Button } from '../ui/button';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Key, AlertCircle } from 'lucide-react';

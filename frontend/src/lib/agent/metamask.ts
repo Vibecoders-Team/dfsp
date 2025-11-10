@@ -94,13 +94,16 @@ export class MetaMaskAgent implements SignerAgent {
       const env: any = (import.meta as any).env ?? {};
       const rpcUrl: string = env.VITE_CHAIN_RPC_URL || `${window.location.protocol}//${window.location.hostname}:8545`;
       const chainName: string = env.VITE_CHAIN_NAME || `Local Hardhat (${chainId})`;
-      const params = {
+      const explorer: string | undefined = env.VITE_CHAIN_BLOCK_EXPLORER_URL;
+      const explorerValid = typeof explorer === 'string' && /^(https?:\/\/\S+)$/.test(explorer);
+      const params: any = {
         chainId: hex,
         chainName,
         rpcUrls: [rpcUrl],
         nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-        blockExplorerUrls: [] as string[],
+        // blockExplorerUrls добавляем только если валидный URL
       };
+      if (explorerValid) params.blockExplorerUrls = [explorer];
       await eth.request({ method: 'wallet_addEthereumChain', params: [params] });
       await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hex }] });
     }

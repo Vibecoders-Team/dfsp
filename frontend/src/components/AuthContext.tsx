@@ -1,10 +1,10 @@
+/* eslint-disable react-refresh/only-export-components */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type LoginMessage, LOGIN_TYPES as KC_LOGIN_TYPES, LOGIN_DOMAIN as KC_LOGIN_DOMAIN } from '@/lib/keychain';
 import { postChallenge, postLogin, postRegister, ACCESS_TOKEN_KEY, type RegisterPayload, type TypedLoginData } from '@/lib/api';
 import { ethers, type TypedDataDomain, type TypedDataField } from 'ethers';
 import { getAgent } from '@/lib/agent/manager';
-import React from 'react';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
 
 const LOGIN_DOMAIN: TypedDataDomain = KC_LOGIN_DOMAIN;
@@ -27,13 +27,14 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: () => Promise<void>;
-  register: (password: string, confirmPassword: string, displayName?: string) => Promise<{ backupData: Blob }>; // restore confirm
+  register: (password: string, confirmPassword: string, displayName?: string) => Promise<{ backupData: Blob }>;
   logout: () => void;
   restoreAccount: (file: File, password: string) => Promise<void>;
   updateBackupStatus: (hasBackup: boolean) => void;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export type { AuthContextType };
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Helper to convert types for ethers v6
 function toEthersTypes(src: Record<string, readonly ethers.TypedDataField[]>): Record<string, ethers.TypedDataField[]> {
@@ -162,10 +163,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        if (agent.kind === 'local') {
          await ensureEOA(password);
        }
-       if (EXPECTED_CHAIN_ID && agent.kind === 'metamask' && agent.getChainId) {
-         const current = await agent.getChainId();
-         if (current !== EXPECTED_CHAIN_ID) {
-           throw new Error(`MetaMask: wrong network (${current}). Switch and retry registration.`);
+       // --- Network / chain handling (unified with login) ---
+       if (EXPECTED_CHAIN_ID && agent.getChainId) {
+         try {
+           const current = await agent.getChainId();
+           if (current !== EXPECTED_CHAIN_ID) {
+             if ((agent as any).switchChain) {
+               try {
+                 await (agent as any).switchChain(EXPECTED_CHAIN_ID);
+               } catch (e) {
+                 throw new Error(`Wrong network (${current}). Failed to auto-switch to ${EXPECTED_CHAIN_ID}: ${(e as Error).message}`);
+               }
+             } else {
+               throw new Error(`Wrong network (${current}). Please switch to ${EXPECTED_CHAIN_ID} and retry registration.`);
+             }
+           }
+         } catch {
+           // ignore inability to read chain id before connect
          }
        }
        const address = await agent.getAddress();
@@ -201,7 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
          // EOA already ensured; create full backup with the same password
          backupData = await createBackupBlob(password);
        } else {
-         backupData = new Blob([JSON.stringify({ notice: 'External wallet – create full backup after local EOA generation if needed.' }, null, 2)], { type: 'application/json' });
+         backupData = new Blob([JSON.stringify({ notice: 'External wallet \u2013 create full backup after local EOA generation if needed.' }, null, 2)], { type: 'application/json' });
        }
        setUser({ address, displayName, hasBackup: false });
        return { backupData };
@@ -245,8 +259,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useAuth(): AuthContextType {
-  const ctx = React.useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
-}

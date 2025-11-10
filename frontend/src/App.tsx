@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './components/AuthContext';
+import { AuthProvider } from './components/AuthContext';
 import { Toaster } from './components/ui/sonner';
 import LoginPage from './components/pages/LoginPage';
 import RegisterPage from './components/pages/RegisterPage';
@@ -17,6 +17,7 @@ import NotFoundPage from './components/pages/NotFoundPage';
 import ForbiddenPage from './components/pages/ForbiddenPage';
 import ServerErrorPage from './components/pages/ServerErrorPage';
 import UnlockPortal from './components/UnlockPortal';
+import { useAuth } from './components/useAuth';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();

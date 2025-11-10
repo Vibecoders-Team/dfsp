@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { useAuth } from './AuthContext';
+import { useAuth } from './useAuth';
 import { Button } from './ui/button';
 import { FileText, Key, LogOut, Settings, Share2 } from 'lucide-react';
 import {

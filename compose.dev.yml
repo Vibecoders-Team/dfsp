@@ -1,13 +1,5 @@
 name: dfsp-dev
 
-# общие env-файлы (dev → local override)
-x-env-files: &env_files
-  env_file:
-    - path: ../../deploy/.env.dev
-      required: false
-    - path: ../../deploy/.env.local
-      required: false
-
 services:
   web:
     image: node:${NODE_VERSION:-20}
@@ -23,8 +15,8 @@ services:
       VITE_API_BASE: "${VITE_API_BASE:-http://localhost:${API_HOST_PORT:-8000}}"
       VITE_IPFS_PUBLIC_GATEWAY: "${VITE_IPFS_PUBLIC_GATEWAY:-http://localhost:8080}"
       VITE_CHAIN_ID: "${VITE_CHAIN_ID:-${CHAIN_ID:-31337}}"
-      VITE_CHAIN_RPC_URL: "${VITE_CHAIN_RPC_URL:-https://hardhat.localhost:8546}"
-      VITE_CHAIN_PUBLIC_RPC_URL: "${VITE_CHAIN_PUBLIC_RPC_URL:-https://hardhat.localhost:8546}"
+      VITE_CHAIN_RPC_URL: "${VITE_CHAIN_RPC_URL:-${CHAIN_PUBLIC_RPC_URL:-}}"
+      VITE_CHAIN_PUBLIC_RPC_URL: "${VITE_CHAIN_PUBLIC_RPC_URL:-${CHAIN_PUBLIC_RPC_URL:-}}"
       PNPM_STORE_DIR: /pnpm-store
       VITE_WALLETCONNECT_PROJECT_ID: "${VITE_WALLETCONNECT_PROJECT_ID:-}"
     ports:
@@ -53,7 +45,6 @@ services:
     extends:
       file: ./backend/docker/compose.backend.yml
       service: db
-    <<: *env_files
     networks: [ dfsp ]
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -65,7 +56,6 @@ services:
     extends:
       file: ./backend/docker/compose.backend.yml
       service: redis
-    <<: *env_files
     networks: [ dfsp ]
     ports:
       - "${REDIS_HOST_PORT:-6379}:6379"
@@ -74,7 +64,6 @@ services:
     extends:
       file: ./backend/docker/compose.backend.yml
       service: migrator
-    <<: *env_files
     networks: [ dfsp ]
     # важное: переопределяем пути на корневые
     volumes:
@@ -94,7 +83,6 @@ services:
     extends:
       file: ./backend/docker/compose.backend.yml
       service: api
-    <<: *env_files
     networks: [ dfsp ]
     ports:
       - "${API_HOST_PORT:-8000}:8000"
@@ -109,7 +97,7 @@ services:
       ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
       CHAIN_RPC_URL: "${CHAIN_RPC_URL:-http://chain:8545}"
       CHAIN_ID: "${CHAIN_ID:-31337}"
-      CHAIN_PUBLIC_RPC_URL: "${CHAIN_PUBLIC_RPC_URL:-https://hardhat.localhost:8546}"
+      CHAIN_PUBLIC_RPC_URL: "${CHAIN_PUBLIC_RPC_URL:-${VITE_CHAIN_PUBLIC_RPC_URL:-}}"
       CONTRACTS_DEPLOYMENT_JSON: "${CONTRACTS_DEPLOYMENT_JSON:-/app/shared/deployment.localhost.json}"
       REGISTRY_CONTRACT_NAME: "${REGISTRY_CONTRACT_NAME:-FileRegistry}"
       IPFS_PUBLIC_GATEWAY_URL: "${IPFS_PUBLIC_GATEWAY_URL:-http://localhost:8080}"
@@ -138,7 +126,6 @@ services:
     extends:
       file: ./backend/docker/compose.backend.yml
       service: celery-worker
-    <<: *env_files
     networks: [ dfsp ]
     volumes:
       - ./backend/app:/app/app

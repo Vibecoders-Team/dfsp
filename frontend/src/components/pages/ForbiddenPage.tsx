@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../AuthContext';
+import { useAuth } from '../useAuth';
 import { Button } from '../ui/button';
 import { ShieldX, Home, LogIn } from 'lucide-react';
 
