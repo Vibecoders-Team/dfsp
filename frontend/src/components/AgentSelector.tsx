@@ -9,7 +9,7 @@ import WalletConnectFull from './icons/WalletConnectFull';
 import { useAuth } from './useAuth';
 const EXPECTED_CHAIN_ID = Number((import.meta as any).env?.VITE_CHAIN_ID || (import.meta as any).env?.VITE_EXPECTED_CHAIN_ID || 0);
 
-export default function AgentSelector({ compact = false }: { compact?: boolean }) {
+export default function AgentSelector({ compact = false, showInlineError = true }: { compact?: boolean; showInlineError?: boolean }) {
   const { user } = useAuth();
   const [kind, setKind] = useState<AgentKind>(getSelectedAgentKind());
   const [addr, setAddr] = useState<string>('');
@@ -45,7 +45,6 @@ export default function AgentSelector({ compact = false }: { compact?: boolean }
     setBusy(true);
     setErr('');
     try {
-      // Не отключаем предыдущего провайдера насильно: WC реюзит сессию и не показывает повторный QR
       setSelectedAgentKind(k);
       setKind(k);
       setAddr('');
@@ -62,6 +61,11 @@ export default function AgentSelector({ compact = false }: { compact?: boolean }
       // metamask path
       await readAgentState();
     } catch (e: unknown) {
+      // On error (e.g., QR closed or wallet error), fallback to Local and show a concise message in lower alert only if allowed
+      try { setSelectedAgentKind('local'); } catch { /* ignore */ }
+      setKind('local');
+      setAddr('');
+      setChainId(null);
       setErr(e instanceof Error ? e.message : 'Switch signer failed');
     } finally {
       setBusy(false);
@@ -105,7 +109,7 @@ export default function AgentSelector({ compact = false }: { compact?: boolean }
       {chainId !== null && (
         <span className={`text-xs ${EXPECTED_CHAIN_ID && chainId !== EXPECTED_CHAIN_ID && (kind === 'metamask' || kind === 'walletconnect') ? 'text-red-600' : 'text-gray-500'} shrink-0`}>cid:{chainId}</span>
       )}
-      {err && (
+      {showInlineError && err && (
         <Alert className="ml-2 shrink-0">
           <AlertDescription className="text-xs">{err}</AlertDescription>
         </Alert>

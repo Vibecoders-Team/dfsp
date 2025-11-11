@@ -6,6 +6,7 @@ import { postChallenge, postLogin, postRegister, ACCESS_TOKEN_KEY, type Register
 import { ethers, type TypedDataDomain, type TypedDataField } from 'ethers';
 import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
+import { setSelectedAgentKind } from '@/lib/agent/manager';
 
 const LOGIN_DOMAIN: TypedDataDomain = KC_LOGIN_DOMAIN;
 const LOGIN_TYPES: Record<string, TypedDataField[]> = KC_LOGIN_TYPES;
@@ -114,8 +115,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        let signature: string;
        try {
          signature = await agent.signTypedData(domain, TYPES, message as unknown as Record<string, unknown>);
-       } catch (e) {
-         throw new Error(`Login signing failed: ${(e as Error).message}`);
+       } catch (e: any) {
+         const code = e?.code ?? e?.error?.code;
+         const msg: string = e?.message || '';
+         if (code === 4001 || code === 'ACTION_REJECTED' || /user rejected/i.test(msg)) {
+           throw new Error('Signature request was cancelled');
+         }
+         throw new Error('Failed to sign the login challenge');
        } finally {
          if ((agent as any).setChainEnforcement) { try { (agent as any).setChainEnforcement(true); } catch { /* ignore */ } }
        }
@@ -150,11 +156,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     displayName?: string
   ): Promise<{ backupData: Blob }> => {
        if (password !== confirmPassword) throw new Error('Passwords do not match');
-       const hasUpper = /[A-Z]/.test(password);
-       const hasLower = /[a-z]/.test(password);
-       const hasDigit = /\d/.test(password);
-       if (password.length < 12 || !(hasUpper && hasLower && hasDigit)) {
-         throw new Error('Password must be at least 12 characters and include upper/lower case and a digit');
+       if (password.length < 8) {
+         throw new Error('Password must be at least 8 characters');
        }
        const challenge = await postChallenge();
        const { publicPem } = await ensureRSA();
@@ -192,8 +195,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        let signature: string;
        try {
          signature = await agent.signTypedData(domain, TYPES, message as unknown as Record<string, unknown>);
-       } catch (e) {
-         throw new Error(`Registration signing failed: ${(e as Error).message}`);
+       } catch (e: any) {
+         const code = e?.code ?? e?.error?.code;
+         const msg: string = e?.message || '';
+         if (code === 4001 || code === 'ACTION_REJECTED' || /user rejected/i.test(msg)) {
+           throw new Error('Signature request was cancelled');
+         }
+         throw new Error('Failed to sign the registration challenge');
        }
        const recovered = ethers.verifyTypedData(domain, TYPES, message, signature);
        if (recovered.toLowerCase() !== address.toLowerCase()) throw new Error('Signature verification failed');
@@ -237,6 +245,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     bumpSessionGen();
     try { window.dispatchEvent(new CustomEvent('dfsp:logout')); } catch { /* ignore */ }
      setUser(null);
+     // Force Local agent after leaving auth or switching forms
+     try { setSelectedAgentKind('local'); } catch { /* ignore */ }
    };
 
   const updateBackupStatus = (hasBackup: boolean) => {
@@ -258,4 +268,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     </AuthContext.Provider>
   );
 }
-

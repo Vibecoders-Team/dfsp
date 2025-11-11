@@ -18,6 +18,7 @@ export function setSelectedAgentKind(kind: AgentKind) {
   cached = null;
   cachedKind = null;
   pending = null;
+  try { window.dispatchEvent(new CustomEvent('dfsp:agent-kind', { detail: { kind } })); } catch { /* ignore */ }
 }
 
 export async function getAgent(): Promise<SignerAgent> {

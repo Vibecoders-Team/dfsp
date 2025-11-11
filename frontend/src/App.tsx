@@ -11,13 +11,16 @@ import GrantsPage from './components/pages/GrantsPage';
 import DownloadPage from './components/pages/DownloadPage';
 import UploadPage from './components/pages/UploadPage';
 import VerifyPage from './components/pages/VerifyPage';
-import SettingsPage, { ProfileSettings, KeysSettings, SecuritySettings } from './components/pages/SettingsPage';
+import SettingsPage, { ProfileSettings, KeysSettings } from './components/pages/SettingsPage';
 import HealthPage from './components/pages/HealthPage';
 import NotFoundPage from './components/pages/NotFoundPage';
 import ForbiddenPage from './components/pages/ForbiddenPage';
 import ServerErrorPage from './components/pages/ServerErrorPage';
 import UnlockPortal from './components/UnlockPortal';
 import { useAuth } from './components/useAuth';
+import TermsPage from './components/pages/TermsPage';
+import RestorePage from './components/pages/RestorePage';
+import PrivacyPage from './components/pages/PrivacyPage';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -147,7 +150,6 @@ function AppRoutes() {
           <Route index element={<KeysSettings />} />
           <Route path="profile" element={<ProfileSettings />} />
           <Route path="keys" element={<KeysSettings />} />
-          <Route path="security" element={<SecuritySettings />} />
           <Route path="*" element={<Navigate to="keys" replace />} />
         </Route>
         <Route
@@ -159,6 +161,12 @@ function AppRoutes() {
         <Route path="/404" element={<NotFoundPage />} />
         <Route path="/403" element={<ForbiddenPage />} />
         <Route path="/500" element={<ServerErrorPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route
+          path="/restore"
+          element={<PublicRoute children={<RestorePage />} />}
+        />
+        <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
       <Toaster />

@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Key, AlertCircle } from 'lucide-react';
 import { hasEOA, isEOAUnlocked } from '@/lib/keychain';
-import { getAgent } from '@/lib/agent/manager';
+import { getAgent, setSelectedAgentKind } from '@/lib/agent/manager';
 import { getErrorMessage } from '@/lib/errors';
 import AgentSelector from '../AgentSelector';
 
@@ -21,6 +21,8 @@ export default function LoginPage() {
   // Check if keys exist on mount (optional)
   useEffect(() => {
     hasEOA().then(setKeysExist);
+    // сбрасываем активный агент на Local при заходе на Login
+    try { setSelectedAgentKind('local'); } catch { /* ignore */ }
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -69,7 +71,7 @@ export default function LoginPage() {
             <Key className="h-8 w-8 text-blue-600" />
           </div>
           <h1 className="mb-2">Login</h1>
-          <div className="flex justify-center mt-2"><AgentSelector /></div>
+          <div className="flex justify-center mt-2"><AgentSelector showInlineError={false} /></div>
           <p className="text-gray-600">
             {keysExist === false 
               ? 'No local keys found — you can still login with MetaMask/WalletConnect'
@@ -112,7 +114,7 @@ export default function LoginPage() {
 
           <div className="mt-6 pt-6 border-t border-gray-200">
             <Link
-              to="/settings/keys"
+              to="/restore"
               className="text-sm text-blue-600 hover:text-blue-700 flex items-center justify-center gap-2"
             >
               <Key className="h-4 w-4" />

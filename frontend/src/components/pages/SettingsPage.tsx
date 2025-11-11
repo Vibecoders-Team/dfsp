@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
+import { getSelectedAgentKind } from '@/lib/agent/manager';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../useAuth';
@@ -14,45 +15,29 @@ import { toast } from 'sonner';
 import { ensureRSA, createBackupBlob, createBackupBlobRSAOnly } from '../../lib/keychain';
 import { publishMyKeyCard } from '../../lib/publishMyKey';
 import { reencryptEOA } from '../../lib/keychain';
+import { isEOAUnlocked } from '@/lib/keychain';
 
 const AUTOLOCK_KEY = 'dfsp_autolock_enabled';
 
 function SettingsNav() {
   const location = useLocation();
-
-  const isActive = (path: string) => {
-    return location.pathname === path || location.pathname.endsWith('/' + path);
-  };
+  const isActive = (path: string) => location.pathname === path || location.pathname.endsWith('/' + path);
 
   return (
     <nav className="space-y-1">
       <Link to="profile">
-        <Button
-          variant={isActive('profile') ? 'secondary' : 'ghost'}
-          className="w-full justify-start gap-2"
-        >
+        <Button variant={isActive('profile') ? 'secondary' : 'ghost'} className="w-full justify-start gap-2">
           <User className="h-4 w-4" />
           Profile
         </Button>
       </Link>
       <Link to="keys">
-        <Button
-          variant={isActive('keys') ? 'secondary' : 'ghost'}
-          className="w-full justify-start gap-2"
-        >
+        <Button variant={isActive('keys') ? 'secondary' : 'ghost'} className="w-full justify-start gap-2">
           <Key className="h-4 w-4" />
           Keys & Backup
         </Button>
       </Link>
-      <Link to="security">
-        <Button
-          variant={isActive('security') ? 'secondary' : 'ghost'}
-          className="w-full justify-start gap-2"
-        >
-          <Shield className="h-4 w-4" />
-          Security
-        </Button>
-      </Link>
+      {/* Security page удалена */}
     </nav>
   );
 }
@@ -215,8 +200,13 @@ export function KeysSettings() {
 
   const handleDownloadBackup = async () => {
     try {
-      if (!backupPassword || backupPassword.length < 12) {
-        setError('Set a strong password (>= 12 chars) to encrypt your backup');
+      if (!backupPassword || backupPassword.length < 8) {
+        setError('Set a password (>= 8 chars) to encrypt your backup');
+        return;
+      }
+      if (!isEOAUnlocked()) {
+        toast.info('Unlock your local key first');
+        window.dispatchEvent(new CustomEvent('dfsp:unlock-dialog'));
         return;
       }
       setBackupBusy(true);
@@ -225,9 +215,7 @@ export function KeysSettings() {
       const a = document.createElement('a');
       a.href = url;
       a.download = `dfsp-backup-${Date.now()}.dfspkey`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
       updateBackupStatus(true);
       toast.success('Backup file downloaded');
@@ -341,7 +329,7 @@ export function KeysSettings() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="backupPassword">Backup Password</Label>
-              <Input id="backupPassword" type="password" value={backupPassword} onChange={(e) => setBackupPassword(e.target.value)} placeholder="Use a strong password (>= 12 chars)" />
+              <Input id="backupPassword" type="password" value={backupPassword} onChange={(e) => setBackupPassword(e.target.value)} placeholder="Use a strong password (>= 8 chars)" />
             </div>
           </div>
           <div className="flex gap-3">
@@ -350,15 +338,16 @@ export function KeysSettings() {
               {backupBusy ? 'Preparing…' : 'Download Backup (.dfspkey)'}
             </Button>
             <Button variant="secondary" onClick={async()=>{
-              try{
-                if(!backupPassword || backupPassword.length<12){ setError('Set a strong password (>= 12 chars)'); return; }
+              try {
+                if(!backupPassword || backupPassword.length < 8){ setError('Set a password (>= 8 chars)'); return; }
+                if (!isEOAUnlocked()) { toast.info('Unlock your local key first'); window.dispatchEvent(new CustomEvent('dfsp:unlock-dialog')); return; }
                 setBackupBusy(true);
                 const blob = await createBackupBlobRSAOnly(backupPassword);
                 const url = URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href=url; a.download = `dfsp-backup-rsa-${Date.now()}.dfspkey`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                const a = document.createElement('a'); a.href = url; a.download = `dfsp-backup-rsa-${Date.now()}.dfspkey`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
                 toast.success('RSA-only backup downloaded');
-              }catch(e){ setError(e instanceof Error? e.message : 'Failed to create RSA-only backup'); }
-              finally{ setBackupBusy(false); }
+              } catch(e){ setError(e instanceof Error ? e.message : 'Failed to create RSA-only backup'); }
+              finally { setBackupBusy(false); }
             }} disabled={backupBusy}>
               <Download className="h-4 w-4" /> RSA-only
             </Button>
@@ -401,187 +390,20 @@ export function KeysSettings() {
   );
 }
 
-export function SecuritySettings() {
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
-  const [autolockEnabled, setAutolockEnabled] = useState<boolean>(() => {
-    const v = localStorage.getItem(AUTOLOCK_KEY);
-    return v ? v === '1' : true;
-  });
-
-  useEffect(()=>{ localStorage.setItem(AUTOLOCK_KEY, autolockEnabled ? '1' : '0'); }, [autolockEnabled]);
-
-  const getPasswordStrength = (): 'weak' | 'medium' | 'strong' | null => {
-    if (!newPassword) return null;
-    if (newPassword.length < 12) return 'weak';
-    const hasUpper = /[A-Z]/.test(newPassword);
-    const hasLower = /[a-z]/.test(newPassword);
-    const hasDigit = /\d/.test(newPassword);
-    const hasSpecial = /[^A-Za-z0-9]/.test(newPassword);
-    const score = [hasUpper, hasLower, hasDigit, hasSpecial].filter(Boolean).length;
-    if (score >= 3 && newPassword.length >= 16) return 'strong';
-    if (score >= 2 && newPassword.length >= 12) return 'medium';
-    return 'weak';
-  };
-
-  const passwordStrength = getPasswordStrength();
-  const passwordsMatch = newPassword && confirmPassword && newPassword === confirmPassword;
-
-  const handleChangePassword = async () => {
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setError('All fields are required');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError('New passwords do not match');
-      return;
-    }
-    if (newPassword.length < 12) {
-      setError('Password must be at least 12 characters');
-      return;
-    }
-    setIsProcessing(true);
-    setError('');
-    setSuccess(false);
-    try {
-      await reencryptEOA(currentPassword, newPassword);
-      setSuccess(true);
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      toast.success('Password changed successfully');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to change password');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2>Security Settings</h2>
-        <p className="text-gray-600">Change your encryption password</p>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Change Password</CardTitle>
-          <CardDescription>
-            Update the password used to encrypt your local private keys
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Changing your password will re-encrypt your local private keys. Make sure to update your backup after changing your password.
-            </AlertDescription>
-          </Alert>
-
-          <div className="space-y-2">
-            <Label htmlFor="currentPassword">Current Password</Label>
-            <Input id="currentPassword" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} disabled={isProcessing} placeholder="Enter your current password" />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="newPassword">New Password</Label>
-            <Input id="newPassword" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} disabled={isProcessing} placeholder="Enter new password" />
-            {newPassword && passwordStrength && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Progress value={passwordStrength === 'weak' ? 33 : passwordStrength === 'medium' ? 66 : 100} className="h-1.5" />
-                  <span className={`text-xs ${passwordStrength === 'weak' ? 'text-red-600' : passwordStrength === 'medium' ? 'text-yellow-600' : 'text-green-600'}`}>
-                    {passwordStrength.charAt(0).toUpperCase() + passwordStrength.slice(1)}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm New Password</Label>
-            <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} disabled={isProcessing} placeholder="Confirm new password" />
-            {confirmPassword && (
-              <div className="flex items-center gap-2">
-                {passwordsMatch ? (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    <span className="text-xs text-green-600">Passwords match</span>
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="h-4 w-4 text-red-600" />
-                    <span className="text-xs text-red-600">Passwords do not match</span>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {success && (
-            <Alert>
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-800">Password changed successfully</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="flex justify-end">
-            <Button onClick={handleChangePassword} disabled={isProcessing || !passwordsMatch || !currentPassword}>
-              {isProcessing ? 'Processing...' : 'Change Password'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Auto‑lock</CardTitle>
-          <CardDescription>Automatically lock local EOA after inactivity</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center gap-3">
-            <Label htmlFor="autolock">Enable auto‑lock</Label>
-            <input id="autolock" type="checkbox" checked={autolockEnabled} onChange={(e)=>setAutolockEnabled(e.target.checked)} />
-            <Button size="sm" variant="outline" onClick={()=>{
-              localStorage.setItem(AUTOLOCK_KEY, autolockEnabled ? '1' : '0');
-              toast.success('Auto‑lock setting applied');
-            }}>Apply</Button>
-          </div>
-          <p className="text-xs text-gray-500">If disabled, your local private key remains unlocked until you lock it manually or reloads the page.</p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
 export default function SettingsPage() {
   return (
-    <Layout
-      children={(
-        <div className="grid grid-cols-4 gap-6">
-          <div className="col-span-1">
-            <div className="bg-white p-4 rounded-lg border border-gray-200">
-              <h3 className="mb-4">Settings</h3>
-              <SettingsNav />
-            </div>
-          </div>
-          <div className="col-span-3">
-            <Outlet />
+    <Layout children={(
+      <div className="grid grid-cols-4 gap-6">
+        <div className="col-span-1">
+          <div className="bg-white p-4 rounded-lg border border-gray-200">
+            <h3 className="mb-4">Settings</h3>
+            <SettingsNav />
           </div>
         </div>
-      )}
-    />
+        <div className="col-span-3">
+          <Outlet />
+        </div>
+      </div>
+    )} />
   );
 }

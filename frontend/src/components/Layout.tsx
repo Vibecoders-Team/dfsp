@@ -28,7 +28,7 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-8">
               <Link to="/files" className="flex items-center gap-2">
@@ -85,9 +85,6 @@ export default function Layout({ children }: LayoutProps) {
                   <DropdownMenuItem asChild>
                     <Link to="/settings/keys">Keys</Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link to="/settings/security">Security</Link>
-                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={logout} className="text-red-600">
                     <LogOut className="h-4 w-4 mr-2" />
@@ -100,7 +97,7 @@ export default function Layout({ children }: LayoutProps) {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}
       </main>
     </div>

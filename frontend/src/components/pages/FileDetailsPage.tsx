@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout from '../Layout';
 import { Button } from '../ui/button';
@@ -22,13 +22,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { ArrowLeft, Copy, Share2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Copy, Share2, CheckCircle2, XCircle, AlertCircle, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx } from '../../lib/api';
+import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx, type ForwardTyped, fetchMyFiles } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
-import { ensureEOA } from '../../lib/keychain';
 import { Alert, AlertDescription } from '../ui/alert';
 
 interface VersionRow {
@@ -48,7 +47,7 @@ interface GrantRow {
 
 interface FileDetailsModel {
   id: string;
-  name?: string;
+  name?: string; // теперь используем
   size?: number;
   created?: Date;
   owner?: string;
@@ -68,55 +67,6 @@ export default function FileDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [selectedCapId, setSelectedCapId] = useState<string | null>(null);
-
-  const load = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const [m, v, g] = await Promise.all([
-        fetchMeta(id),
-        fetchVersions(id),
-        listGrants(id).catch(() => []),
-      ]);
-
-      const versions: VersionRow[] = (v.versions || []).map((it) => ({
-        cid: it.cid || '',
-        checksum: (it.checksum && (it.checksum.startsWith('0x') ? it.checksum : '0x' + it.checksum)) || '',
-        created: new Date((it.createdAt || 0) * 1000),
-      }));
-
-      const grants: GrantRow[] = (g || []).map((gr) => ({
-        grantee: gr.grantee,
-        capId: gr.capId,
-        expiresAt: gr.expiresAt ? new Date(gr.expiresAt) : undefined,
-        maxDownloads: gr.maxDownloads,
-        usedDownloads: gr.usedDownloads,
-        status: gr.status,
-      }));
-
-      setFile({
-        id,
-        name: undefined,
-        size: m.size,
-        created: m.createdAt ? new Date(m.createdAt * 1000) : undefined,
-        owner: m.owner,
-        cid: m.cid,
-        checksum: m.checksum,
-        mimeType: m.mime,
-        versions,
-        grants,
-      });
-    } catch (e) {
-      setError(getErrorMessage(e, 'Failed to load file details'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (id) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
 
   useEffect(() => {
     const onLogout = () => {
@@ -158,6 +108,27 @@ export default function FileDetailsPage() {
     return str.slice(0, Math.floor(length / 2)) + '...' + str.slice(-Math.floor(length / 2));
   };
 
+  const handleDownload = async () => {
+    try {
+      if (!file?.cid) throw new Error('CID missing');
+      const gw = ((import.meta as unknown as { env?: { VITE_IPFS_PUBLIC_GATEWAY?: string } }).env?.VITE_IPFS_PUBLIC_GATEWAY) ?? 'http://localhost:8080';
+      const url = gw.replace(/\/+$/, '') + `/ipfs/${file.cid}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = file.name || file.id;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+      toast.success('Download started');
+    } catch (e) {
+      toast.error(getErrorMessage(e, 'Download failed'));
+    }
+  };
+
   const handleRevokeAsk = (capId: string) => {
     setSelectedCapId(capId);
     setRevokeDialogOpen(true);
@@ -171,8 +142,8 @@ export default function FileDetailsPage() {
       if (agent.kind === 'local') {
         try { await ensureUnlockedOrThrow(); } catch { throw new Error('Unlock cancelled'); }
       }
-      const sig = await agent.signTypedData(prep.typedData.domain as any, prep.typedData.types as any, prep.typedData.message as any);
-      await submitMetaTx(prep.requestId, prep.typedData as any, sig);
+      const sig = await agent.signTypedData((prep.typedData as ForwardTyped).domain, (prep.typedData as ForwardTyped).types, (prep.typedData as ForwardTyped).message);
+      await submitMetaTx(prep.requestId, prep.typedData as ForwardTyped, sig);
       toast.success('Revoke submitted');
       setRevokeDialogOpen(false);
       setSelectedCapId(null);
@@ -198,6 +169,54 @@ export default function FileDetailsPage() {
         return <Badge>{status}</Badge>;
     }
   };
+
+  const load = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [m, v, g, allFiles] = await Promise.all([
+        fetchMeta(id),
+        fetchVersions(id),
+        listGrants(id).catch(() => []),
+        fetchMyFiles().catch(() => []),
+      ]);
+      const found = Array.isArray(allFiles) ? allFiles.find(f=>f.id===id) : undefined;
+      const versions: VersionRow[] = (v.versions || []).map((it) => ({
+        cid: it.cid || '',
+        checksum: (it.checksum && (it.checksum.startsWith('0x') ? it.checksum : '0x' + it.checksum)) || '',
+        created: new Date((it.createdAt || 0) * 1000),
+      }));
+      const grants: GrantRow[] = (g || []).map((gr) => ({
+        grantee: gr.grantee,
+        capId: gr.capId,
+        expiresAt: gr.expiresAt ? new Date(gr.expiresAt) : undefined,
+        maxDownloads: gr.maxDownloads,
+        usedDownloads: gr.usedDownloads,
+        status: gr.status,
+      }));
+      setFile({
+        id,
+        name: found?.name,
+        size: m.size,
+        created: m.createdAt ? new Date(m.createdAt * 1000) : undefined,
+        owner: m.owner,
+        cid: m.cid,
+        checksum: m.checksum,
+        mimeType: m.mime,
+        versions,
+        grants,
+      });
+    } catch (e) {
+      setError(getErrorMessage(e, 'Failed to load file details'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (id) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   if (loading) {
     return (
@@ -239,7 +258,7 @@ export default function FileDetailsPage() {
               <ArrowLeft className="h-4 w-4" />
               Back to Files
             </Button>
-            <h1>{file.name || file.cid || id}</h1>
+            <h1>{file.name || file.id}</h1>
           </div>
           <div className="flex gap-2">
             <Link to={`/verify/${file.id}`}>
@@ -254,6 +273,10 @@ export default function FileDetailsPage() {
                 Share
               </Button>
             </Link>
+            <Button variant="secondary" className="gap-2" onClick={handleDownload}>
+              <Download className="h-4 w-4" />
+              Download
+            </Button>
           </div>
         </div>
 
@@ -262,16 +285,12 @@ export default function FileDetailsPage() {
             <CardTitle>File Information</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 items-center">
               <div>
                 <div className="text-sm text-gray-500 mb-1">File ID</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded break-all">{file.id}</code>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => copyToClipboard(file.id, 'File ID')}
-                  >
+                  <code className="text-sm bg-gray-100 px-2 py-1 rounded whitespace-nowrap">{file.id}</code>
+                  <Button variant="ghost" size="sm" onClick={() => copyToClipboard(file.id, 'File ID')}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -285,14 +304,8 @@ export default function FileDetailsPage() {
               <div>
                 <div className="text-sm text-gray-500 mb-1">CID</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded break-all">
-                    {truncate(file.cid || '', 44)}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => copyToClipboard(file.cid || '', 'CID')}
-                  >
+                  <code className="text-sm bg-gray-100 px-2 py-1 rounded whitespace-nowrap">{file.cid || ''}</code>
+                  <Button variant="ghost" size="sm" onClick={() => copyToClipboard(file.cid || '', 'CID')}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -306,14 +319,8 @@ export default function FileDetailsPage() {
               <div className="col-span-2">
                 <div className="text-sm text-gray-500 mb-1">Checksum</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded flex-1 break-all">
-                    {file.checksum}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => copyToClipboard(file.checksum || '', 'Checksum')}
-                  >
+                  <code className="text-sm bg-gray-100 px-2 py-1 rounded whitespace-nowrap">{file.checksum}</code>
+                  <Button variant="ghost" size="sm" onClick={() => copyToClipboard(file.checksum || '', 'Checksum')}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -326,9 +333,12 @@ export default function FileDetailsPage() {
 
               <div>
                 <div className="text-sm text-gray-500 mb-1">Owner</div>
-                <code className="text-sm bg-gray-100 px-2 py-1 rounded">
-                  {truncate(file.owner || '-', 16)}
-                </code>
+                <div className="flex items-center gap-2">
+                  <code className="text-sm bg-gray-100 px-2 py-1 rounded whitespace-nowrap">{truncate(file.owner || '-', 16)}</code>
+                  <Button variant="ghost" size="sm" onClick={() => copyToClipboard(file.owner || '', 'Owner address')}>
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -362,7 +372,7 @@ export default function FileDetailsPage() {
                         </code>
                       </TableCell>
                       <TableCell>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
                           {truncate(version.checksum, 44)}
                         </code>
                       </TableCell>

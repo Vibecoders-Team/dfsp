@@ -91,7 +91,48 @@ export async function createBackupBlobRSAOnly(password:string):Promise<Blob>{ co
 
 // ---- Restore legacy v1 (.dfspkey) ----
 interface LegacyBackupV1 { version:1; eoaPrivHex:`0x${string}`; rsaPrivPkcs8_b64:string; createdAt:number; }
-export async function restoreFromBackupLegacy(file:File,password:string):Promise<{address:string}>{ const txt=await file.text(); const j=JSON.parse(txt) as any; if(j.version!==1) throw new Error("Not legacy v1"); const salt=b64toAb(j.kdf?.salt_b64||""); const iv=b64toAb(j.cipher?.iv_b64||""); const data=b64toAb(j.cipher?.data_b64||""); const material=await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]); const key=await crypto.subtle.deriveKey({name:"PBKDF2",salt:new Uint8Array(salt),iterations:j.kdf?.iterations||200000,hash:"SHA-256"},material,{name:"AES-GCM",length:256},true,["decrypt"]); const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:new Uint8Array(iv)},key,data); const payload=JSON.parse(new TextDecoder().decode(plain)) as LegacyBackupV1; if(!/^0x[0-9a-fA-F]{64}$/.test(payload.eoaPrivHex)) throw new Error("Invalid EOA in legacy backup"); await idbSet(KEY_EOA_PRIV_LEGACY,payload.eoaPrivHex); const rsaBuf=b64toAb(payload.rsaPrivPkcs8_b64); await idbSet(KEY_RSA_PRIV_PKCS8,rsaBuf); const priv=await crypto.subtle.importKey("pkcs8",rsaBuf,{name:"RSA-PSS",hash:"SHA-256"},true,["sign"]); const pubPem=await exportRsaPublicPemFromPrivate(priv); await idbSet(KEY_RSA_PUB_PEM,pubPem); return {address:new Wallet(payload.eoaPrivHex).address}; }
+export async function restoreFromBackupLegacy(file:File,password:string):Promise<{address:string}>{ const txt=await file.text(); const j=JSON.parse(txt) as any; if(j.version!==1) throw new Error("Not legacy v1"); const salt=b64toAb(j.kdf?.salt_b64||""); const iv=b64toAb(j.cipher?.iv_b64||""); const data=b64toAb(j.cipher?.data_b64||""); const material=await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]); const key=await crypto.subtle.deriveKey({name:"PBKDF2",salt:new Uint8Array(salt),iterations:j.kdf?.iterations||200000,hash:"SHA-256"},material,{name:"AES-GCM",length:256},true,["decrypt"]); const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:new Uint8Array(iv)},key,data); const payload=JSON.parse(new TextDecoder().decode(plain)) as LegacyBackupV1; if(!/^0x[0-9a-fA-F]{64}$/.test(payload.eoaPrivHex)) throw new Error("Invalid EOA in legacy backup"); await idbSet(KEY_EOA_PRIV_LEGACY,payload.eoaPrivHex); const rsaBuf=b64toAb(payload.rsaPrivPkcs8_b64); await idbSet(KEY_RSA_PRIV_PKCS8,rsaBuf); const priv=await crypto.subtle.importKey("pkcs8",rsaBuf,{name:"RSA-PSS",hash:"SHA-256"},true,["sign"]); const pubPem=await exportRsaPublicPemFromPrivate(priv); await idbSet(KEY_RSA_PUB_PEM,pubPem); await unlockEOA(password); return {address:new Wallet(payload.eoaPrivHex).address}; }
+
+// ---- Restore v2 (.dfspkey) ----
+interface BackupV2Envelope { version:2; mode:"EOA+RSA"|"RSA-only"; kdf:{name:string; iterations:number; hash:string; salt_b64:string}; cipher:{name:string; iv_b64:string; data_b64:string}; }
+async function restoreFromBackupV2(file: File, password: string): Promise<{address?:string}> {
+  const txt = await file.text();
+  const env = JSON.parse(txt) as BackupV2Envelope;
+  if (env?.version !== 2) throw new Error('Not v2');
+  const salt = new Uint8Array(b64toAb(env.kdf?.salt_b64 || ''));
+  const iv = new Uint8Array(b64toAb(env.cipher?.iv_b64 || ''));
+  const data = b64toAb(env.cipher?.data_b64 || '');
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey({ name:'PBKDF2', salt, iterations: env.kdf?.iterations || 200000, hash:'SHA-256' }, material, { name:'AES-GCM', length:256 }, true, ['decrypt']);
+  const plain = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, data);
+  const payload = JSON.parse(new TextDecoder().decode(plain)) as any;
+  if (payload.mode === 'EOA+RSA') {
+    const eoa: string | undefined = payload.eoaPrivHex;
+    const rsaB64: string | undefined = payload.rsaPrivPkcs8_b64;
+    if (!eoa || !/^0x[0-9a-fA-F]{64}$/.test(eoa)) throw new Error('Invalid EOA in backup');
+    if (!rsaB64) throw new Error('RSA private missing in backup');
+    await idbSet(KEY_EOA_PRIV_LEGACY, eoa);
+    const rsaBuf = b64toAb(rsaB64);
+    await idbSet(KEY_RSA_PRIV_PKCS8, rsaBuf);
+    const priv = await crypto.subtle.importKey('pkcs8', rsaBuf, { name:'RSA-PSS', hash:'SHA-256' }, true, ['sign']);
+    const pubPem = await exportRsaPublicPemFromPrivate(priv);
+    await idbSet(KEY_RSA_PUB_PEM, pubPem);
+    // Also set unlocked + encrypt with provided password
+    await unlockEOA(password);
+    return { address: new Wallet(eoa).address };
+  } else if (payload.mode === 'RSA-only') {
+    const rsaB64: string | undefined = payload.rsaPrivPkcs8_b64;
+    if (!rsaB64) throw new Error('RSA private missing in backup');
+    const rsaBuf = b64toAb(rsaB64);
+    await idbSet(KEY_RSA_PRIV_PKCS8, rsaBuf);
+    const priv = await crypto.subtle.importKey('pkcs8', rsaBuf, { name:'RSA-PSS', hash:'SHA-256' }, true, ['sign']);
+    const pubPem = await exportRsaPublicPemFromPrivate(priv);
+    await idbSet(KEY_RSA_PUB_PEM, pubPem);
+    return { address: undefined };
+  } else {
+    throw new Error('Unknown backup mode');
+  }
+}
 
 // ---- Login signing ----
 export type LoginMessage = { address:`0x${string}`; nonce:`0x${string}` };
@@ -109,7 +150,12 @@ export async function hasEOA(): Promise<boolean> {
 }
 
 export async function restoreFromBackup(file: File, password: string): Promise<{address:string}> {
-  // Пытаемся сначала как v2: не расшифровываем здесь — v2 формат хранит только шифртекст, его применяет другое место.
-  // Так как сейчас у нас используется v1 в UI, оставим явный вызов legacy.
-  return restoreFromBackupLegacy(file, password);
+  // Try v2 first
+  try {
+    const res = await restoreFromBackupV2(file, password);
+    return { address: res.address || '' };
+  } catch {
+    // Fallback to legacy v1
+    return restoreFromBackupLegacy(file, password);
+  }
 }

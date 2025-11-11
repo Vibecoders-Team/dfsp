@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../useAuth';
 import { Button } from '../ui/button';
@@ -18,6 +18,7 @@ import { Eye, EyeOff, Key, AlertCircle, CheckCircle2, Download } from 'lucide-re
 import { Progress } from '../ui/progress';
 import AgentSelector from '../AgentSelector';
 import { getErrorMessage } from '@/lib/errors';
+import { setSelectedAgentKind } from '@/lib/agent/manager';
 
 type RegisterState = 'idle' | 'generating' | 'backup_required' | 'registering' | 'success' | 'error';
 
@@ -36,8 +37,12 @@ export default function RegisterPage() {
   const { register: registerUser, login, updateBackupStatus } = useAuth();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    setSelectedAgentKind('local');
+  }, []);
+
   const getPasswordStrength = (): 'weak' | 'medium' | 'strong' => {
-    if (password.length < 12) return 'weak';
+    if (password.length < 8) return 'weak';
     const hasUpper = /[A-Z]/.test(password);
     const hasLower = /[a-z]/.test(password);
     const hasDigit = /\d/.test(password);
@@ -52,15 +57,14 @@ export default function RegisterPage() {
 
   const isFormValid = () => (
     acceptTerms &&
-    password.length >= 12 &&
-    /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password) &&
+    password.length >= 8 &&
     passwordsMatch
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid()) {
-      setErrorMessage('Please provide a password (min 12 chars, upper/lowercase, digit) and accept Terms');
+      setErrorMessage('Please provide a password (min 8 chars) and accept Terms');
       setState('error');
       return;
     }
@@ -142,7 +146,7 @@ export default function RegisterPage() {
           <p className="text-gray-600">
             Set up your secure decentralized file sharing account. You can sign with Local keys, MetaMask, or WalletConnect.
           </p>
-          <div className="flex justify-center mt-2"><AgentSelector /></div>
+          <div className="flex justify-center mt-2"><AgentSelector showInlineError={false} /></div>
         </div>
 
         <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
@@ -162,7 +166,7 @@ export default function RegisterPage() {
             <div className="space-y-2">
               <Label htmlFor="password">Password (for local key encryption)</Label>
               <div className="relative">
-                <Input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} disabled={isLoading} placeholder="Minimum 12 characters" className="pr-10" />
+                <Input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} disabled={isLoading} placeholder="Minimum 8 characters" className="pr-10" />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" disabled={isLoading}>
                   {showPassword ? (<EyeOff className="h-4 w-4" />) : (<Eye className="h-4 w-4" />)}
                 </button>
@@ -213,7 +217,7 @@ export default function RegisterPage() {
                 disabled={isLoading}
               />
               <Label htmlFor="terms" className="cursor-pointer leading-relaxed">
-                I accept the Terms of Service and Privacy Policy
+                I accept the <a href="/terms" className="text-blue-600 hover:underline" target="_blank" rel="noreferrer">Terms of Service</a> and Privacy Policy
               </Label>
             </div>
 

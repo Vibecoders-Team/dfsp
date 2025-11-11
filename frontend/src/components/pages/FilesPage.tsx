@@ -20,9 +20,10 @@ import {
 } from '../ui/select';
 import { Skeleton } from '../ui/skeleton';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Upload, Search, Eye, Share2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Upload, Search, Eye, Share2, CheckCircle2, AlertCircle, Download } from 'lucide-react';
 import { fetchMyFiles, type FileListItem } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
+import { toast } from 'sonner';
 
 interface FileItem {
   id: string;
@@ -49,8 +50,6 @@ export default function FilesPage() {
         setError(null);
         const data = await fetchMyFiles();
 
-        console.log('Files from API:', data); // Debug log
-
         // Convert API data to UI format (safe date parsing)
         const converted: FileItem[] = data.map((f: FileListItem) => {
           const d = f.created_at ? new Date(f.created_at) : new Date(0);
@@ -65,11 +64,8 @@ export default function FilesPage() {
             mimeType: f.mime,
           };
         });
-
-        console.log('Converted files:', converted); // Debug log
         setFiles(converted);
       } catch (e) {
-        console.error('Failed to load files:', e); // Debug log
         setError(getErrorMessage(e, 'Failed to load files'));
       } finally {
         setIsLoading(false);
@@ -82,7 +78,6 @@ export default function FilesPage() {
   const filteredFiles = useMemo(() => {
     let filtered = [...files];
 
-    // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
@@ -93,7 +88,6 @@ export default function FilesPage() {
       );
     }
 
-    // Sort
     filtered.sort((a, b) => {
       const at = a.created instanceof Date && !isNaN(a.created.getTime()) ? a.created.getTime() : 0;
       const bt = b.created instanceof Date && !isNaN(b.created.getTime()) ? b.created.getTime() : 0;
@@ -139,6 +133,35 @@ export default function FilesPage() {
     if (!str) return '';
     if (str.length <= length) return str;
     return str.slice(0, Math.floor(length / 2)) + '...' + str.slice(-Math.floor(length / 2));
+  };
+
+  const copyValue = (value: string, label: string) => {
+    if (!value) return;
+    navigator.clipboard.writeText(value);
+    toast.success(`${label} copied to clipboard`);
+  };
+
+  const handleDownloadOwn = async (file: FileItem) => {
+    try {
+      // Предполагаем публичный IPFS шлюз из переменных окружения
+      const gw = (import.meta as unknown as { env?: { VITE_IPFS_PUBLIC_GATEWAY?: string } }).env?.VITE_IPFS_PUBLIC_GATEWAY ?? 'http://localhost:8080';
+      const path = file.cid ? `/ipfs/${file.cid}` : '';
+      if (!path) throw new Error('CID missing');
+      const url = gw.replace(/\/+$/, '') + path;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = file.name || file.id;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+      toast.success('Download started');
+    } catch (e) {
+      toast.error(getErrorMessage(e, 'Download failed'));
+    }
   };
 
   if (isLoading) {
@@ -235,14 +258,18 @@ export default function FilesPage() {
                     </TableCell>
                     <TableCell>{formatSize(file.size)}</TableCell>
                     <TableCell>
-                      <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                        {truncate(file.cid, 16)}
-                      </code>
+                      <button type="button" onClick={()=>copyValue(file.cid,'CID')} className="group">
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
+                          {truncate(file.cid, 16)}
+                        </code>
+                      </button>
                     </TableCell>
                     <TableCell>
-                      <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                        {truncate(file.checksum, 20)}
-                      </code>
+                      <button type="button" onClick={()=>copyValue(file.checksum,'Checksum')} className="group">
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
+                          {truncate(file.checksum, 20)}
+                        </code>
+                      </button>
                     </TableCell>
                     <TableCell>{formatDate(file.created)}</TableCell>
                     <TableCell>
@@ -265,6 +292,10 @@ export default function FilesPage() {
                             Verify
                           </Button>
                         </Link>
+                        <Button variant="ghost" size="sm" className="gap-1.5" onClick={()=>handleDownloadOwn(file)}>
+                          <Download className="h-3.5 w-3.5" />
+                          Download
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>

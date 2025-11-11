@@ -21,6 +21,9 @@ export function getErrorMessage(e: unknown, fallback = "Request failed"): string
     const msg = e.message;
     if (msg === 'unlock_cancelled') return 'Unlock was cancelled — enter your password in the dialog and try again.';
     if (/^EOA locked/i.test(msg)) return 'Local key is locked — unlock to continue.';
+    if (/Signature request was cancelled/i.test(msg)) return 'Signature request was cancelled';
+    // Wallets (MetaMask) may wrap rejection differently; attempt to normalize
+    if (/ACTION_REJECTED|user rejected/i.test(msg)) return 'Signature request was cancelled';
     return msg;
   }
   return fallback;
