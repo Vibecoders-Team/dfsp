@@ -34,6 +34,7 @@ from .routers.grants import router as grants_router
 from .routers.meta_tx import router as mtx_router
 from .routers.users import router as users_router
 from .routers.verify import router as verify_router
+from .routers.telegram import router as telegram_router
 
 # Initialize structured logging
 init_logging()
@@ -104,3 +105,4 @@ app.include_router(users_router)
 app.include_router(admin_router)
 app.include_router(pow_router.router)
 app.include_router(chain_info_router)
+app.include_router(telegram_router)
