@@ -1,79 +1,121 @@
 from __future__ import annotations
 
+import redis
+from app.deps import get_redis
+
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request # Добавили Request
+from sqlalchemy.orm import Session
+from fastapi.security import HTTPAuthorizationCredentials # Нужно для ручного создания Creds
 
 from app.cache import Cache
-from app.deps import rds  # Импортируем rds для прямого использования в рейт-лимитере
-from app.schemas.telegram import TgLinkStartRequest, TgLinkStartResponse
+from app.deps import get_db, rds
+from app.models import User
+from app.repos import telegram_repo
+from app.schemas.telegram import (
+    OkResponse,
+    TgLinkCompleteRequest,
+    TgLinkStartRequest,
+    TgLinkStartResponse,
+)
 
 # --- Константы ---
-LINK_TOKEN_TTL_SECONDS = 10 * 60  # 10 минут
-RATE_LIMIT_REQUESTS = 5  # 5 запросов
-RATE_LIMIT_WINDOW_SECONDS = 60  # в 60 секунд (5 запросов в минуту)
+LINK_TOKEN_TTL_SECONDS = 10 * 60
+RATE_LIMIT_REQUESTS = 5
+RATE_LIMIT_WINDOW_SECONDS = 60
 
 # --- Создание Роутера ---
 router = APIRouter(prefix="/tg", tags=["Telegram"])
 
 
 # --- Зависимость для Рейт-Лимита по Chat ID ---
-# Мы создаем свою зависимость, так как стандартная работает по IP, а нам нужен chat_id из тела запроса.
-async def rate_limit_by_chat_id(payload: TgLinkStartRequest):
-    """Rate-limits requests based on chat_id from the request body."""
+async def rate_limit_by_chat_id(
+    payload: TgLinkStartRequest, redis_client: redis.Redis = Depends(get_redis)
+):
     now = int(time.time())
     window = now // RATE_LIMIT_WINDOW_SECONDS
-
-    # Ключ в Redis будет уникальным для каждого chat_id в рамках минутного окна
     key = f"rl:tg-link-start:{payload.chat_id}:{window}"
 
-    try:
-        # Увеличиваем счетчик и проверяем его значение
-        cur = int(rds.incr(key))
+    # Убираем try-except, чтобы видеть ошибки, и используем redis_client
+    # В реальном приложении можно вернуть try-except, но с логированием ошибки.
+    cur = int(redis_client.incr(key))
+    if cur == 1:
+        redis_client.expire(key, RATE_LIMIT_WINDOW_SECONDS + 5)
 
-        # Если это первый запрос в этом окне, устанавливаем TTL
-        if cur == 1:
-            rds.expire(key, RATE_LIMIT_WINDOW_SECONDS + 5)  # +5 секунд запаса
-
-        # Если счетчик превысил лимит, возвращаем ошибку 429
-        if cur > RATE_LIMIT_REQUESTS:
-            ttl = int(rds.ttl(key) or RATE_LIMIT_WINDOW_SECONDS)
-            headers = {"Retry-After": str(ttl if ttl > 0 else RATE_LIMIT_WINDOW_SECONDS)}
-            raise HTTPException(status_code=429, detail="Too many requests", headers=headers)
-
-    except Exception:
-        # Если Redis недоступен, не блокируем запрос (fail-open)
-        pass
+    if cur > RATE_LIMIT_REQUESTS:
+        ttl = int(redis_client.ttl(key) or RATE_LIMIT_WINDOW_SECONDS)
+        headers = {"Retry-After": str(ttl if ttl > 0 else RATE_LIMIT_WINDOW_SECONDS)}
+        raise HTTPException(status_code=429, detail="Too many requests", headers=headers)
 
 
-# --- Эндпоинт ---
+# --- Эндпоинт #115 ---
 @router.post(
     "/link-start",
     response_model=TgLinkStartResponse,
     summary="Start Telegram account linking process",
-    dependencies=[Depends(rate_limit_by_chat_id)],  # Применяем наш рейт-лимитер
+    dependencies=[Depends(rate_limit_by_chat_id)],
 )
 async def start_telegram_link(payload: TgLinkStartRequest) -> TgLinkStartResponse:
-    """
-    Generates a single-use, short-lived link_token for a given chat_id.
-    This token is then used by the web frontend to complete the linking process.
-    """
-    # 1. Генерация безопасного токена
     link_token = secrets.token_urlsafe(32)
-
-    # 2. Ключ для хранения в Redis. Префикс "tg:link" для порядка.
     cache_key = f"tg:link:{link_token}"
-
-    # 3. Сохраняем chat_id в Redis, используя наш токен как ключ.
-    # Используем готовый класс Cache, который уже есть в проекте.
     Cache.set_text(cache_key, str(payload.chat_id), ttl=LINK_TOKEN_TTL_SECONDS)
-
-    # 4. Вычисляем и возвращаем время истечения токена
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=LINK_TOKEN_TTL_SECONDS)
-
     return TgLinkStartResponse(
         link_token=link_token,
         expires_at=expires_at,
     )
+
+
+# --- Эндпоинт #116 ---
+@router.post(
+    "/link-complete",
+    response_model=OkResponse,
+    summary="Complete Telegram account linking",
+)
+async def complete_telegram_link(
+        payload: TgLinkCompleteRequest,
+        request: Request,
+        db: Session = Depends(get_db),
+) -> OkResponse:
+    # --- Ленивое разрешение get_current_user ---
+    from app.security import get_current_user
+
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    creds = HTTPAuthorizationCredentials(
+        scheme="Bearer",
+        credentials=auth_header.split(" ")[1]
+    )
+
+    try:
+        current_user: User = get_current_user(creds=creds, db=db)
+    except HTTPException as e:
+        raise e
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid authentication token or user")
+    # --- Конец ленивого разрешения ---
+
+    cache_key = f"tg:link:{payload.link_token}"
+    chat_id_str = Cache.get_text(cache_key)
+
+    if not chat_id_str:
+        raise HTTPException(status_code=400, detail="Invalid or expired link_token.")
+
+    Cache.delete(cache_key)
+
+    try:
+        chat_id = int(chat_id_str)
+        telegram_repo.link_user_to_chat(
+            db=db, wallet_address=current_user.eth_address, chat_id=chat_id
+        )
+    except ValueError:
+        raise HTTPException(status_code=500, detail="Invalid chat_id found in cache.")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Could not save telegram link.")
+
+    return OkResponse()
