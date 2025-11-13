@@ -12,3 +12,11 @@ class TgLinkStartRequest(BaseModel):
 class TgLinkStartResponse(BaseModel):
     link_token: str
     expires_at: datetime
+    
+# Схема для тела запроса к /tg/link-complete
+class TgLinkCompleteRequest(BaseModel):
+    link_token: str
+
+# Стандартный успешный ответ
+class OkResponse(BaseModel):
+    ok: bool = True

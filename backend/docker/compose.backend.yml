@@ -131,6 +131,7 @@ services:
       - ../app:/app/app
       - ../migrations:/app/migrations
       - ../alembic.ini:/app/alembic.ini
+      - ../tests:/app/tests
     depends_on:
       redis:
         condition: service_healthy
