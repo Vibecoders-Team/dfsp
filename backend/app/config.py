@@ -127,7 +127,7 @@ class Settings(BaseSettings):
     relayer_high_queue: str = Field(default="relayer.high", alias="RELAYER_HIGH_QUEUE")
     relayer_default_queue: str = Field(default="relayer.default", alias="RELAYER_DEFAULT_QUEUE")
 
-    # --- Proof-of-Work параметры (резерв под будущую фичу) ---
+    # --- Proof-of-Work параметры ---
     pow_difficulty_base: int = Field(default=18, alias="POW_DIFFICULTY_BASE")
     pow_challenge_ttl_seconds: int = Field(
         default=300, alias="POW_CHALLENGE_TTL_SECONDS"
@@ -141,6 +141,10 @@ class Settings(BaseSettings):
     postgres_pool_size: int = Field(default=20, alias="POSTGRES_POOL_SIZE")
     postgres_max_overflow: int = Field(default=10, alias="POSTGRES_MAX_OVERFLOW")
     redis_max_connections: int = Field(default=100, alias="REDIS_MAX_CONNECTIONS")
+
+    # --- NEW: relayer signing (optional) ---
+    chain_tx_from: str | None = Field(default=None, alias="CHAIN_TX_FROM")
+    relayer_private_key: str | None = Field(default=None, alias="RELAYER_PRIVATE_KEY")
 
     def __init__(
             self,
@@ -262,6 +266,8 @@ class Settings(BaseSettings):
             "pow": {"difficulty_base": self.pow_difficulty_base},
             "chain_loaded": bool(chain),
             "chainId": getattr(chain, "chainId", None),
+            "chain_tx_from": self.chain_tx_from,
+            "relayer_pk": _mask(self.relayer_private_key, 10),
         }
 
 

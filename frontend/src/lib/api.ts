@@ -115,10 +115,10 @@ export type LoginPayload = {
     signature: string;
 };
 export type ForwardTyped = {
-  domain: any;
+  domain: Record<string, unknown>;
   types: Record<string, TypedDataField[]>;
   primaryType: string;
-  message: any;
+  message: Record<string, unknown>;
 };
 
 // /** ---- API calls ---- */
@@ -190,7 +190,7 @@ export type SharePayload = {
 };
 
 export type ShareItem = { grantee: string; capId: string; status: Grant["status"] };
-export type ShareOutResp = { items: ShareItem[]; typedDataList?: any[] };
+export type ShareOutResp = { items: ShareItem[]; typedDataList?: ForwardTyped[] };
 
 export async function fetchGranteePubKey(addr: string): Promise<string> {
   const a = addr.trim();
@@ -227,12 +227,12 @@ export async function fetchGranteePubKey(addr: string): Promise<string> {
       saveKey(a, data.rsa_public);
       return data.rsa_public;
     }
-  } catch (e) {
+  } catch (err) {
     // если 404 — оставим как PUBLIC_PEM_NOT_FOUND; остальные ошибки прокинем наружу
-    if (isAxiosError(e) && e.response?.status === 404) {
+    if (isAxiosError(err) && err.response?.status === 404) {
       // fall-through
     } else {
-      throw e;
+      throw err;
     }
   }
 
@@ -276,7 +276,7 @@ export async function revokeGrant(capId: string): Promise<void> {
 
 // === Download (by capId) ===
 
-export type DownloadOut = { encK: string; ipfsPath: string; requestId?: string; typedData?: ForwardTyped };
+export type DownloadOut = { encK: string; ipfsPath: string; requestId?: string; typedData?: ForwardTyped; fileName?: string };
 
 export async function fetchDownload(capId: string, powHeader?: string): Promise<DownloadOut> {
   const { data } = await api.get<DownloadOut>(`/download/${capId}`, {
@@ -286,7 +286,7 @@ export async function fetchDownload(capId: string, powHeader?: string): Promise<
 }
 
 // === Meta-tx submit ===
-export async function submitMetaTx(requestId: string, typedData: any, signature: string): Promise<{ status: string; task_id?: string }>{
+export async function submitMetaTx(requestId: string, typedData: ForwardTyped, signature: string): Promise<{ status: string; task_id?: string }>{
   const { data } = await api.post<{ status: string; task_id?: string }>(`/meta-tx/submit`, {
     request_id: requestId,
     typed_data: typedData,
@@ -358,4 +358,19 @@ export type MyGrantItem = {
 export async function fetchMyGrants(role: "received" | "granted" = "received"): Promise<MyGrantItem[]> {
   const { data } = await api.get<{ items: MyGrantItem[] }>(`/grants`, { params: { role } });
   return data.items || [];
+}
+
+export async function storeEncrypted(
+  file: Blob,
+  opts: { idHex: string; checksum: string; plainSize: number; filename?: string; origName?: string; origMime?: string }
+) {
+    const fd = new FormData();
+    fd.append('file', file, opts.filename || 'encrypted.bin');
+    fd.append('id_hex', opts.idHex);
+    fd.append('checksum', opts.checksum);
+    fd.append('plain_size', String(opts.plainSize));
+    if (opts.origName) fd.append('orig_name', opts.origName);
+    if (opts.origMime) fd.append('orig_mime', opts.origMime);
+    const { data } = await api.post<StoreFileOut>('/storage/store', fd);
+    return data;
 }

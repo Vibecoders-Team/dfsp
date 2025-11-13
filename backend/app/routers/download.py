@@ -114,6 +114,14 @@ def get_download_info(
 
             enc_b64 = base64.b64encode(grant.enc_key).decode("ascii")
             out = {"encK": enc_b64, "ipfsPath": f"/ipfs/{cid}"}
+            # Добавим имя файла, если известно
+            try:
+                file_obj2: Optional[File] = db.get(File, file_id_bytes)
+                if file_obj2 and file_obj2.name:
+                    out["fileName"] = file_obj2.name
+            except Exception:
+                pass
+            # typedData как было
             try:
                 ac = chain.get_access_control()
                 to_addr = getattr(ac, "address", None) or Web3.to_checksum_address(ZERO_ADDR)
@@ -220,6 +228,12 @@ def get_download_info(
 
     enc_b64 = base64.b64encode(grant.enc_key).decode("ascii")
     out = {"encK": enc_b64, "ipfsPath": f"/ipfs/{cid}"}
+    try:
+        file_obj2: Optional[File] = db.get(File, file_id_bytes)
+        if file_obj2 and file_obj2.name:
+            out["fileName"] = file_obj2.name
+    except Exception:
+        pass
     if typed is not None:
         out.update({"requestId": str(req_uuid), "typedData": typed})
     return out

@@ -27,10 +27,31 @@ class Chain:
             deploy_json_path: str,
             contract_name: str,
             tx_from: str | None = None,
+            relayer_private_key: str | None = None,
     ):
         self.rpc_url = rpc_url or os.getenv("CHAIN_RPC_URL", "http://chain:8545")
         self.w3 = Web3(HTTPProvider(self.rpc_url))
         self.chain_id = chain_id
+
+        # Если передан приватный ключ — настраиваем подпись и отправку raw-транзакций
+        if relayer_private_key:
+            try:
+                # web3 v7
+                try:
+                    from web3.middleware.signing import construct_sign_and_send_raw_middleware  # type: ignore
+                except Exception:  # web3 v6 fallback
+                    from web3.middleware import construct_sign_and_send_raw_middleware  # type: ignore
+                from eth_account import Account  # late import
+
+                acct = Account.from_key(relayer_private_key)
+                self.w3.middleware_onion.add(construct_sign_and_send_raw_middleware(acct))
+                # web3 py expects checksum address
+                self.w3.eth.default_account = acct.address  # type: ignore[assignment]
+                if not tx_from:
+                    tx_from = acct.address
+                log.info("Relayer signing enabled: from %s", acct.address)
+            except Exception as e:
+                log.warning("Failed to enable relayer signing middleware: %s", e)
 
         # основной целевой контракт (обычно FileRegistry)
         with open(deploy_json_path, "r", encoding="utf-8") as _f:

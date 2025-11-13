@@ -10,8 +10,10 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Progress } from '../ui/progress';
 import { Upload, File, X, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { storeFile } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
+import { encryptFile, keccak } from '../../lib/cryptoClient';
+import { storeEncrypted } from '../../lib/api';
+import { getOrCreateFileKey, renameFileKey } from '../../lib/fileKey';
 
 type UploadState = 'empty' | 'encrypting' | 'uploading' | 'registering' | 'done' | 'error';
 
@@ -33,8 +35,6 @@ export default function UploadPage() {
   const [uploadSpeed, setUploadSpeed] = useState(0);
   const [error, setError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
-  const [encryptionProgress, setEncryptionProgress] = useState(0);
-  const [uploadedFileId, setUploadedFileId] = useState<string>('');
 
   const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
@@ -87,50 +87,45 @@ export default function UploadPage() {
 
     try {
       setError('');
+      setState('encrypting');
+      setProgress(0);
+
+      // Вычисляем idHex (sha256 plaintext) и checksum (keccak plaintext) до шифрования
+      const buf = await uploadedFile.file.arrayBuffer();
+      const sha = await crypto.subtle.digest('SHA-256', buf);
+      const idHex = '0x' + Array.from(new Uint8Array(sha)).map(b=>b.toString(16).padStart(2,'0')).join('');
+      const kch = (await keccak(new Uint8Array(buf))).replace(/^0x/, '');
+
+      // Генерируем/получаем K_file, привязывая к idHex
+      const K_file = getOrCreateFileKey(idHex);
+
+      // Шифруем исходный файл
+      const enc = await encryptFile(uploadedFile.file, K_file, 64*1024, (done, total) => setProgress(Math.round((done/total)*100)));
+
       setState('uploading');
       setProgress(0);
 
-      const startTime = Date.now();
-
-      // TODO: Add encryption in future (for now just upload)
-      // Upload to backend (which will store in IPFS)
-      const result = await storeFile(uploadedFile.file);
-
-      // Simulate progress for better UX
-      const interval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(interval);
-            return 90;
-          }
-          return prev + 10;
-        });
-      }, 200);
+      const start = performance.now();
+      const res = await storeEncrypted(enc.blob, { idHex, checksum: kch, plainSize: uploadedFile.size, filename: uploadedFile.name + '.enc' });
+      const elapsedMs = performance.now() - start;
+      // Если бэкенд изменил id (например, коллизия персонифицирована), перенесём ключ
+      if (res.id_hex && res.id_hex !== idHex) {
+        renameFileKey(idHex, res.id_hex);
+      }
 
       setProgress(100);
-      setUploadedFileId(result.id_hex);
-
-      // Calculate upload speed
-      const elapsed = (Date.now() - startTime) / 1000;
-      const speed = uploadedFile.size / elapsed;
+      const speed = uploadedFile.size / (elapsedMs / 1000);
       setUploadSpeed(speed);
 
-      // Success
       setState('done');
-      toast.success('File uploaded successfully!', {
-        description: `File ID: ${result.id_hex.slice(0, 10)}...`
-      });
+      toast.success('File uploaded successfully!', { description: `File ID: ${res.id_hex.slice(0,10)}...` });
 
-      setTimeout(() => {
-        navigate('/files');
-      }, 2000);
+      setTimeout(() => { navigate('/files'); }, 1500);
     } catch (err) {
       setState('error');
       const errorMsg = getErrorMessage(err, 'Upload failed');
       setError(errorMsg);
-      toast.error('Upload failed', {
-        description: errorMsg
-      });
+      toast.error('Upload failed', { description: errorMsg });
     }
   };
 
@@ -281,8 +276,8 @@ export default function UploadPage() {
               <CardDescription>Encrypting file before upload...</CardDescription>
             </CardHeader>
             <CardContent>
-              <Progress value={encryptionProgress} className="mb-2" />
-              <div className="text-sm text-gray-600">{encryptionProgress}%</div>
+              <Progress value={0} className="mb-2" />
+              <div className="text-sm text-gray-600">0%</div>
             </CardContent>
           </Card>
         )}

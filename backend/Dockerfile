@@ -17,8 +17,7 @@ WORKDIR /app
 
 # сначала — файлы зависимостей (кэш слоёв)
 COPY pyproject.toml ./
-# если есть lock — добавьте строку ниже (и в репозиторий):
-# COPY uv.lock ./
+COPY uv.lock ./
 
 # создаём и синхронизируем окружение
 # --all-extras подтянет [project.optional-dependencies].dev когда понадобятся

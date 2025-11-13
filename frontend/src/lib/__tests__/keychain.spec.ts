@@ -1,19 +1,27 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { unlockEOA, isEOAUnlocked, lockEOA, ensureEOAUnlocked } from '../keychain';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { unlockEOA, isEOAUnlocked, lockEOA, ensureEOAUnlocked, __resetKeychainForTests } from '../keychain';
 
-function clearIndexedDB(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.deleteDatabase('dfsp');
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-    req.onblocked = () => resolve();
-  });
+function clearIndexedDBShim(): Promise<void> {
+  __resetKeychainForTests();
+  return Promise.resolve();
 }
 
 describe('EOA lock/unlock', () => {
   beforeEach(async () => {
+    // Ensure window exists for dispatch (harmless in node)
+    if (typeof globalThis.window === 'undefined') {
+      // @ts-expect-error test shim
+      globalThis.window = { dispatchEvent: () => {}, setTimeout: setTimeout, clearTimeout: clearTimeout };
+    } else {
+      // @ts-expect-error augment
+      if (!window.setTimeout) window.setTimeout = setTimeout as any;
+      // @ts-expect-error augment
+      if (!window.clearTimeout) window.clearTimeout = clearTimeout as any;
+      // @ts-expect-error augment
+      if (!window.dispatchEvent) window.dispatchEvent = () => {};
+    }
     lockEOA();
-    await clearIndexedDB();
+    await clearIndexedDBShim();
   });
 
   it('creates new EOA on first unlock and locks/unlocks correctly', async () => {
@@ -29,4 +37,3 @@ describe('EOA lock/unlock', () => {
     await expect(ensureEOAUnlocked(undefined as any)).rejects.toThrow(/password/i);
   });
 });
-

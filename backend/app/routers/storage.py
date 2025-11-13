@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 from typing import Any
 from typing import Literal
@@ -36,6 +35,10 @@ class StoreOut(BaseModel):
 async def store_file(
     file: UploadFile = File(...),
     id_hex: str | None = Form(None),
+    checksum: str | None = Form(None),
+    plain_size: int | None = Form(None),
+    orig_name: str | None = Form(None),
+    orig_mime: str | None = Form(None),
     chain: Chain = Depends(get_chain),
     ipfs: IpfsClient = Depends(get_ipfs),
     # --- ИЗМЕНЕНИЯ ЗДЕСЬ (Зависимость) ---
@@ -60,11 +63,34 @@ async def store_file(
             raise HTTPException(400, "bad_id")
         item_id = bytes.fromhex(s)
     else:
-        item_id = hashlib.sha256(data).digest()
+        # fallback: derive from uploaded bytes (encrypted/plain depending on caller)
+        import hashlib as _hashlib
+        item_id = _hashlib.sha256(data).digest()
 
-    size = len(data)
-    checksum32 = Web3.keccak(data)
-    mime = file.content_type or ""
+    # Prefer provided checksum (hex) and plain_size
+    checksum32 = None
+    if isinstance(checksum, str) and checksum:
+        ss = checksum.strip().lower()
+        if ss.startswith("0x"):
+            ss = ss[2:]
+        try:
+            raw = bytes.fromhex(ss)
+            if len(raw) != 32:
+                raise ValueError("bad_len")
+            checksum32 = raw
+        except Exception:
+            raise HTTPException(400, "bad_checksum")
+    if checksum32 is None:
+        checksum32 = Web3.keccak(data)
+
+    size = int(plain_size) if isinstance(plain_size, int) and plain_size is not None else len(data)
+    # MIME: предпочитаем оригинальный (plaintext), а не тип зашифрованного blob'а
+    mime = (orig_mime or "").strip() or ""
+
+    # Определяем исходное имя файла (без .enc)
+    the_name = (orig_name or "").strip() or (file.filename or "untitled")
+    if the_name.lower().endswith('.enc'):
+        the_name = the_name[:-4]
 
     # Log DSN for diagnosing cross-DB issues
     try:
@@ -77,13 +103,20 @@ async def store_file(
         existing = db.get(FileModel, item_id)
     except Exception:
         existing = None
-    if existing is not None and existing.owner_id != user.id and id_hex is None:
-        # Derive a per-user deterministic id from user.id and checksum32
-        item_id = Web3.keccak(user.id.bytes + bytes(checksum32))
-        log.info(
-            "store_file: switching to per-user item_id=%s due to ownership collision (original owned by %s)",
-            item_id.hex(), str(existing.owner_id)
-        )
+    if existing is not None and existing.owner_id != user.id:
+        # Даже если id_hex был явно предоставлен клиентом — не даём перезаписать чужой файл.
+        base_seed = user.id.bytes + bytes(checksum32)
+        attempt = 0
+        while True:
+            candidate = Web3.keccak(base_seed + attempt.to_bytes(4, 'big')) if attempt else Web3.keccak(base_seed)
+            other = db.get(FileModel, candidate)
+            if other is None or other.owner_id == user.id:
+                log.info("store_file: collision for id=%s (owned by %s) -> reassigned to %s (attempt=%d)", item_id.hex(), existing.owner_id, candidate.hex(), attempt)
+                item_id = candidate
+                break
+            attempt += 1
+            if attempt > 25:
+                raise HTTPException(500, "collision_resolution_failed")
 
     # Debug: log user and file identifiers before chain/db ops
     try:
@@ -106,12 +139,11 @@ async def store_file(
         # Проверяем, существует ли уже запись, чтобы обновить ее (логика update)
         db_file = db.get(FileModel, item_id)
         if db_file:
-            # Если файл существует, обновляем его поля
             db_file.cid = cid
             db_file.checksum = checksum32
             db_file.size = size
-            db_file.mime = mime
-            db_file.name = file.filename or "untitled"
+            db_file.mime = mime or db_file.mime
+            db_file.name = the_name or db_file.name
 
             # Создаем новую версию
             from sqlalchemy import select, func
@@ -126,7 +158,7 @@ async def store_file(
                 cid=cid,
                 checksum=checksum32,
                 size=size,
-                mime=mime,
+                mime=mime or db_file.mime,
             )
             db.add(new_version)
         else:
@@ -134,7 +166,7 @@ async def store_file(
             db_file = FileModel(
                 id=item_id,
                 owner_id=user.id,
-                name=file.filename or "untitled",
+                name=the_name,
                 size=size,
                 mime=mime,
                 cid=cid,
@@ -162,12 +194,11 @@ async def store_file(
 
     except Exception as e:
         db.rollback()
-        # Это критическая ошибка: данные есть в блокчейне, но не в нашей БД.
         log.error(
             f"DATABASE FAILED after successful chain transaction {tx_hash}: {e}", exc_info=True
         )
-        # Продолжаем, так как on-chain операция прошла
-        pass
+        # Сообщаем об ошибке, чтобы фронт не считал загрузку успешной
+        raise HTTPException(500, "db_error")
 
     return StoreOut(
         id_hex="0x" + item_id.hex(),

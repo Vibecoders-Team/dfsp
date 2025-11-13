@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.routers.health import router as health_router
 from app.routers import pow as pow_router
@@ -32,22 +33,22 @@ init_logging()
 
 app = FastAPI(title="DFSP API")
 
+# Trust X-Forwarded-For/Proto from reverse proxy (nginx)
+app.add_middleware(ProxyHeadersMiddleware)
+
 # Observability middleware (request metrics + structured logs)
 app.add_middleware(ObservabilityMiddleware)
 
 # Global rate limit for public endpoints (no Authorization header)
 app.add_middleware(RateLimitMiddleware, limit_per_minute=100)
 
+# CORS: используем список из настроек; поддерживаем '*'
+_allowed_origins = settings.cors_origins
+_allow_credentials = _allowed_origins != ["*"]
 app.add_middleware(
     CORSMiddleware,  # type: ignore[arg-type]
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5175", 
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:8000",
-    ] if not settings.cors_origin else [settings.cors_origin],
-    allow_credentials=True,
+    allow_origins=(["*"] if _allowed_origins == ["*"] else _allowed_origins),
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

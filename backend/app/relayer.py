@@ -29,6 +29,8 @@ celery.conf.task_queues = (
     Queue(DEFAULT_Q),
     Queue(ANCHOR_Q),
 )
+# Ensure tasks from app.tasks.anchor are registered
+celery.conf.imports = celery.conf.get("imports", []) + ["app.tasks.anchor"]
 
 # route by task name + payload (useOnce/revoke → high)
 

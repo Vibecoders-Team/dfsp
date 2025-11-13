@@ -2,7 +2,7 @@ import Layout from '../Layout';
 
 export default function PrivacyPage() {
   return (
-    <Layout>
+    <Layout publicDoc>
       <div className="max-w-5xl mx-auto">
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 sm:p-10 md:p-12">
           <div className="prose max-w-none">
@@ -59,13 +59,8 @@ export default function PrivacyPage() {
             <h2>12. Contact</h2>
             <p><a href="mailto:mail@dfsp.app">mail@dfsp.app</a></p>
           </div>
-          <div className="mt-10 flex justify-between items-center">
-            <a href="/register" className="text-sm text-blue-600 hover:text-blue-700">Create an account</a>
-            <a href="/login" className="text-sm text-blue-600 hover:text-blue-700">Back to login</a>
-          </div>
         </div>
       </div>
     </Layout>
   );
 }
-
