@@ -1,6 +1,7 @@
 from __future__ import annotations
 from sqlalchemy.orm import Session
 from app.models.telegram_link import TelegramLink
+from sqlalchemy import func
 
 
 def link_user_to_chat(db: Session, wallet_address: str, chat_id: int) -> TelegramLink:
@@ -30,3 +31,27 @@ def link_user_to_chat(db: Session, wallet_address: str, chat_id: int) -> Telegra
     db.refresh(instance)
 
     return instance
+
+def revoke_links_by_address(db: Session, wallet_address: str) -> int:
+    """
+    Деактивирует (soft-delete) все активные привязки для указанного wallet_address.
+    Устанавливает revoked_at = NOW() для всех записей, где оно IS NULL.
+
+    Возвращает количество обновленных записей.
+    Идемпотентна: при повторном вызове обновит 0 записей и не вызовет ошибки.
+    """
+    normalized_address = wallet_address.lower()
+
+    # Находим все активные привязки для этого адреса
+    query = db.query(TelegramLink).filter(
+        TelegramLink.wallet_address == normalized_address,
+        TelegramLink.revoked_at.is_(None)
+    )
+
+    # Обновляем у них поле revoked_at на текущее время
+    # .update() возвращает количество затронутых строк
+    updated_rows = query.update({"revoked_at": func.now()})
+
+    db.commit()
+
+    return updated_rows

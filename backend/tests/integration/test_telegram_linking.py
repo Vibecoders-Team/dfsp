@@ -114,3 +114,36 @@ async def test_link_start_rate_limit(client: httpx.Client, anyio_backend):
     response = client.post("/tg/link-start", json={"chat_id": chat_id})
     assert response.status_code == 200
     print("Request after waiting was successful.")
+    
+def test_delete_link(client: httpx.Client, test_signer: EIP712Signer):
+    """
+    Проверяет флоу отзыва привязки:
+    1. Создаем привязку.
+    2. Отзываем ее через DELETE /tg/link.
+    3. Проверяем идемпотентность, вызывая DELETE /tg/link еще раз.
+    """
+    # --- Этап 1: Создаем привязку, чтобы было что удалять ---
+    access_token = _register_and_get_token(client, test_signer)
+    auth_headers = {"Authorization": f"Bearer {access_token}"}
+
+    # Создаем link_token
+    response = client.post("/tg/link-start", json={"chat_id": 444555666})
+    assert response.status_code == 200
+    link_token = response.json()["link_token"]
+
+    # Завершаем привязку
+    response = client.post(
+        "/tg/link-complete", json={"link_token": link_token}, headers=auth_headers
+    )
+    assert response.status_code == 200, "Failed to create a link before testing deletion"
+
+    # --- Этап 2: Отзываем привязку ---
+    response = client.delete("/tg/link", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+    # --- Этап 3: Проверяем идемпотентность ---
+    # Повторный вызов не должен вызывать ошибку
+    response = client.delete("/tg/link", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
