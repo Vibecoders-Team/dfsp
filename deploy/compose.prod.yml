@@ -6,14 +6,41 @@ networks:
 
 volumes:
   redis_data:
+  shared:
+  ipfs_data:
+  pg_data:
+  chain_data:
+  geth_data:
+  explorer_db:
 
 services:
+  # ---------------- Database (Postgres) ----------------
+  db:
+    image: postgres:17-alpine
+    container_name: dfsp-db
+    env_file:
+      - ../.env.prod
+    environment:
+      POSTGRES_USER: ${DB_USER:-dfsp}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dfsp}
+      POSTGRES_DB: ${DB_NAME:-dfsp}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-dfsp} -d ${DB_NAME:-dfsp} -p 5432" ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks: [ dfsp ]
+    restart: unless-stopped
+
+  # ---------------- Migrations ----------------
   migrator:
     image: dfsp-backend:prod
     container_name: dfsp-migrator
     restart: "no"
     env_file:
-      - ./.env.prod
+      - ../.env.prod
     environment:
       POSTGRES_DSN: ${POSTGRES_DSN}
       REDIS_URL: ${REDIS_URL}
@@ -25,20 +52,76 @@ services:
       - ./shared:/app/shared
     networks: [ dfsp ]
     profiles: [ "migrate" ]
+    depends_on:
+      db:
+        condition: service_healthy
 
+  # ---------------- Chain (own network) ----------------
+  chain:
+    image: ethereum/client-go:stable
+    container_name: dfsp-geth
+    command: >-
+      sh -lc "\
+      if [ ! -d /data/geth ]; then \
+        geth init --datadir /data /genesis/genesis.json; \
+      fi; \
+      exec geth --datadir /data --http --http.addr 0.0.0.0 --http.port 8545 \
+        --http.api eth,net,web3,debug,txpool --http.corsdomain='*' \
+        --ws --ws.addr 0.0.0.0 --ws.port 8546 --ws.origins='*' \
+        --networkid ${CHAIN_ID:-31337} --nodiscover --syncmode full \
+        --gcmode archive --allow-insecure-unlock --mine --miner.threads=1 \
+        --unlock 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 --password /dev/null \
+        --verbosity 3"
+    volumes:
+      - geth_data:/data
+      - ./geth:/genesis:ro
+    networks: [ dfsp ]
+    restart: unless-stopped
+
+  # ---------------- Contracts deploy ----------------
+  contracts:
+    image: node:${NODE_VERSION:-22}
+    container_name: dfsp-contracts
+    working_dir: /app
+    depends_on:
+      chain:
+        condition: service_started
+    environment:
+      HARDHAT_URL: "${HARDHAT_URL:-http://chain:8545}"
+      DEPLOY_OUT: "${DEPLOY_OUT:-/shared/deployment.json}"
+      NPM_CONFIG_CACHE: /npm-cache
+    command: >
+      sh -lc "npm ci && \
+              npm ls ts-node >/dev/null 2>&1 || npm i -D ts-node && \
+              export NODE_OPTIONS='--loader ts-node/esm' && \
+              npx hardhat run scripts/deploy-local.ts --network docker && \
+              npm run abi:export && npm run export:deployment"
+    volumes:
+      - ../contracts/package.json:/app/package.json:ro
+      - ../contracts/package-lock.json:/app/package-lock.json:ro
+      - ../contracts/hardhat.config.ts:/app/hardhat.config.ts:ro
+      - ../contracts/tsconfig.json:/app/tsconfig.json:ro
+      - ../contracts/src:/app/src:ro
+      - ../contracts/scripts:/app/scripts:ro
+      - ../contracts/deploy:/app/deploy:ro
+      - ../contracts/docker:/app/docker:ro
+      - ./shared:/shared
+    networks: [ dfsp ]
+    profiles: [ "contracts" ]
+
+  # ---------------- API ----------------
   api:
     image: dfsp-backend:prod
     container_name: dfsp-api
     restart: unless-stopped
     env_file:
-      - ./.env.prod
+      - ../.env.prod
     environment:
       API_HOST: ${API_HOST:-0.0.0.0}
       API_PORT: ${API_PORT:-8000}
       API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
       API_AUTO_MIGRATE: ${API_AUTO_MIGRATE:-false}
       ALEMBIC_AUTO_REVISION: ${ALEMBIC_AUTO_REVISION:-false}
-      # pass through
       POSTGRES_DSN: ${POSTGRES_DSN}
       REDIS_URL: ${REDIS_URL}
       CHAIN_ID: ${CHAIN_ID}
@@ -47,13 +130,12 @@ services:
       REGISTRY_CONTRACT_NAME: ${REGISTRY_CONTRACT_NAME:-FileRegistry}
       CONTRACTS_DEPLOYMENT_JSON: ${CONTRACTS_DEPLOYMENT_JSON:-/app/shared/deployment.json}
       JWT_SECRET: ${JWT_SECRET}
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://dfsp.app}
       RELAYER_HIGH_QUEUE: ${RELAYER_HIGH_QUEUE:-relayer.high}
       RELAYER_DEFAULT_QUEUE: ${RELAYER_DEFAULT_QUEUE:-relayer.default}
       CHAIN_TX_FROM: ${CHAIN_TX_FROM:-}
     ports:
       - "${API_PORT:-8000}:8000"
-    profiles: [ "debug" ]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/ready || exit 1"]
       interval: 10s
@@ -64,14 +146,20 @@ services:
       - ./shared:/app/shared
     networks: [ dfsp ]
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      chain:
+        condition: service_started
+      db:
+        condition: service_healthy
 
+  # ---------------- Celery ----------------
   celery-worker:
     image: dfsp-backend:prod
     container_name: dfsp-celery-worker
     restart: unless-stopped
     env_file:
-      - ./.env.prod
+      - ../.env.prod
     environment:
       POSTGRES_DSN: ${POSTGRES_DSN}
       REDIS_URL: ${REDIS_URL}
@@ -89,14 +177,19 @@ services:
       - ./shared:/app/shared
     networks: [ dfsp ]
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      chain:
+        condition: service_started
+      db:
+        condition: service_healthy
 
   celery-beat:
     image: dfsp-backend:prod
     container_name: dfsp-celery-beat
     restart: unless-stopped
     env_file:
-      - ./.env.prod
+      - ../.env.prod
     environment:
       POSTGRES_DSN: ${POSTGRES_DSN}
       REDIS_URL: ${REDIS_URL}
@@ -110,15 +203,19 @@ services:
       - ./shared:/app/shared
     networks: [ dfsp ]
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      chain:
+        condition: service_started
+      db:
+        condition: service_healthy
 
+  # ---------------- Redis ----------------
   redis:
     image: redis:7.2-alpine
     container_name: dfsp-redis
     restart: unless-stopped
     volumes: [ redis_data:/data ]
-    ports:
-      - "6379:6379"
     networks: [ dfsp ]
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
@@ -127,6 +224,58 @@ services:
       retries: 10
       start_period: 5s
 
+  # ---------------- IPFS ----------------
+  ipfs:
+    image: ipfs/kubo:${IPFS_VERSION:-latest}
+    container_name: dfsp-ipfs
+    env_file:
+      - ../.env.prod
+    environment:
+      IPFS_PROFILE: "${IPFS_PROFILE:-server}"
+    # no external port publish in prod; Caddy proxies internally
+    # ports:
+    #   - "${IPFS_API_HOST_PORT:-5001}:5001"
+    #   - "${IPFS_GATEWAY_HOST_PORT:-8080}:8080"
+    volumes:
+      - ipfs_data:/data/ipfs
+    healthcheck:
+      test: [ "CMD", "ipfs", "id" ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [ dfsp ]
+
+  # ---------------- Reverse proxy (Caddy) ----------------
+  caddy:
+    image: caddy:2.8
+    container_name: dfsp-caddy
+    restart: unless-stopped
+    env_file:
+      - ../.env.prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../frontend/build:/usr/share/caddy/html:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    networks: [ dfsp ]
+    depends_on:
+      api:
+        condition: service_healthy
+      chain:
+        condition: service_started
+      ipfs:
+        condition: service_healthy
+      explorer-web:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80 -S --spider 2>&1 | grep -q 'HTTP/'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # ---------------- Nginx (optional, not used with Caddy) ----------------
   nginx:
     image: nginx:1.27-alpine
     container_name: dfsp-nginx
@@ -141,26 +290,46 @@ services:
         condition: service_healthy
     profiles: [ "nginx" ]
 
-  caddy:
-    image: caddy:2.8
-    container_name: dfsp-caddy
-    restart: unless-stopped
-    env_file:
-      - ./.env.prod
-    ports:
-      - "80:80"
-      - "443:443"
+  # ---------------- Blockscout Explorer ----------------
+  explorer-db:
+    image: postgres:17-alpine
+    container_name: blockscout-db
+    environment:
+      POSTGRES_USER: blockscout
+      POSTGRES_PASSWORD: ${EXPLORER_DB_PASSWORD:-blockpass}
+      POSTGRES_DB: blockscout
     volumes:
-      - ../frontend/build:/usr/share/caddy/html:ro
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - explorer_db:/var/lib/postgresql/data
     networks: [ dfsp ]
+
+  explorer-indexer:
+    image: ghcr.io/blockscout/blockscout:latest
+    container_name: blockscout-indexer
+    environment:
+      DATABASE_URL: postgresql://blockscout:${EXPLORER_DB_PASSWORD:-blockpass}@explorer-db:5432/blockscout
+      ECTO_USE_SSL: "false"
+      CHAIN_ID: ${CHAIN_ID:-31337}
+      ETHEREUM_JSONRPC_HTTP_URL: http://chain:8545
+      ETHEREUM_JSONRPC_TRACE_URL: http://chain:8545
+      ETHEREUM_JSONRPC_WS_URL: ws://chain:8546
+      # Reduce indexing load for local chain
+      COIN: ETH
     depends_on:
-      api:
-        condition: service_healthy
-    profiles: [ "caddy" ]
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:80 -S --spider 2>&1 | grep -q 'HTTP/'"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
+      explorer-db:
+        condition: service_started
+      chain:
+        condition: service_started
+    networks: [ dfsp ]
+
+  explorer-web:
+    image: ghcr.io/blockscout/frontend:latest
+    container_name: blockscout-web
+    environment:
+      NEXT_PUBLIC_NETWORK_NAME: DFSP Localnet
+      NEXT_PUBLIC_NETWORK_ID: ${CHAIN_ID:-31337}
+      NEXT_PUBLIC_API_URL: http://explorer-indexer:4000/api
+    depends_on:
+      explorer-indexer:
+        condition: service_started
+    networks: [ dfsp ]
+

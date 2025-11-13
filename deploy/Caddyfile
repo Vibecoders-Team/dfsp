@@ -1,25 +1,13 @@
 # Caddy HTTPS reverse proxy for dfsp.app
-# Assumes DNS A record for dfsp.app points to this server.
+# Assumes DNS A record for dfsp.app, rpc.dfsp.app, ipfs.dfsp.app point to this server.
 # Provides automatic Let's Encrypt certificates.
 
 {
-  email you@example.com
-  # optional: acme_ca https://acme.zerossl.com/v2/DV90
+  email admin@dfsp.app
 }
 
-dfsp.app {
-  encode gzip
-
-  # Serve frontend static files (mounted volume)
-  root * /usr/share/caddy/html
-  file_server
-
-  # API proxy (/api/*)
-  handle_path /api/* {
-    reverse_proxy api:8000
-  }
-
-  # Security headers (some duplicated from backend; backend still sets API ones)
+# Apex: frontend + API proxy
+_dfsp_common_headers {
   header {
     Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
     X-Frame-Options "DENY"
@@ -29,8 +17,38 @@ dfsp.app {
   }
 }
 
-# Optional redirect from www -> apex
+dfsp.app {
+  import _dfsp_common_headers
+
+  # Serve frontend static files (mounted volume)
+  root * /usr/share/caddy/html
+  file_server
+
+  # API proxy (/api/*)
+  handle_path /api/* {
+    reverse_proxy api:8000
+  }
+}
+
+# www redirect to apex
 www.dfsp.app {
   redir https://dfsp.app{uri}
 }
 
+# Public HTTPS RPC endpoint (JSON-RPC over HTTP)
+rpc.dfsp.app {
+  import _dfsp_common_headers
+  reverse_proxy chain:8545
+}
+
+# Public IPFS gateway
+ipfs.dfsp.app {
+  import _dfsp_common_headers
+  reverse_proxy ipfs:8080
+}
+
+# Public Blockscout explorer
+explorer.dfsp.app {
+  import _dfsp_common_headers
+  reverse_proxy explorer-web:3000
+}
