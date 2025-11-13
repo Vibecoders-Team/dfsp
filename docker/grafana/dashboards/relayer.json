@@ -1,0 +1,39 @@
+{
+  "uid": "dfsp-relayer",
+  "title": "DFSP • Relayer",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Relayer queues length",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 8 },
+      "targets": [
+        { "expr": "relayer_queue_length{queue=\"relayer.high\"}", "legendFormat": "high" },
+        { "expr": "relayer_queue_length{queue=\"relayer.default\"}", "legendFormat": "default" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Meta-tx total by status",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "meta_tx_total{status=\"success\"}", "legendFormat": "success" },
+        { "expr": "meta_tx_total{status=\"failure\"}", "legendFormat": "failure" },
+        { "expr": "meta_tx_total{status=\"error\"}", "legendFormat": "error" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Confirmation time p50/p95 (s)",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "meta_tx_confirmation_seconds_p50", "legendFormat": "p50" },
+        { "expr": "meta_tx_confirmation_seconds_p95", "legendFormat": "p95" }
+      ]
+    }
+  ]
+}
+

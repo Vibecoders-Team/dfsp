@@ -1,0 +1,37 @@
+groups:
+  - name: dfsp_alerts
+    interval: 15s
+    rules:
+      - alert: RelayerQueueHigh
+        expr: relayer_queue_length > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Relayer queue length high"
+          description: "Queue {{ $labels.queue }} length is {{ $value }} (>100)"
+
+      - alert: ApiHighErrorRate
+        expr: |
+          (sum(rate(api_requests_total{status=~"5.."}[5m])) by () )
+          /
+          (sum(rate(api_requests_total[5m])) by () ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API high error rate"
+          description: ">5% 5xx over last 5 minutes"
+
+      - alert: ApiLatencyP95High
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(api_request_duration_seconds_bucket[5m]))
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 latency high"
+          description: ">1s p95 over last 5 minutes"
+

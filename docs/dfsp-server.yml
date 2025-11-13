@@ -1,0 +1,802 @@
+openapi: 3.1.0
+info:
+  title: DFSP Backend API
+  version: "1.0.0"
+  description: |
+    DFSP — децентрализованный обмен файлами с клиентским шифрованием и on-chain правами доступа (gasless ERC-2771).
+    Этот API возвращает EIP-712 typedData для подписания и принимает подписанные meta-tx на релейер.
+    Без PII. IP не логируем. Логи — агрегаты/счётчики.
+
+servers:
+  - url: https://api.dfsp.local
+    description: Stage/Prod через Caddy + <IP>.sslip.io
+  - url: http://localhost:8000
+    description: Dev (Docker Compose)
+
+tags:
+  - name: Auth
+    description: Аутентификация без e-mail (EOA + PoP)
+  - name: Files
+    description: Регистрация шифрованных файлов и версии
+  - name: Grants
+    description: Гранты доступа (TTL, лимиты, revoke, useOnce)
+  - name: Download
+    description: Выдача encK и пути к IPFS (с PoW)
+  - name: MetaTx
+    description: Подпись/отправка meta-tx (ERC-2771)
+  - name: Verify
+    description: Проверки CID/Checksum против он-чейн
+  - name: Anchors
+    description: Последние меркль-якоря
+  - name: PoW
+    description: Челленджи proof-of-work
+  - name: System
+    description: Health/метрики
+
+security:
+  - bearerAuth: [ ]
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  headers:
+    X-RateLimit-Limit:
+      description: Лимит запросов в текущем окне
+      schema: { type: integer, example: 60 }
+    X-RateLimit-Remaining:
+      description: Остаток лимита
+      schema: { type: integer, example: 57 }
+    X-RateLimit-Reset:
+      description: Время UNIX, когда окно лимита обнулится
+      schema: { type: integer, example: 1695800000 }
+
+  schemas:
+    Address:
+      type: string
+      description: Ethereum-адрес в формате 0x...
+      pattern: "^0x[a-fA-F0-9]{40}$"
+      example: "0x1234567890abcdef1234567890abcdef12345678"
+
+    Bytes32:
+      type: string
+      description: 0x-префиксованный 32-байтовый хеш
+      pattern: "^0x[a-fA-F0-9]{64}$"
+      example: "0x6a2b9c...deadbeef6a2b9c0f..."
+
+    CID:
+      type: string
+      description: CIDv1 (строка Base32)
+      example: "bafybeigdyrztv...k3n5s"
+
+    FileId:
+      type: string
+      description: fileId = keccak256(owner||rand||time), hex 0x..32B
+      pattern: "^0x[a-fA-F0-9]{64}$"
+      example: "0x4e3b...5d2c"
+
+    CapId:
+      type: string
+      description: Идентификатор гранта (capability id), hex 0x..32B или bytes
+      pattern: "^0x[a-fA-F0-9]{64}$"
+      example: "0xabc1...fff2"
+
+    Mime:
+      type: string
+      example: "application/octet-stream"
+
+    Error:
+      type: object
+      required: [ code, message ]
+      properties:
+        code: { type: string, example: "rate_limited" }
+        message: { type: string, example: "Too many requests" }
+        details: { type: object, additionalProperties: true }
+
+    AuthChallengeResponse:
+      type: object
+      required: [ nonce, exp ]
+      properties:
+        nonce:
+          type: string
+          description: Одноразовый nonce (base64url)
+          example: "g2KMx1xO6O2E3hNXH8zq9A"
+        exp:
+          type: string
+          format: date-time
+          example: "2025-10-01T10:00:00Z"
+
+    AuthRegisterRequest:
+      type: object
+      required: [ rsa_public, eth_address, challenge, signature ]
+      properties:
+        rsa_public:
+          type: string
+          description: RSA-SPKI (PEM)
+        eth_address:
+          $ref: "#/components/schemas/Address"
+        display_name:
+          type: string
+          maxLength: 64
+        challenge:
+          type: string
+          description: Nonce, полученный из /auth/challenge
+        signature:
+          type: string
+          description: EIP-712 или personal_sign подпись PoP (см. доку)
+
+    AuthLoginRequest:
+      type: object
+      required: [ eth_address, challenge, signature ]
+      properties:
+        eth_address: { $ref: "#/components/schemas/Address" }
+        challenge: { type: string }
+        signature: { type: string }
+
+    AuthTokens:
+      type: object
+      required: [ access, refresh ]
+      properties:
+        access:
+          type: string
+          description: JWT access token
+        refresh:
+          type: string
+          description: Refresh token
+
+    PowChallenge:
+      type: object
+      required: [ challenge, difficulty, ttl ]
+      properties:
+        challenge:
+          type: string
+          description: base64(16B)
+          example: "lsmQ9nR9y4M2w9ZcQ+0u0g=="
+        difficulty:
+          type: integer
+          minimum: 1
+          maximum: 32
+          example: 18
+        ttl:
+          type: integer
+          description: Секунд жизни челленджа
+          example: 30
+
+    PowSolution:
+      type: object
+      required: [ challenge, nonce ]
+      properties:
+        challenge:
+          type: string
+          description: base64, как выдали
+        nonce:
+          type: integer
+          description: 32-бит целое, такое что SHA256(challenge||nonce) имеет N ведущих нулевых бит
+          example: 392847123
+
+    Eip712Domain:
+      type: object
+      properties:
+        name: { type: string }
+        version: { type: string }
+        chainId: { type: integer }
+        verifyingContract: { type: string }
+
+    ForwardRequestType:
+      type: object
+      properties:
+        name: { type: string, example: "ForwardRequest" }
+        type: { type: string, example: "tuple" }
+
+    ForwardRequestMessage:
+      type: object
+      required: [ from, to, value, gas, nonce, data ]
+      properties:
+        from: { $ref: "#/components/schemas/Address" }
+        to: { $ref: "#/components/schemas/Address" }
+        value: { type: string, example: "0" }
+        gas: { type: string, example: "200000" }
+        nonce: { type: string, example: "1" }
+        data: { type: string, example: "0xabcdef..." }
+        validUntil:
+          type: integer
+          description: Опц. off-chain дедлайн (unix); проверяется сервером, не форвардером
+          nullable: true
+
+    Eip712TypedData:
+      type: object
+      required: [ domain, types, primaryType, message ]
+      properties:
+        domain: { $ref: "#/components/schemas/Eip712Domain" }
+        types:
+          type: object
+          description: EIP-712 type map (ForwardRequest и пр.)
+          additionalProperties: true
+        primaryType: { type: string, example: "ForwardRequest" }
+        message: { $ref: "#/components/schemas/ForwardRequestMessage" }
+
+    SignedForwardRequest:
+      type: object
+      required: [ request, signature ]
+      properties:
+        request: { $ref: "#/components/schemas/ForwardRequestMessage" }
+        signature:
+          type: string
+          description: Подпись EIP-712
+
+    MetaTxSubmitRequest:
+      type: object
+      required: [ signedForwardRequest, request_id ]
+      properties:
+        signedForwardRequest: { $ref: "#/components/schemas/SignedForwardRequest" }
+        request_id:
+          type: string
+          description: Идемпотентный UUIDv4
+          example: "6d7a2b9c-2a4e-4a62-9c1e-58a88a7a9a5a"
+
+    MetaTxSubmitResponse:
+      type: object
+      required: [ txHash, status ]
+      properties:
+        txHash:
+          type: string
+          example: "0xdeadbeef..."
+        status:
+          type: string
+          enum: [ queued, sent, confirmed ]
+          example: "queued"
+
+    FileRegisterRequest:
+      type: object
+      required: [ fileId, name, size, mime, cid, checksum ]
+      properties:
+        fileId: { $ref: "#/components/schemas/FileId" }
+        name: { type: string, example: "report.enc" }
+        size: { type: integer, example: 104857600 }
+        mime: { $ref: "#/components/schemas/Mime" }
+        cid: { $ref: "#/components/schemas/CID" }
+        checksum:
+          $ref: "#/components/schemas/Bytes32"
+        pow:
+          $ref: "#/components/schemas/PowSolution"
+
+    FileRegisterResponse:
+      type: object
+      required: [ typedData, forwarder ]
+      properties:
+        typedData: { $ref: "#/components/schemas/Eip712TypedData" }
+        forwarder:
+          $ref: "#/components/schemas/Address"
+
+    FileVersionRequest:
+      type: object
+      required: [ cid, checksum, size, mime ]
+      properties:
+        cid: { $ref: "#/components/schemas/CID" }
+        checksum: { $ref: "#/components/schemas/Bytes32" }
+        size: { type: integer }
+        mime: { $ref: "#/components/schemas/Mime" }
+        pow: { $ref: "#/components/schemas/PowSolution" }
+
+    FileMeta:
+      type: object
+      required: [ fileId, owner, cid, checksum, size, mime, createdAt ]
+      properties:
+        fileId: { $ref: "#/components/schemas/FileId" }
+        owner: { $ref: "#/components/schemas/Address" }
+        cid: { $ref: "#/components/schemas/CID" }
+        checksum: { $ref: "#/components/schemas/Bytes32" }
+        size: { type: integer }
+        mime: { $ref: "#/components/schemas/Mime" }
+        createdAt: { type: string, format: date-time }
+
+    FileVersion:
+      type: object
+      required: [ cid, checksum, size, mime, createdAt ]
+      properties:
+        cid: { $ref: "#/components/schemas/CID" }
+        checksum: { $ref: "#/components/schemas/Bytes32" }
+        size: { type: integer }
+        mime: { $ref: "#/components/schemas/Mime" }
+        createdAt: { type: string, format: date-time }
+
+    GrantCreateRequest:
+      type: object
+      required: [ users, ttl_days, max_dl, encK_map, pow ]
+      properties:
+        users:
+          type: array
+          items: { $ref: "#/components/schemas/Address" }
+          description: Получатели
+        ttl_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+        max_dl:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          description: Максимум выдач ключа (доставок encK)
+        encK_map:
+          type: object
+          additionalProperties:
+            type: string
+            description: base64(K_file, зашифрованный RSA-OAEP публичным ключом пользователя)
+          example:
+            "0xabc...1": "base64EncK=="
+            "0xdef...2": "base64EncK=="
+        pow: { $ref: "#/components/schemas/PowSolution" }
+
+    GrantTypedDataBatchResponse:
+      type: object
+      required: [ batchId, typedDataList ]
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        typedDataList:
+          type: array
+          items: { $ref: "#/components/schemas/Eip712TypedData" }
+
+    GrantState:
+      type: object
+      required: [ capId, fileId, grantor, grantee, expiresAt, maxDownloads, used, revokedAt ]
+      properties:
+        capId: { $ref: "#/components/schemas/CapId" }
+        fileId: { $ref: "#/components/schemas/FileId" }
+        grantor: { $ref: "#/components/schemas/Address" }
+        grantee: { $ref: "#/components/schemas/Address" }
+        expiresAt: { type: string, format: date-time }
+        maxDownloads: { type: integer }
+        used: { type: integer }
+        revokedAt: { type: string, format: date-time, nullable: true }
+
+    DownloadResponse:
+      type: object
+      required: [ encK, ipfsPath ]
+      properties:
+        encK:
+          type: string
+          description: base64(K_file, зашифрованный RSA-публичным ключом скачивающего)
+        ipfsPath:
+          type: string
+          example: "/ipfs/bafybeigd.../report.enc"
+
+    FilesListResponse:
+      type: object
+      required: [ items, page, page_size, total ]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FileMeta" }
+        page: { type: integer, minimum: 1, example: 1 }
+        page_size: { type: integer, example: 20 }
+        total: { type: integer, example: 2 }
+
+    FileDetailsResponse:
+      type: object
+      required: [ meta, versions, grants ]
+      properties:
+        meta: { $ref: "#/components/schemas/FileMeta" }
+        versions:
+          type: array
+          items: { $ref: "#/components/schemas/FileVersion" }
+        grants:
+          type: array
+          items: { $ref: "#/components/schemas/GrantState" }
+
+    VerifyResponse:
+      type: object
+      required: [ onchain, matches ]
+      properties:
+        onchain:
+          type: object
+          nullable: true
+          properties:
+            fileId: { $ref: "#/components/schemas/FileId" }
+            cid: { $ref: "#/components/schemas/CID" }
+            checksum: { $ref: "#/components/schemas/Bytes32" }
+            owner: { $ref: "#/components/schemas/Address" }
+        matches:
+          type: object
+          properties:
+            cid: { type: boolean }
+            checksum: { type: boolean }
+
+    AnchorInfo:
+      type: object
+      required: [ period_id, merkle_root, tx_hash ]
+      properties:
+        period_id: { type: integer, example: 12345 }
+        merkle_root: { $ref: "#/components/schemas/Bytes32" }
+        tx_hash: { type: string, example: "0x..." }
+
+paths:
+  /healthz:
+    get:
+      tags: [ System ]
+      summary: Liveness/health
+      responses:
+        "200":
+          description: OK
+        "500":
+          description: Not healthy
+
+  /metrics:
+    get:
+      tags: [ System ]
+      summary: Prometheus metrics
+      responses:
+        "200":
+          description: Prometheus exposition format
+
+  /auth/challenge:
+    post:
+      tags: [ Auth ]
+      summary: Выдать nonce для Proof-of-Possession входа/регистрации
+      description: Клиент подписывает полученный nonce EOA-ключом и присылает подпись в /auth/register или /auth/login.
+      requestBody:
+        required: false
+      responses:
+        "200":
+          description: Nonce выдан
+          headers:
+            X-RateLimit-Limit: { $ref: "#/components/headers/X-RateLimit-Limit" }
+            X-RateLimit-Remaining: { $ref: "#/components/headers/X-RateLimit-Remaining" }
+            X-RateLimit-Reset: { $ref: "#/components/headers/X-RateLimit-Reset" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthChallengeResponse" }
+
+  /auth/register:
+    post:
+      tags: [ Auth ]
+      summary: Регистрация (EOA + RSA-публичный ключ)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthRegisterRequest" }
+      responses:
+        "200":
+          description: Токены выданы
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthTokens" }
+        "400":
+          description: Неверные данные
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: Уже зарегистрирован
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /auth/login:
+    post:
+      tags: [ Auth ]
+      summary: Логин через PoP (без e-mail)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthLoginRequest" }
+      responses:
+        "200":
+          description: Токены выданы
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthTokens" }
+        "401":
+          description: Подпись невалидна / nonce просрочен
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /auth/refresh:
+    post:
+      tags: [ Auth ]
+      summary: Обновить access token по refresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ access ]
+              properties:
+                access: { type: string }
+      responses:
+        "200":
+          description: Access/refresh выданы
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthTokens" }
+        "401":
+          description: Недействителен
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /pow:
+    get:
+      tags: [ PoW ]
+      summary: Получить PoW-челлендж
+      description: Вернёт challenge+difficulty+ttl. Решение передаётся в поле `pow` на тяжелых методах (upload/share/download).
+      responses:
+        "200":
+          description: Челлендж выдан
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PowChallenge" }
+        "429":
+          description: Слишком часто запрашиваете челлендж
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /files:
+    get:
+      tags: [ Files ]
+      summary: Список файлов пользователя
+      security: [ { bearerAuth: [ ] } ]
+      parameters:
+        - in: query
+          name: mine
+          schema: { type: boolean, default: true }
+          description: Только мои файлы
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Ок
+          headers:
+            X-RateLimit-Limit: { $ref: "#/components/headers/X-RateLimit-Limit" }
+            X-RateLimit-Remaining: { $ref: "#/components/headers/X-RateLimit-Remaining" }
+            X-RateLimit-Reset: { $ref: "#/components/headers/X-RateLimit-Reset" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FilesListResponse" }
+
+    post:
+      tags: [ Files, MetaTx ]
+      summary: Подготовка meta-tx для регистрации файла (on-chain FileRegistry.register)
+      description: |
+        Клиент уже зашифровал файл и добавил в IPFS. Отправляет метаданные и PoW.
+        В ответ — EIP-712 typedData для MinimalForwarder → подписать → /meta-tx/submit.
+      security: [ { bearerAuth: [ ] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FileRegisterRequest" }
+      responses:
+        "200":
+          description: Возвращён typedData для подписи
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileRegisterResponse" }
+        "400":
+          description: Валидация / denylist дубликата checksum
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "429":
+          description: Квота/PoW
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /files/{id}:
+    get:
+      tags: [ Files ]
+      summary: Детали файла — мета, версии, гранты
+      security: [ { bearerAuth: [ ] } ]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: "#/components/schemas/FileId" }
+      responses:
+        "200":
+          description: Ок
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileDetailsResponse" }
+        "404":
+          description: Не найден
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /files/{id}/version:
+    post:
+      tags: [ Files, MetaTx ]
+      summary: Новая версия файла (updateCid)
+      security: [ { bearerAuth: [ ] } ]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: "#/components/schemas/FileId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FileVersionRequest" }
+      responses:
+        "200":
+          description: typedData для подписи updateCid
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ typedData, forwarder ]
+                properties:
+                  typedData: { $ref: "#/components/schemas/Eip712TypedData" }
+                  forwarder: { $ref: "#/components/schemas/Address" }
+        "404":
+          description: Файл не найден
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /files/{id}/share:
+    post:
+      tags: [ Grants, MetaTx ]
+      summary: Создать гранты (grant) с TTL и лимитами; вернуть набор typedData для каждого получателя
+      description: |
+        Передайте encK per-recipient (RSA-OAEP-2048). Сервер вернёт массив EIP-712 typedData (по одному на grant).
+        Затем клиент подпишет каждый и отправит через /meta-tx/submit (батчем или по одному).
+      security: [ { bearerAuth: [ ] } ]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { $ref: "#/components/schemas/FileId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GrantCreateRequest" }
+      responses:
+        "200":
+          description: Массив typedData для подписания grant(ов)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrantTypedDataBatchResponse" }
+        "403":
+          description: Нет прав на файл
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "429":
+          description: Квота/PoW
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /grants/{capId}:
+    get:
+      tags: [ Grants ]
+      summary: Состояние конкретного гранта
+      security: [ { bearerAuth: [ ] } ]
+      parameters:
+        - in: path
+          name: capId
+          required: true
+          schema: { $ref: "#/components/schemas/CapId" }
+      responses:
+        "200":
+          description: Ок
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrantState" }
+        "404":
+          description: Не найден
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /grants/{capId}/revoke:
+    post:
+      tags: [ Grants, MetaTx ]
+      summary: Сформировать meta-tx для revoke гранта
+      security: [ { bearerAuth: [ ] } ]
+      parameters:
+        - in: path
+          name: capId
+          required: true
+          schema: { $ref: "#/components/schemas/CapId" }
+      requestBody:
+        required: false
+      responses:
+        "200":
+          description: typedData для revoke
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ typedData, forwarder ]
+                properties:
+                  typedData: { $ref: "#/components/schemas/Eip712TypedData" }
+                  forwarder: { $ref: "#/components/schemas/Address" }
+        "404":
+          description: Не найден
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /download/{capId}:
+    get:
+      tags: [ Download ]
+      summary: Проверка права + выдача encK и пути IPFS; параллельно ставится useOnce с высоким приоритетом
+      description: |
+        Требует авторизации и валидного PoW (challenge из /pow).
+        Возвращает encK (RSA-OAEP для текущего пользователя) и защищённый путь к нашему gateway.
+      security: [ { bearerAuth: [ ] } ]
+      parameters:
+        - in: path
+          name: capId
+          required: true
+          schema: { $ref: "#/components/schemas/CapId" }
+        - in: query
+          name: pow_challenge
+          schema: { type: string }
+          required: true
+          description: base64 челлендж, ранее выданный /pow
+        - in: query
+          name: pow_nonce
+          schema: { type: integer }
+          required: true
+          description: Решение PoW
+      responses:
+        "200":
+          description: Ключ и путь выданы
+          headers:
+            X-RateLimit-Limit: { $ref: "#/components/headers/X-RateLimit-Limit" }
+            X-RateLimit-Remaining: { $ref: "#/components/headers/X-RateLimit-Remaining" }
+            X-RateLimit-Reset: { $ref: "#/components/headers/X-RateLimit-Reset" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DownloadResponse" }
+        "403":
+          description: Нет права / TTL/лимит исчерпан / revoke
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "429":
+          description: Квота/PoW
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /meta-tx/submit:
+    post:
+      tags: [ MetaTx ]
+      summary: Отправить подписанный EIP-712 ForwardRequest на релейер
+      description: Сервер проверяет подпись/nonce/validUntil (off-chain) и кладёт в соответствующую очередь.
+      security: [ { bearerAuth: [ ] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MetaTxSubmitRequest" }
+      responses:
+        "200":
+          description: Принято релейером
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MetaTxSubmitResponse" }
+        "409":
+          description: Дубликат request_id / nonce conflict
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /verify/{fileId}:
+    get:
+      tags: [ Verify ]
+      summary: Сверка CID/Checksum по он-чейн записи
+      parameters:
+        - in: path
+          name: fileId
+          required: true
+          schema: { $ref: "#/components/schemas/FileId" }
+      responses:
+        "200":
+          description: Результат сверки
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VerifyResponse" }
+        "404":
+          description: Нет он-чейн записи
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /anchors/latest:
+    get:
+      tags: [ Anchors ]
+      summary: Последний меркль-якорь
+      responses:
+        "200":
+          description: Информация о последнем анкоре
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnchorInfo" }

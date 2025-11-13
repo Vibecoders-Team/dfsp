@@ -1,0 +1,29 @@
+{
+  "uid": "dfsp-pow-quotas",
+  "title": "DFSP • PoW & Quotas",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "PoW challenges issued",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+      "targets": [ { "expr": "pow_challenges_total" } ]
+    },
+    {
+      "type": "timeseries",
+      "title": "PoW verifications by status",
+      "gridPos": { "x": 6, "y": 0, "w": 18, "h": 8 },
+      "targets": [ { "expr": "pow_verifications_total", "legendFormat": "{{status}}" } ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Quotas exceeded",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [ { "expr": "quota_exceeded_total", "legendFormat": "{{type}}" } ]
+    }
+  ]
+}
+

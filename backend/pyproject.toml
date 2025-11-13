@@ -1,0 +1,110 @@
+[project]
+name = "dfsp-backend"
+version = "0.1.0"
+description = "DFSP backend (FastAPI)"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "pydantic-settings",
+  "sqlalchemy==2.0.43",
+  "alembic==1.13.3",
+  "asyncpg==0.29.0",
+  "python-jose[cryptography]>=3.5.0",
+  "passlib[bcrypt]>=1.7.4",
+  "redis>=6.4.0",
+  "web3>=7.13.0",
+  "python-dotenv>=1.1.1",
+  "psycopg[binary]>=3.2.10",
+  "eth-account>=0.13.7",
+  "celery>=5.5.3",
+  "pydantic>=2.11.9",
+  "mako>=1.3.10",
+  "requests>=2.32.5",
+  "python-multipart>=0.0.20",
+  "pyjwt>=2.10.1",
+  "structlog>=24.4.0",
+  "prometheus-client>=0.20.0",
+  "setuptools>=68",
+  "wheel>=0.45.1",
+  "pytest-asyncio>=0.21.1",
+  "pytest-cov>=4.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.28.1",
+  "pytest>=8.4.2",
+  "ruff>=0.6.0",
+  "pyright>=1.1.380",
+  "pytest-asyncio>=0.21.1",
+  "pytest-cov>=4.1.0",
+  "python-dotenv>=1.0.0",
+  "eth-account>=0.11.0",
+]
+
+[dependency-groups]  # для uv: uv sync --group dev
+dev = [
+  "httpx>=0.28.1",
+  "pytest>=8.4.2",
+  "ruff>=0.6.0",
+  "pyright>=1.1.380",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv/*"]
+
+[tool.ruff.lint]
+select = ["E","F","W","I","UP","B","ANN","N","C4","T20","Q","S","RUF"]
+ignore = ["ANN101","ANN102","S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "S"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+reportMissingTypeStubs = "warning"
+reportUnknownVariableType = "warning"
+reportUnknownParameterType = "warning"
+reportUnknownMemberType = "warning"
+exclude = ["build", "**/__pycache__"]
+venvPath = "."
+venv = ".venv"
+
+[[tool.pyright.executionEnvironments]]
+root = "."
+pythonVersion = "3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+
+[tool.uv]
+index-url = "https://pypi.org/simple"
+managed = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "ipfs*"]
+exclude = ["tests*", "docker*", "migrations*"]
+
+# Если в пакете есть шаблоны/статические файлы — включим их:
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+app = ["**/*.html", "**/*.jinja2", "templates/**", "static/**"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

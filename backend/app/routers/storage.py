@@ -1,0 +1,325 @@
+from __future__ import annotations
+
+import hashlib
+import logging
+from typing import Any
+from typing import Literal
+
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
+from web3 import Web3
+
+from app.blockchain.web3_client import Chain
+from app.config import settings
+
+# --- ИЗМЕНЕНИЯ ЗДЕСЬ (Импорты) ---
+from app.deps import get_chain, get_ipfs, get_db
+from app.ipfs.client import IpfsClient
+
+# --- ИЗМЕНЕНИЯ ЗДЕСЬ (Импорты) ---
+from app.models import User, File as FileModel, FileVersion
+from app.security import get_current_user  # guard
+
+router = APIRouter(prefix="/storage", tags=["storage"])
+log = logging.getLogger(__name__)
+
+
+class StoreOut(BaseModel):
+    id_hex: str
+    cid: str
+    tx_hash: str
+    url: str
+
+
+@router.post("/store", response_model=StoreOut)
+async def store_file(
+    file: UploadFile = File(...),
+    id_hex: str | None = Form(None),
+    chain: Chain = Depends(get_chain),
+    ipfs: IpfsClient = Depends(get_ipfs),
+    # --- ИЗМЕНЕНИЯ ЗДЕСЬ (Зависимость) ---
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    MAX_BYTES = 200 * 1024 * 1024  # 200MB
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "empty_file")
+    if len(data) > MAX_BYTES:
+        raise HTTPException(413, "file_too_large")
+
+    cid = ipfs.add_bytes(data, filename=file.filename or "blob")
+
+    # Compute initial item_id
+    if id_hex:
+        s = id_hex.lower()
+        if s.startswith("0x"):
+            s = s[2:]
+        if len(s) != 64:
+            raise HTTPException(400, "bad_id")
+        item_id = bytes.fromhex(s)
+    else:
+        item_id = hashlib.sha256(data).digest()
+
+    size = len(data)
+    checksum32 = Web3.keccak(data)
+    mime = file.content_type or ""
+
+    # Log DSN for diagnosing cross-DB issues
+    try:
+        log.info("store_file: dsn=%s", settings.postgres_dsn)
+    except Exception:
+        pass
+
+    # If another owner already has this item_id, switch to a per-user id to avoid cross-user collision
+    try:
+        existing = db.get(FileModel, item_id)
+    except Exception:
+        existing = None
+    if existing is not None and existing.owner_id != user.id and id_hex is None:
+        # Derive a per-user deterministic id from user.id and checksum32
+        item_id = Web3.keccak(user.id.bytes + bytes(checksum32))
+        log.info(
+            "store_file: switching to per-user item_id=%s due to ownership collision (original owned by %s)",
+            item_id.hex(), str(existing.owner_id)
+        )
+
+    # Debug: log user and file identifiers before chain/db ops
+    try:
+        log.info(
+            "store_file: user_id=%s eth=%s filename=%s item_id=%s size=%d mime=%s",
+            str(user.id), user.eth_address, (file.filename or ""), item_id.hex(), size, mime,
+        )
+    except Exception:
+        pass
+
+    try:
+        tx_hash = chain.register_or_update(
+            item_id, cid, checksum32=checksum32, size=size, mime=mime
+        )
+    except Exception as e:
+        log.error(f"Chain transaction failed: {e}", exc_info=True)
+        raise HTTPException(502, f"chain_error: {e}")
+
+    try:
+        # Проверяем, существует ли уже запись, чтобы обновить ее (логика update)
+        db_file = db.get(FileModel, item_id)
+        if db_file:
+            # Если файл существует, обновляем его поля
+            db_file.cid = cid
+            db_file.checksum = checksum32
+            db_file.size = size
+            db_file.mime = mime
+            db_file.name = file.filename or "untitled"
+
+            # Создаем новую версию
+            from sqlalchemy import select, func
+            latest_version = db.scalar(
+                select(func.max(FileVersion.version))
+                .where(FileVersion.file_id == item_id)
+            ) or 0
+
+            new_version = FileVersion(
+                file_id=item_id,
+                version=latest_version + 1,
+                cid=cid,
+                checksum=checksum32,
+                size=size,
+                mime=mime,
+            )
+            db.add(new_version)
+        else:
+            # Если файла нет, создаем новую запись (логика register)
+            db_file = FileModel(
+                id=item_id,
+                owner_id=user.id,
+                name=file.filename or "untitled",
+                size=size,
+                mime=mime,
+                cid=cid,
+                checksum=checksum32,
+            )
+            db.add(db_file)
+            db.flush()  # Чтобы получить ID перед созданием версии
+
+            # Создаем первую версию
+            first_version = FileVersion(
+                file_id=item_id,
+                version=1,
+                cid=cid,
+                checksum=checksum32,
+                size=size,
+                mime=mime,
+            )
+            db.add(first_version)
+
+        db.commit()
+        log.info(
+            "File %s saved to database successfully (owner_id=%s)",
+            item_id.hex(), str(user.id)
+        )
+
+    except Exception as e:
+        db.rollback()
+        # Это критическая ошибка: данные есть в блокчейне, но не в нашей БД.
+        log.error(
+            f"DATABASE FAILED after successful chain transaction {tx_hash}: {e}", exc_info=True
+        )
+        # Продолжаем, так как on-chain операция прошла
+        pass
+
+    return StoreOut(
+        id_hex="0x" + item_id.hex(),
+        cid=cid,
+        tx_hash=tx_hash,
+        url=ipfs.url(cid),
+    )
+
+
+# ... (остальная часть файла остается без изменений)
+class ResolveOut(BaseModel):
+    cid: str
+    url: str
+
+
+@router.get("/cid/{id_hex}", response_model=ResolveOut)
+def resolve(id_hex: str, chain: Chain = Depends(get_chain), ipfs: IpfsClient = Depends(get_ipfs)):
+    if not (isinstance(id_hex, str) and id_hex.startswith("0x") and len(id_hex) == 66):
+        raise HTTPException(400, "bad_id")
+    cid = chain.cid_of(bytes.fromhex(id_hex[2:]))
+    if not cid:
+        raise HTTPException(404, "not_found_or_empty_cid")
+    return ResolveOut(cid=cid, url=ipfs.url(cid))
+
+
+class MetaOut(BaseModel):
+    owner: str | None = None
+    cid: str | None = None
+    checksum: str | None = None
+    size: int | None = None
+    mime: str | None = None
+    createdAt: int | None = None
+
+
+@router.get("/meta/{id_hex}", response_model=MetaOut)
+def meta(id_hex: str, chain: Chain = Depends(get_chain)):
+    if not (isinstance(id_hex, str) and id_hex.startswith("0x") and len(id_hex) == 66):
+        raise HTTPException(400, "bad_id")
+    m: dict[str, Any] = chain.meta_of_full(bytes.fromhex(id_hex[2:]))
+
+    cs = m.get("checksum")
+    if isinstance(cs, (bytes, bytearray)):
+        checksum = cs.hex()
+    elif isinstance(cs, str):
+        checksum = cs
+    else:
+        checksum = None
+
+    return MetaOut(
+        owner=m.get("owner"),
+        cid=m.get("cid"),
+        checksum=checksum,
+        size=int(m.get("size") or 0),
+        mime=m.get("mime"),
+        createdAt=int(m.get("createdAt") or 0),
+    )
+
+
+class VersionItem(BaseModel):
+    owner: str | None = None
+    cid: str | None = None
+    checksum: str | None = None  # hex без 0x
+    size: int | None = None
+    mime: str | None = None
+    createdAt: int | None = None
+
+
+class VersionsOut(BaseModel):
+    versions: list[VersionItem]
+
+
+@router.get("/versions/{id_hex}", response_model=VersionsOut)
+def versions(id_hex: str, chain: Chain = Depends(get_chain)):
+    if not (isinstance(id_hex, str) and id_hex.startswith("0x") and len(id_hex) == 66):
+        raise HTTPException(400, "bad_id")
+
+    raw = chain.versions_of(bytes.fromhex(id_hex[2:]))
+    items: list[VersionItem] = []
+
+    for v in raw:
+        if not isinstance(v, dict):
+            items.append(VersionItem(cid=str(v)))
+            continue
+
+        checksum = v.get("checksum")
+        if isinstance(checksum, (bytes, bytearray)):
+            checksum = checksum.hex()
+        elif isinstance(checksum, str) and checksum.startswith("0x"):
+            checksum = checksum[2:]
+        elif isinstance(checksum, int):
+            checksum = f"{checksum:064x}"
+
+        items.append(
+            VersionItem(
+                owner=v.get("owner"),
+                cid=v.get("cid"),
+                checksum=checksum,
+                size=int(v.get("size") or 0),
+                mime=v.get("mime"),
+                createdAt=int(v.get("createdAt") or 0),
+            )
+        )
+
+    return VersionsOut(versions=items)
+
+
+class HistoryItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)  # можно и без этого, но полезно
+    event_type: str = Field(alias="type")
+    blockNumber: int
+    txHash: str
+    timestamp: int
+    owner: str | None = None
+    cid: str | None = None
+    checksum: str | None = None
+    size: int | None = None
+    mime: str | None = None
+
+
+class HistoryOut(BaseModel):
+    items: list[HistoryItem]
+
+
+@router.get("/history/{id_hex}", response_model=HistoryOut)
+def history(
+    id_hex: str,
+    owner: str | None = None,
+    event_type: Literal["FileRegistered", "FileVersioned"] | None = None,
+    from_block: int | None = None,
+    to_block: int | None = None,
+    order: Literal["asc", "desc"] = "asc",
+    limit: int = 100,
+    chain: Chain = Depends(get_chain),
+):
+    if not (isinstance(id_hex, str) and id_hex.startswith("0x") and len(id_hex) == 66):
+        raise HTTPException(400, "bad_id")
+
+    raw = chain.history(bytes.fromhex(id_hex[2:]), owner=owner)
+
+    if event_type:
+        raw = [e for e in raw if (e.get("type") or e.get("event_type")) == event_type]
+    if from_block is not None:
+        raw = [e for e in raw if e["blockNumber"] >= from_block]
+    if to_block is not None:
+        raw = [e for e in raw if e["blockNumber"] <= to_block]
+
+    raw.sort(key=lambda e: (e["blockNumber"], e["timestamp"]), reverse=(order == "desc"))
+    limit = max(1, min(limit, 1000))
+    # нормализуем checksum на всякий
+    for e in raw:
+        cs = e.get("checksum")
+        if isinstance(cs, str) and cs.startswith("0x"):
+            e["checksum"] = cs[2:]
+
+    return {"items": raw[:limit]}

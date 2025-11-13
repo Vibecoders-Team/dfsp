@@ -1,5 +1,9 @@
 # Decentralized File Sharing Platform (DFSP)
 
+[![CI](https://github.com/Vibecoders-Team/dfsp/actions/workflows/ci.yml/badge.svg)](https://github.com/Vibecoders-Team/dfsp/actions/workflows/ci.yml)
+[![Security](https://github.com/Vibecoders-Team/dfsp/actions/workflows/security.yml/badge.svg)](https://github.com/Vibecoders-Team/dfsp/actions/workflows/security.yml)
+[![Commitlint](https://github.com/Vibecoders-Team/dfsp/actions/workflows/commitlint.yml/badge.svg)](https://github.com/Vibecoders-Team/dfsp/actions/workflows/commitlint.yml)
+
 Secure, gasless, user-friendly file sharing on top of IPFS + EVM smart contracts.
 Files are encrypted client-side, stored by content hash (CID) on IPFS, while authenticity and access rights are recorded on-chain.
 No wallets in the UI: users sign actions with an invisible key (ERC-2771), and a relayer submits transactions.

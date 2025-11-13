@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+
+    // ИЗМЕНИТЬ: Переключиться на решатель, более подходящий для среды Node.js
+    "module": "NodeNext", // Или "CommonJS"
+    "moduleResolution": "NodeNext", // Или "node"
+    
+    // Дополнительные настройки для Node.js
+    "types": ["node"] 
+  },
+  "include": ["vite.config.ts"]
+}
+
