@@ -119,3 +119,39 @@ async def complete_telegram_link(
         raise HTTPException(status_code=500, detail="Could not save telegram link.")
 
     return OkResponse()
+
+@router.delete(
+    "/link",
+    response_model=OkResponse,
+    summary="Unlink Telegram account",
+)
+async def unlink_telegram_account(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> OkResponse:
+    """
+    Revokes all active links associated with the authenticated user's wallet address.
+    This is an idempotent operation.
+    """
+    # Используем тот же "ленивый" подход для получения current_user,
+    # который не ломает запуск приложения с psycopg.
+    from app.security import get_current_user
+
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=auth_header.split(" ")[1])
+
+    try:
+        current_user: User = get_current_user(creds=creds, db=db)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid authentication token or user")
+
+    # Вызываем функцию из репозитория для отзыва ссылок
+    try:
+        telegram_repo.revoke_links_by_address(db=db, wallet_address=current_user.eth_address)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Could not revoke telegram links.")
+
+    return OkResponse()
