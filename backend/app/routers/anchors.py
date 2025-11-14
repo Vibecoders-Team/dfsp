@@ -12,10 +12,38 @@ from app.deps import get_db, rds
 from app.schemas.anchors import AnchorDetailResponse, AnchorResponse
 from app.services.anchoring import AnchoringService
 from app.tasks.anchor import anchor_period_task
+from app.services.event_publisher import EventPublisher  # NEW
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/anchors", tags=["anchors"])
+
+
+def _publish_anchor_ok(
+    *,
+    period_id: int,
+    merkle_root: str,
+    tx_hash: str | None,
+    source: str,
+) -> None:
+    """
+    anchor_ok: событие об успешном наличии/создании анкера.
+    Считаем idempotent по (period_id, tx_hash).
+    """
+    try:
+        publisher = EventPublisher()
+        subject: dict[str, object] = {
+            "periodId": period_id,
+            "merkleRoot": merkle_root,
+        }
+        if tx_hash:
+            subject["txHash"] = tx_hash
+
+        payload = {"source": source}
+        event_id = f"anchor_ok:{period_id}:{tx_hash or 'no_tx'}"
+        publisher.publish("anchor_ok", subject=subject, payload=payload, event_id=event_id)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Failed to publish anchor_ok: %s", e)
 
 
 @router.get("/latest", response_model=AnchorResponse)
@@ -34,12 +62,23 @@ def get_latest_anchor(
     if not anchor:
         raise HTTPException(status_code=404, detail="No anchors found")
 
-    return AnchorResponse(
+    merkle_hex = anchor.root.hex()
+    resp = AnchorResponse(
         period_id=anchor.period_id,
-        merkle_root=anchor.root.hex(),
+        merkle_root=merkle_hex,
         anchored_at=anchor.created_at,
         tx_hash=anchor.tx_hash,
     )
+
+    # anchor_ok – фиксация того, что якорь успешно существует
+    _publish_anchor_ok(
+        period_id=anchor.period_id,
+        merkle_root=merkle_hex,
+        tx_hash=anchor.tx_hash,
+        source="get_latest",
+    )
+
+    return resp
 
 
 @router.get("/{period_id}", response_model=AnchorDetailResponse)
@@ -65,14 +104,24 @@ def get_anchor_by_period(
     # Get event count for this period
     events = service.get_events_for_period(period_id)
     event_count = len(events)
+    merkle_hex = anchor.root.hex()
 
-    return AnchorDetailResponse(
+    resp = AnchorDetailResponse(
         period_id=anchor.period_id,
-        merkle_root=anchor.root.hex(),
+        merkle_root=merkle_hex,
         anchored_at=anchor.created_at,
         tx_hash=anchor.tx_hash,
         event_count=event_count,
     )
+
+    _publish_anchor_ok(
+        period_id=anchor.period_id,
+        merkle_root=merkle_hex,
+        tx_hash=anchor.tx_hash,
+        source="get_by_period",
+    )
+
+    return resp
 
 
 @router.post("/trigger/{period_id}")

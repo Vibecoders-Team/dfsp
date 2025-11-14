@@ -19,6 +19,7 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import pow as pow_router
 from app.routers.admin import router as admin_router
 from app.routers.auth import router as auth_router
+from app.routers.bot import router as bot_router
 from app.routers.health import router as health_router
 from app.routers.storage import router as storage_router
 
@@ -106,3 +107,4 @@ app.include_router(admin_router)
 app.include_router(pow_router.router)
 app.include_router(chain_info_router)
 app.include_router(telegram_router)
+app.include_router(bot_router)
