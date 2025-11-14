@@ -2,7 +2,24 @@ import os, time, argparse, sys
 import psycopg
 import redis
 
+
+def _normalize_dsn(dsn: str) -> str:
+    """
+    Приводим DSN к формату понятному psycopg:
+    - postgresql+psycopg:// -> postgresql://
+    - postgresql+asyncpg:// -> postgresql://
+    - убираем лишние кавычки, если попали из env
+    """
+    if not dsn:
+        return dsn
+    d = dsn.strip().strip('"').strip("'")
+    if d.startswith("postgresql+psycopg://") or d.startswith("postgresql+asyncpg://"):
+        d = "postgresql://" + d.split("://", 1)[1]
+    return d
+
+
 def wait_db(dsn: str, deadline: float) -> None:
+    dsn = _normalize_dsn(dsn)
     while time.time() < deadline:
         try:
             with psycopg.connect(dsn, connect_timeout=5) as conn:
@@ -17,6 +34,7 @@ def wait_db(dsn: str, deadline: float) -> None:
     print("[wait] DB timeout", file=sys.stderr)
     sys.exit(1)
 
+
 def wait_redis(url: str, deadline: float) -> None:
     while time.time() < deadline:
         try:
@@ -30,6 +48,7 @@ def wait_redis(url: str, deadline: float) -> None:
     print("[wait] Redis timeout", file=sys.stderr)
     sys.exit(1)
 
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--timeout", type=int, default=int(os.getenv("WAIT_FOR_TIMEOUT", "60")))
@@ -37,8 +56,6 @@ if __name__ == "__main__":
     deadline = time.time() + args.timeout
 
     dsn = os.getenv("POSTGRES_DSN")
-    if dsn.startswith("postgresql+psycopg://"):
-        dsn = "postgresql://" + dsn.split("://", 1)[1]
     redis_url = os.getenv("REDIS_URL")
 
     if dsn:

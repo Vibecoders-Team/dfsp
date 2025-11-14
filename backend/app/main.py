@@ -4,7 +4,14 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
+
+try:
+    from starlette.middleware.proxy_headers import ProxyHeadersMiddleware  # type: ignore
+except Exception:
+    try:
+        from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware  # type: ignore
+    except Exception:
+        ProxyHeadersMiddleware = None  # type: ignore
 
 from app.routers.health import router as health_router
 from app.routers import pow as pow_router
@@ -33,8 +40,9 @@ init_logging()
 
 app = FastAPI(title="DFSP API")
 
-# Trust X-Forwarded-For/Proto from reverse proxy (nginx)
-app.add_middleware(ProxyHeadersMiddleware)
+# Trust X-Forwarded-For/Proto from reverse proxy (Caddy/NGINX)
+if ProxyHeadersMiddleware is not None:
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")  # type: ignore[arg-type]
 
 # Observability middleware (request metrics + structured logs)
 app.add_middleware(ObservabilityMiddleware)

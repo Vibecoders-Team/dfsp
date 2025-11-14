@@ -1,5 +1,9 @@
 name: dfsp-prod
 
+x-backend-build: &backend-build
+  context: ../backend
+  dockerfile: Dockerfile
+
 networks:
   dfsp:
     driver: bridge
@@ -9,9 +13,11 @@ volumes:
   shared:
   ipfs_data:
   pg_data:
-  chain_data:
-  geth_data:
   explorer_db:
+  caddy_data:
+  caddy_config:
+  chain_data:
+
 
 services:
   # ---------------- Database (Postgres) ----------------
@@ -19,16 +25,17 @@ services:
     image: postgres:17-alpine
     container_name: dfsp-db
     env_file:
-      - ../.env.prod
+      - .env.prod
     environment:
       POSTGRES_USER: ${DB_USER:-dfsp}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-dfsp}
       POSTGRES_DB: ${DB_NAME:-dfsp}
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-dfsp} -d ${DB_NAME:-dfsp} -p 5432" ]
-      interval: 10s
-      timeout: 5s
-      retries: 20
+      test: [ "CMD-SHELL", "pg_isready -U dfsp -p 5432 || exit 1" ]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
     volumes:
       - pg_data:/var/lib/postgresql/data
     networks: [ dfsp ]
@@ -37,46 +44,59 @@ services:
   # ---------------- Migrations ----------------
   migrator:
     image: dfsp-backend:prod
+    build: *backend-build
     container_name: dfsp-migrator
     restart: "no"
     env_file:
-      - ../.env.prod
+      - .env.prod
     environment:
-      POSTGRES_DSN: ${POSTGRES_DSN}
-      REDIS_URL: ${REDIS_URL}
       WAIT_FOR_TIMEOUT: 60
-      ALEMBIC_AUTO_REVISION: ${ALEMBIC_AUTO_REVISION:-false}
     command: >-
       bash -lc "./docker/entrypoint.sh migrate"
     volumes:
       - ./shared:/app/shared
     networks: [ dfsp ]
-    profiles: [ "migrate" ]
     depends_on:
       db:
         condition: service_healthy
 
   # ---------------- Chain (own network) ----------------
   chain:
-    image: ethereum/client-go:stable
-    container_name: dfsp-geth
-    command: >-
-      sh -lc "\
-      if [ ! -d /data/geth ]; then \
-        geth init --datadir /data /genesis/genesis.json; \
-      fi; \
-      exec geth --datadir /data --http --http.addr 0.0.0.0 --http.port 8545 \
-        --http.api eth,net,web3,debug,txpool --http.corsdomain='*' \
-        --ws --ws.addr 0.0.0.0 --ws.port 8546 --ws.origins='*' \
-        --networkid ${CHAIN_ID:-31337} --nodiscover --syncmode full \
-        --gcmode archive --allow-insecure-unlock --mine --miner.threads=1 \
-        --unlock 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 --password /dev/null \
-        --verbosity 3"
-    volumes:
-      - geth_data:/data
-      - ./geth:/genesis:ro
+    image: ghcr.io/foundry-rs/foundry:latest
+    container_name: dfsp-anvil
+    environment:
+      CHAIN_ID: ${CHAIN_ID:-31337}
+      ANVIL_IP_ADDR: 0.0.0.0
+    command:
+      - anvil
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8545"
+      - --chain-id
+      - "${CHAIN_ID:-31337}"
+      - --base-fee
+      - "0"
+      - --block-time
+      - "1"
+      - --gas-limit
+      - "30000000"
+      - --mnemonic
+      - "test test test test test test test test test test test junk"
+      - --accounts
+      - "20"
+      - --balance
+      - "1000000000000000000000"
+      - --state
+      - /chain/state.json
+      - --dump-state
+      - /chain/state.json
+    ports:
+      - "8545:8545"
     networks: [ dfsp ]
     restart: unless-stopped
+    volumes:
+      - chain_data:/chain
 
   # ---------------- Contracts deploy ----------------
   contracts:
@@ -92,8 +112,6 @@ services:
       NPM_CONFIG_CACHE: /npm-cache
     command: >
       sh -lc "npm ci && \
-              npm ls ts-node >/dev/null 2>&1 || npm i -D ts-node && \
-              export NODE_OPTIONS='--loader ts-node/esm' && \
               npx hardhat run scripts/deploy-local.ts --network docker && \
               npm run abi:export && npm run export:deployment"
     volumes:
@@ -103,41 +121,26 @@ services:
       - ../contracts/tsconfig.json:/app/tsconfig.json:ro
       - ../contracts/src:/app/src:ro
       - ../contracts/scripts:/app/scripts:ro
-      - ../contracts/deploy:/app/deploy:ro
+      - ../contracts/deploy:/app/deploy
       - ../contracts/docker:/app/docker:ro
       - ./shared:/shared
     networks: [ dfsp ]
-    profiles: [ "contracts" ]
 
   # ---------------- API ----------------
   api:
     image: dfsp-backend:prod
+    build: *backend-build
     container_name: dfsp-api
     restart: unless-stopped
     env_file:
-      - ../.env.prod
+      - .env.prod
     environment:
       API_HOST: ${API_HOST:-0.0.0.0}
       API_PORT: ${API_PORT:-8000}
-      API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
-      API_AUTO_MIGRATE: ${API_AUTO_MIGRATE:-false}
-      ALEMBIC_AUTO_REVISION: ${ALEMBIC_AUTO_REVISION:-false}
-      POSTGRES_DSN: ${POSTGRES_DSN}
-      REDIS_URL: ${REDIS_URL}
-      CHAIN_ID: ${CHAIN_ID}
-      CHAIN_RPC_URL: ${CHAIN_RPC_URL}
-      CHAIN_PUBLIC_RPC_URL: ${CHAIN_PUBLIC_RPC_URL:-}
-      REGISTRY_CONTRACT_NAME: ${REGISTRY_CONTRACT_NAME:-FileRegistry}
-      CONTRACTS_DEPLOYMENT_JSON: ${CONTRACTS_DEPLOYMENT_JSON:-/app/shared/deployment.json}
-      JWT_SECRET: ${JWT_SECRET}
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://dfsp.app}
-      RELAYER_HIGH_QUEUE: ${RELAYER_HIGH_QUEUE:-relayer.high}
-      RELAYER_DEFAULT_QUEUE: ${RELAYER_DEFAULT_QUEUE:-relayer.default}
-      CHAIN_TX_FROM: ${CHAIN_TX_FROM:-}
     ports:
       - "${API_PORT:-8000}:8000"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/ready || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/ready || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -146,6 +149,8 @@ services:
       - ./shared:/app/shared
     networks: [ dfsp ]
     depends_on:
+      migrator:
+        condition: service_completed_successfully
       redis:
         condition: service_started
       chain:
@@ -156,21 +161,11 @@ services:
   # ---------------- Celery ----------------
   celery-worker:
     image: dfsp-backend:prod
+    build: *backend-build
     container_name: dfsp-celery-worker
     restart: unless-stopped
     env_file:
-      - ../.env.prod
-    environment:
-      POSTGRES_DSN: ${POSTGRES_DSN}
-      REDIS_URL: ${REDIS_URL}
-      CHAIN_ID: ${CHAIN_ID}
-      CHAIN_RPC_URL: ${CHAIN_RPC_URL}
-      REGISTRY_CONTRACT_NAME: ${REGISTRY_CONTRACT_NAME:-FileRegistry}
-      CONTRACTS_DEPLOYMENT_JSON: ${CONTRACTS_DEPLOYMENT_JSON:-/app/shared/deployment.json}
-      RELAYER_PRIVATE_KEY: ${RELAYER_PRIVATE_KEY}
-      RELAYER_HIGH_QUEUE: ${RELAYER_HIGH_QUEUE:-relayer.high}
-      RELAYER_DEFAULT_QUEUE: ${RELAYER_DEFAULT_QUEUE:-relayer.default}
-      RELAYER_CONCURRENCY: ${RELAYER_CONCURRENCY:-2}
+      - .env.prod
     command: >-
       bash -lc "uv run celery -A app.relayer:celery worker --loglevel=info --concurrency=${RELAYER_CONCURRENCY:-2} -Q ${RELAYER_HIGH_QUEUE:-relayer.high},${RELAYER_DEFAULT_QUEUE:-relayer.default}"
     volumes:
@@ -183,20 +178,20 @@ services:
         condition: service_started
       db:
         condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "pgrep -f 'celery worker' > /dev/null || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   celery-beat:
     image: dfsp-backend:prod
+    build: *backend-build
     container_name: dfsp-celery-beat
     restart: unless-stopped
     env_file:
-      - ../.env.prod
-    environment:
-      POSTGRES_DSN: ${POSTGRES_DSN}
-      REDIS_URL: ${REDIS_URL}
-      CHAIN_ID: ${CHAIN_ID}
-      CHAIN_RPC_URL: ${CHAIN_RPC_URL}
-      REGISTRY_CONTRACT_NAME: ${REGISTRY_CONTRACT_NAME:-FileRegistry}
-      CONTRACTS_DEPLOYMENT_JSON: ${CONTRACTS_DEPLOYMENT_JSON:-/app/shared/deployment.json}
+      - .env.prod
     command: >-
       bash -lc "uv run celery -A app.relayer:celery beat --loglevel=info"
     volumes:
@@ -209,6 +204,12 @@ services:
         condition: service_started
       db:
         condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "pgrep -f 'celery beat' > /dev/null || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   # ---------------- Redis ----------------
   redis:
@@ -229,7 +230,7 @@ services:
     image: ipfs/kubo:${IPFS_VERSION:-latest}
     container_name: dfsp-ipfs
     env_file:
-      - ../.env.prod
+      - .env.prod
     environment:
       IPFS_PROFILE: "${IPFS_PROFILE:-server}"
     # no external port publish in prod; Caddy proxies internally
@@ -243,7 +244,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
+      start_period: 15s
     networks: [ dfsp ]
+    restart: unless-stopped
 
   # ---------------- Reverse proxy (Caddy) ----------------
   caddy:
@@ -251,25 +254,25 @@ services:
     container_name: dfsp-caddy
     restart: unless-stopped
     env_file:
-      - ../.env.prod
+      - .env.prod
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ../frontend/build:/usr/share/caddy/html:ro
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     networks: [ dfsp ]
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
       chain:
         condition: service_started
       ipfs:
         condition: service_healthy
-      explorer-web:
-        condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:80 -S --spider 2>&1 | grep -q 'HTTP/'"]
+      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:80 -S --spider 2>&1 | grep -q 'HTTP/'" ]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -301,35 +304,72 @@ services:
     volumes:
       - explorer_db:/var/lib/postgresql/data
     networks: [ dfsp ]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blockscout -p 5432 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
 
   explorer-indexer:
     image: ghcr.io/blockscout/blockscout:latest
     container_name: blockscout-indexer
+    working_dir: /app
+    command: >
+      sh -lc "
+        bin/blockscout eval 'Elixir.Explorer.ReleaseTasks.create_and_migrate()' &&
+        bin/blockscout start
+      "
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://blockscout:${EXPLORER_DB_PASSWORD:-blockpass}@explorer-db:5432/blockscout
       ECTO_USE_SSL: "false"
       CHAIN_ID: ${CHAIN_ID:-31337}
-      ETHEREUM_JSONRPC_HTTP_URL: http://chain:8545
-      ETHEREUM_JSONRPC_TRACE_URL: http://chain:8545
-      ETHEREUM_JSONRPC_WS_URL: ws://chain:8546
-      # Reduce indexing load for local chain
+      ETHEREUM_JSONRPC_VARIANT: anvil
+      ETHEREUM_JSONRPC_HTTP_URL: http://chain:8545/
+      ETHEREUM_JSONRPC_TRACE_URL: http://chain:8545/
+      ETHEREUM_JSONRPC_WS_URL: ws://chain:8545/
       COIN: ETH
+      LOG_LEVEL: debug
+      INDEXER_ENABLE: "true"
+      API_V2_ENABLED: "true"
+      SECRET_KEY_BASE: ${BLOCKSCOUT_SECRET_KEY_BASE}
+      PORT: 4000
+      PHX_SERVER: "true"
+      MIX_ENV: prod
     depends_on:
       explorer-db:
-        condition: service_started
+        condition: service_healthy
       chain:
         condition: service_started
     networks: [ dfsp ]
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q --spider http://127.0.0.1:4000/api/health || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   explorer-web:
     image: ghcr.io/blockscout/frontend:latest
     container_name: blockscout-web
+    restart: unless-stopped
     environment:
       NEXT_PUBLIC_NETWORK_NAME: DFSP Localnet
       NEXT_PUBLIC_NETWORK_ID: ${CHAIN_ID:-31337}
-      NEXT_PUBLIC_API_URL: http://explorer-indexer:4000/api
+      NEXT_PUBLIC_APP_HOST: explorer.dfsp.app
+      NEXT_PUBLIC_APP_PROTOCOL: https
+      NEXT_PUBLIC_API_HOST: explorer.dfsp.app
+      NEXT_PUBLIC_API_PROTOCOL: https
+      HOST: 0.0.0.0
+      PORT: 3000
     depends_on:
       explorer-indexer:
         condition: service_started
     networks: [ dfsp ]
-
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://$(hostname -i):3000 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 20s

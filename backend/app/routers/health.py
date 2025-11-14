@@ -1,9 +1,8 @@
 import json
-import math
 import os
 import time
 import urllib.request
-from typing import Any, cast
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import text
@@ -13,6 +12,17 @@ from app.deps import get_db, rds, get_chain
 
 router = APIRouter(tags=["health"])
 START_TIME = time.time()
+
+
+def _ok(v: Any) -> bool:
+    return (isinstance(v, dict) and bool(v.get("ok"))) or v == "ok"
+
+
+def _parse_required(env_val: Optional[str]) -> list[str]:
+    if not env_val:
+        return ["db", "redis"]
+    items = [x.strip() for x in env_val.split(",") if x.strip()]
+    return items or ["db", "redis"]
 
 
 def get_health_checks(db: Session) -> dict[str, Any]:
@@ -75,18 +85,11 @@ def get_health_checks(db: Session) -> dict[str, Any]:
     return checks
 
 
-@router.get("/health")
-def health(db: Session = Depends(get_db), response: Response = Response()):
+@router.get("/health", status_code=status.HTTP_200_OK)
+def health(db: Session = Depends(get_db)):
     checks = get_health_checks(db)
-    is_healthy = all(
-        isinstance(v, dict) and v.get("ok") or v == "ok" for v in checks.values()
-    )
-
-    status_str = "healthy"
-    if not is_healthy:
-        status_str = "degraded"
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-
+    is_healthy = all(_ok(v) for v in checks.values())
+    status_str = "healthy" if is_healthy else "degraded"
     return {
         "status": status_str,
         "version": os.getenv("GIT_SHA") or "dev",
@@ -103,12 +106,11 @@ def live():
 @router.get("/ready")
 def ready(db: Session = Depends(get_db), response: Response = Response()):
     checks = get_health_checks(db)
-    is_ready = all(
-        isinstance(v, dict) and v.get("ok") or v == "ok" for v in checks.values()
-    )
+    required = _parse_required(os.getenv("READINESS_REQUIRED"))  # default: ["db", "redis"]
+    is_ready = all(_ok(checks.get(k)) for k in required)
 
     if is_ready:
-        return {"status": "ready"}
+        return {"status": "ready", "required": required}
     else:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        return {"status": "not_ready", "checks": checks}
+        return {"status": "not_ready", "required": required, "checks": checks}

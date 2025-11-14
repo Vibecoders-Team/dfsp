@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { unlockEOA, isEOAUnlocked, lockEOA, ensureEOAUnlocked, __resetKeychainForTests } from '../keychain';
 
 function clearIndexedDBShim(): Promise<void> {
@@ -8,17 +8,14 @@ function clearIndexedDBShim(): Promise<void> {
 
 describe('EOA lock/unlock', () => {
   beforeEach(async () => {
-    // Ensure window exists for dispatch (harmless in node)
     if (typeof globalThis.window === 'undefined') {
-      // @ts-expect-error test shim
-      globalThis.window = { dispatchEvent: () => {}, setTimeout: setTimeout, clearTimeout: clearTimeout };
+      const shim: Partial<Window & typeof globalThis> = { dispatchEvent: () => true, setTimeout, clearTimeout };
+      globalThis.window = shim as Window & typeof globalThis;
     } else {
-      // @ts-expect-error augment
-      if (!window.setTimeout) window.setTimeout = setTimeout as any;
-      // @ts-expect-error augment
-      if (!window.clearTimeout) window.clearTimeout = clearTimeout as any;
-      // @ts-expect-error augment
-      if (!window.dispatchEvent) window.dispatchEvent = () => {};
+      const w = globalThis.window as Partial<Window & typeof globalThis>;
+      if (!w.setTimeout) (globalThis.window as unknown as { setTimeout: typeof setTimeout }).setTimeout = setTimeout;
+      if (!w.clearTimeout) (globalThis.window as unknown as { clearTimeout: typeof clearTimeout }).clearTimeout = clearTimeout;
+      if (!w.dispatchEvent) (globalThis.window as unknown as { dispatchEvent: (ev: Event)=>boolean }).dispatchEvent = () => true;
     }
     lockEOA();
     await clearIndexedDBShim();
@@ -34,6 +31,6 @@ describe('EOA lock/unlock', () => {
   });
 
   it('ensureEOAUnlocked throws when locked and no password', async () => {
-    await expect(ensureEOAUnlocked(undefined as any)).rejects.toThrow(/password/i);
+    await expect(ensureEOAUnlocked(undefined as unknown as string)).rejects.toThrow(/password/i);
   });
 });

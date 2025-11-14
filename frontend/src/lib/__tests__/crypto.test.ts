@@ -13,6 +13,7 @@ class FakeFile implements File {
   slice(start?: number, end?: number, contentType?: string | undefined): Blob { return new Blob([this.buf.slice(start,end)], { type: contentType }); }
   stream(): ReadableStream<Uint8Array> { return new ReadableStream({ start: (ctl) => { ctl.enqueue(this.buf); ctl.close(); } }); }
   text(): Promise<string> { return Promise.resolve(''); }
+  bytes(): Promise<Uint8Array> { return Promise.resolve(new Uint8Array(this.buf)); }
 }
 
 describe('HKDF + AES encrypt', () => {
@@ -29,4 +30,3 @@ describe('HKDF + AES encrypt', () => {
     expect(encSize).toBeGreaterThan(17);
   });
 });
-

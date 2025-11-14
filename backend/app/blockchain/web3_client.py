@@ -32,28 +32,20 @@ class Chain:
         self.rpc_url = rpc_url or os.getenv("CHAIN_RPC_URL", "http://chain:8545")
         self.w3 = Web3(HTTPProvider(self.rpc_url))
         self.chain_id = chain_id
-
-        # Если передан приватный ключ — настраиваем подпись и отправку raw-транзакций
+        self._acct = None  # eth_account.Account instance if relayer key provided
+        self._relayer_pk = relayer_private_key
         if relayer_private_key:
             try:
-                # web3 v7
-                try:
-                    from web3.middleware.signing import construct_sign_and_send_raw_middleware  # type: ignore
-                except Exception:  # web3 v6 fallback
-                    from web3.middleware import construct_sign_and_send_raw_middleware  # type: ignore
-                from eth_account import Account  # late import
-
-                acct = Account.from_key(relayer_private_key)
-                self.w3.middleware_onion.add(construct_sign_and_send_raw_middleware(acct))
-                # web3 py expects checksum address
-                self.w3.eth.default_account = acct.address  # type: ignore[assignment]
+                from eth_account import Account  # type: ignore
+                self._acct = Account.from_key(relayer_private_key)
                 if not tx_from:
-                    tx_from = acct.address
-                log.info("Relayer signing enabled: from %s", acct.address)
+                    tx_from = self._acct.address
+                # default_account используется web3 для газ-оценки и т.п.
+                self.w3.eth.default_account = self._acct.address  # type: ignore[assignment]
+                log.info("Relayer signing enabled (direct mode): %s", self._acct.address)
             except Exception as e:
-                log.warning("Failed to enable relayer signing middleware: %s", e)
-
-        # основной целевой контракт (обычно FileRegistry)
+                log.warning("Failed to init relayer account: %s", e)
+        # основной целевой контракт
         with open(deploy_json_path, "r", encoding="utf-8") as _f:
             d = json.load(_f)
         c = d["contracts"][contract_name]
@@ -63,26 +55,130 @@ class Chain:
         self.tx_from = Web3.to_checksum_address(tx_from) if tx_from else (
             self.w3.eth.accounts[0] if self.w3.eth.accounts else None
         )
-
         self.deployment_json = deploy_json_path or os.getenv(
             "CONTRACTS_DEPLOYMENT_JSON", "/app/shared/deployment.localhost.json"
         )
-
-        # индексы функций/событий для основного контракта
         self._fn = {f["name"]: f for f in self.abi if f.get("type") == "function"}
         self._events = {e["name"]: e for e in self.abi if e.get("type") == "event"}
-
-        # загрузка всех контрактов из deployment.json (в т.ч. MinimalForwarder)
         self.contracts: Dict[str, Any] = {}
         self._load_contracts()
+
+        # Авто-пополнение релейера в dev/anvil, если баланс нулевой и есть unlocked аккаунты
+        try:
+            if self._acct is not None:
+                bal = int(self.w3.eth.get_balance(self._acct.address))
+                if bal == 0:
+                    accounts = list(getattr(self.w3.eth, "accounts", []) or [])
+                    if accounts:
+                        funder = Web3.to_checksum_address(accounts[0])
+                        if funder.lower() != self._acct.address.lower():
+                            log.info("Top up relayer %s from %s", self._acct.address, funder)
+                            tx = {
+                                "from": funder,
+                                "to": self._acct.address,
+                                "value": Web3.to_wei(10, "ether"),  # Увеличиваем до 10 ETH для покрытия высоких gas
+                                "gas": 21_000,
+                                "chainId": self.chain_id,
+                            }
+                            try:
+                                # Без комиссий при baseFee=0
+                                latest = self.w3.eth.get_block("latest")
+                                base_fee = int(latest.get("baseFeePerGas") or 0)
+                                if base_fee == 0:
+                                    tx["maxFeePerGas"] = 0
+                                    tx["maxPriorityFeePerGas"] = 0
+                                else:
+                                    tx["gasPrice"] = int(self.w3.eth.gas_price)
+                            except Exception:
+                                pass
+                            try:
+                                h = self.w3.eth.send_transaction(tx)  # type: ignore[arg-type]
+                                _ = self.w3.eth.wait_for_transaction_receipt(h, timeout=10)
+                                new_bal = int(self.w3.eth.get_balance(self._acct.address))
+                                log.info("Top up successful, new balance: %s wei (%s ETH)", new_bal, Web3.from_wei(new_bal, "ether"))
+                            except Exception as e:
+                                log.warning("Top up failed (non-fatal): %s", e)
+        except Exception as e:
+            log.debug("Relayer auto-fund check failed: %s", e)
 
     # ----------------- базовое -----------------
 
     def _tx(self) -> TxParams:
-        tx: TxParams = {"chainId": self.chain_id, "gas": 2_000_000}
+        tx: TxParams = {"chainId": self.chain_id, "gas": 2_000_000, "value": 0}
         if self.tx_from:
             tx["from"] = self.tx_from
         return tx
+
+    def _fill_tx_defaults(self, tx: Dict[str, Any]) -> Dict[str, Any]:
+        # Заполняем nonce, gas и gasPrice / maxFeePerGas если нужно, аккуратно приводя к TxParams
+        try:
+            if "from" not in tx and self.tx_from:
+                tx["from"] = self.tx_from
+            if "chainId" not in tx:
+                tx["chainId"] = self.chain_id
+            if "nonce" not in tx and tx.get("from"):
+                try:
+                    tx["nonce"] = self.w3.eth.get_transaction_count(Web3.to_checksum_address(tx["from"]))
+                except Exception:
+                    pass
+            if "gas" not in tx:
+                try:
+                    # Словарь для оценки газа: только разрешенные ключи и без None
+                    allowed = {k: v for k, v in tx.items() if v is not None and k in {"from","to","data","value","nonce","chainId"}}
+                    gas_est = self.w3.eth.estimate_gas(cast(TxParams, allowed))
+                    tx["gas"] = min(int(gas_est), 2_000_000)  # Ограничиваем gas, чтобы не превысить баланс
+                except Exception:
+                    tx["gas"] = 2_000_000
+            if ("gasPrice" not in tx) and ("maxFeePerGas" not in tx) and ("maxPriorityFeePerGas" not in tx):
+                try:
+                    tx["gasPrice"] = int(self.w3.eth.gas_price)
+                except Exception:
+                    pass
+        except Exception as e:
+            log.debug("_fill_tx_defaults failed: %s", e)
+        return tx
+
+    def _send_tx(self, built_tx: Dict[str, Any]) -> str:
+        tx = self._fill_tx_defaults(dict(built_tx))
+        # Убеждаемся, что from, chainId, nonce установлены для send_transaction fallback
+        tx["from"] = tx.get("from", self.tx_from)
+        tx["chainId"] = tx.get("chainId", self.chain_id)
+        if "nonce" not in tx and tx.get("from"):
+            try:
+                tx["nonce"] = self.w3.eth.get_transaction_count(tx["from"])
+            except Exception:
+                pass
+        # Если есть приватный ключ — подписываем вручную
+        if self._acct and self._relayer_pk:
+            try:
+                from eth_account import Account  # type: ignore
+                signed = Account.sign_transaction(tx, private_key=self._relayer_pk)
+                # Совместимость разных версий eth-account: пытаемся получить raw-транзакцию из разных атрибутов
+                raw = getattr(signed, "rawTransaction", None)
+                if raw is None:
+                    raw = getattr(signed, "raw_transaction", None)
+                if raw is None:
+                    raw = getattr(signed, "raw", None)
+                if raw is None and hasattr(signed, "__bytes__"):
+                    try:
+                        raw = bytes(signed)  # type: ignore[arg-type]
+                    except Exception:
+                        raw = None
+                if raw is None:
+                    raise RuntimeError("signed_tx_has_no_raw_bytes")
+                tx_hash = self.w3.eth.send_raw_transaction(raw)
+                hexh = tx_hash.hex() if hasattr(tx_hash, 'hex') else str(tx_hash)
+                log.info("Sent raw transaction: %s", hexh)
+                return hexh
+            except Exception as e:
+                log.error("Raw sign/send failed, fallback to send_transaction: %s", e)
+        # Fallback: используем unlocked аккаунт (Anvil / dev chain)
+        try:
+            tx_hash = self.w3.eth.send_transaction(tx)  # type: ignore[arg-type]
+            return tx_hash.hex()
+        except Exception as e:
+            log.error("send_transaction failed (fallback): %s", e)
+            raise
 
     def _load_contracts(self) -> None:
         self.contracts = {}
@@ -112,45 +208,25 @@ class Chain:
         def _arity(name: str) -> int:
             f = self._fn.get(name)
             return len(f["inputs"]) if f else -1
-
         primary_name = "register" if "register" in self._fn else ("store" if "store" in self._fn else None)
         if not primary_name:
             raise RuntimeError("Registry has no register/store")
         try:
             n = _arity(primary_name)
             if n == 2:
-                txh = getattr(self.contract.functions, primary_name)(item_id, cid).transact(self._tx())
+                fn = getattr(self.contract.functions, primary_name)(item_id, cid)
             elif n == 5:
-                txh = getattr(self.contract.functions, primary_name)(
+                fn = getattr(self.contract.functions, primary_name)(
                     item_id, cid, checksum32 or (b"\x00" * 32), int(size) & ((1 << 64) - 1), mime or ""
-                ).transact(self._tx())
+                )
             else:
-                raise RuntimeError(f"{primary_name} has unsupported arity: {n}")
-            rcpt = self.w3.eth.wait_for_transaction_receipt(txh)
-            # Invalidate file meta cache
-            try:
-                Cache.delete(f"file_meta:{_hex32(item_id)}")
-            except Exception:
-                pass
-            return rcpt["transactionHash"].hex()  # ✅ dict-доступ вместо атрибута
-        except Exception:
-            if "updateCid" not in self._fn:
-                raise
-            n = _arity("updateCid")
-            if n == 2:
-                txh = self.contract.functions.updateCid(item_id, cid).transact(self._tx())
-            elif n == 5:
-                txh = self.contract.functions.updateCid(
-                    item_id, cid, checksum32 or (b"\x00" * 32), int(size) & ((1 << 64) - 1), mime or ""
-                ).transact(self._tx())
-            else:
-                raise RuntimeError(f"updateCid has unsupported arity: {n}")
-            rcpt = self.w3.eth.wait_for_transaction_receipt(txh)
-            try:
-                Cache.delete(f"file_meta:{_hex32(item_id)}")
-            except Exception:
-                pass
-            return rcpt["transactionHash"].hex()  # ✅
+                raise RuntimeError(f"unsupported arity {n} for {primary_name}")
+            built = fn.build_transaction(self._tx())
+            txh = self._send_tx(built)
+            return txh
+        except Exception as e:
+            log.error("register_or_update failed: %s", e, exc_info=True)
+            raise
 
     def cid_of(self, item_id: bytes) -> str:
         key = f"file_meta:{_hex32(item_id)}"

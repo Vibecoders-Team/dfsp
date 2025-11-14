@@ -1,3 +1,5 @@
+import type { CryptoReq } from '../workers/crypto.worker';
+
 // Frontend wrapper for crypto.worker
 // Provides: hkdf, keccak, encryptFile(file, key), decryptStream(stream, key)
 
@@ -28,24 +30,34 @@ function getWorker(): Worker {
 
 function postMessage<T extends CryptoReq, R>(msg: T): Promise<R> {
   if (useDirect) {
-    const m = msg as CryptoReq;
-    return (async()=>{
-      switch(m.cmd){
+    const m = msg;
+    return (async () => {
+      switch (m.cmd) {
         case 'hkdf': {
-          const bytes = await directHKDF(m.ikm, m.salt, m.info, (m as any).length);
-          return { ok:true, bytes } as unknown as R;
+          const bytes = await directHKDF(m.ikm, m.salt, m.info, m.length);
+          return { ok: true, bytes } as unknown as R;
         }
         case 'enc_init': {
-          d_encKey = await importAes(m.key); d_chunkSize=(m as any).chunkSize; d_total=(m as any).totalSize; return { ok:true } as unknown as R;
+          d_encKey = await importAes(m.key); d_chunkSize = m.chunkSize; d_total = m.totalSize; return { ok: true } as unknown as R;
         }
         case 'enc_chunk': {
-          const out = await directEncChunk((m as any).index, (m as any).chunk); return { ok:true, out } as unknown as R;
+          const out = await directEncChunk(m.index, m.chunk); return { ok: true, out } as unknown as R;
         }
-        case 'enc_final': { const header = makeHeader(d_chunkSize, d_total); return { ok:true, header } as unknown as R; }
-        case 'dec_init': { d_decKey = await importAes(m.key); d_decIndex = 0; return { ok:true } as unknown as R; }
-        case 'dec_header': { const meta = parseHeader((m as any).header); return { ok:true, ...meta } as unknown as R; }
-        case 'dec_chunk': { const out = await directDecChunk((m as any).chunk); return { ok:true, out } as unknown as R; }
-        case 'keccak': { const mod = await import('ethers'); const hex = mod.keccak256(new Uint8Array((m as any).data)); return { ok:true, hex } as unknown as R; }
+        case 'enc_final': {
+          const header = makeHeader(d_chunkSize, d_total); return { ok: true, header } as unknown as R;
+        }
+        case 'dec_init': {
+          d_decKey = await importAes(m.key); d_decIndex = 0; return { ok: true } as unknown as R;
+        }
+        case 'dec_header': {
+          const meta = parseHeader(m.header); return { ok: true, ...meta } as unknown as R;
+        }
+        case 'dec_chunk': {
+          const out = await directDecChunk(m.chunk); return { ok: true, out } as unknown as R;
+        }
+        case 'keccak': {
+          const mod = await import('ethers'); const hex = mod.keccak256(new Uint8Array(m.data)); return { ok: true, hex } as unknown as R;
+        }
         default: throw new Error('unknown_cmd');
       }
     })();

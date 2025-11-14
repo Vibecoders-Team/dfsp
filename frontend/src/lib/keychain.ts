@@ -110,7 +110,7 @@ async function exportRsaPublicPemFromPrivate(priv: CryptoKey): Promise<string> {
 }
 
 async function importPkcs8As(type: "RSA-OAEP" | "RSA-PSS", pkcs8: ArrayBuffer): Promise<CryptoKey> {
-  const usages = type === "RSA-OAEP" ? ["decrypt"] : ["sign"];
+  const usages: KeyUsage[] = type === "RSA-OAEP" ? ["decrypt"] : ["sign"];
   return crypto.subtle.importKey("pkcs8", pkcs8, { name: type, hash: "SHA-256" }, true, usages);
 }
 

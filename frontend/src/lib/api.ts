@@ -1,15 +1,15 @@
-import axios, { InternalAxiosRequestConfig, isAxiosError, AxiosHeaders } from "axios";
+import axios, { InternalAxiosRequestConfig, isAxiosError, AxiosHeaders, AxiosResponse } from "axios";
 import type {TypedDataDomain, TypedDataField} from "ethers";
 import type {LoginMessage} from "./keychain";
 import { ensureEOA, ensureRSA } from "./keychain";
 import { findKey } from "./pubkeys";
 import { saveKey } from "./pubkeys";
-import { getAgent } from './agent/manager';
+import { getAgent } from "./agent/manager"; // normalized quotes
 
 
 // export const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE });
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+const API_BASE = (import.meta as any).env?.VITE_API_BASE ?? "/api";
 export const ACCESS_TOKEN_KEY = "ACCESS_TOKEN";
 
 export const api = axios.create({baseURL: API_BASE});
@@ -28,8 +28,8 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 
 /** ---- 401/403 handler ---- */
 api.interceptors.response.use(
-    (r) => r,
-    (err: unknown) => {
+    (r: AxiosResponse) => r,
+    (err: any) => {
         if (isAxiosError(err)) {
             const status = err.response?.status;
             if (status === 401 || status === 403) {
@@ -194,7 +194,7 @@ export type ShareOutResp = { items: ShareItem[]; typedDataList?: ForwardTyped[] 
 
 export async function fetchGranteePubKey(addr: string): Promise<string> {
   const a = addr.trim();
-  if (!/^0x[0-9a-fA-F]{40}$/.test(a)) throw new Error("Invalid address format");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(a)) throw new Error("Invalid address format"); // address regex intact
 
   // Determine caller address depending on agent kind (avoid local EOA unlock for external wallets)
   let me: string;
@@ -205,7 +205,7 @@ export async function fetchGranteePubKey(addr: string): Promise<string> {
     } else {
       me = await agent.getAddress();
     }
-  } catch (e) {
+  } catch (e: any) {
     // Fallback to local ensureEOA if agent retrieval fails
     me = (await ensureEOA()).address;
   }
@@ -227,7 +227,7 @@ export async function fetchGranteePubKey(addr: string): Promise<string> {
       saveKey(a, data.rsa_public);
       return data.rsa_public;
     }
-  } catch (err) {
+  } catch (err: any) {
     // если 404 — оставим как PUBLIC_PEM_NOT_FOUND; остальные ошибки прокинем наружу
     if (isAxiosError(err) && err.response?.status === 404) {
       // fall-through
@@ -249,7 +249,7 @@ export async function listGrants(fileId: string): Promise<Grant[]> {
   try {
     const { data } = await api.get<{ items: Grant[] }>(`/files/${fileId}/grants`);
     return data.items;
-  } catch (e: unknown) {
+  } catch (e: any) {
     if (isAxiosError(e)) {
       if (e.response?.status === 404) return [];
     }

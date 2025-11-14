@@ -5,10 +5,10 @@ import logging
 import os
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, PositiveInt
+from pydantic import BaseModel, Field, PositiveInt, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 log = logging.getLogger("dfsp.settings")
@@ -110,8 +110,15 @@ class Settings(BaseSettings):
     jwt_refresh_ttl_days: PositiveInt = Field(7, alias="JWT_REFRESH_TTL_DAYS")
 
     # --- Auth challenge ---
-    auth_nonce_ttl: timedelta = Field(default=timedelta(minutes=5), alias="AUTH_NONCE_TTL")
+    auth_nonce_ttl: Union[timedelta, int] = Field(default=timedelta(minutes=5), alias="AUTH_NONCE_TTL")
     auth_nonce_bytes: PositiveInt = Field(default=16, alias="AUTH_NONCE_BYTES")
+
+    @field_validator('auth_nonce_ttl', mode='before')
+    @classmethod
+    def parse_auth_nonce_ttl(cls, v):
+        if isinstance(v, int):
+            return timedelta(seconds=v)
+        return v
 
     # --- CORS ---
     cors_origins_raw: str | List[str] | None = Field(default=None, alias="CORS_ORIGINS")
