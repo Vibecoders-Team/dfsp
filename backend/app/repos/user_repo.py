@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -34,3 +35,11 @@ def create(db: Session, payload: RegisterIn) -> User:
     db.commit()
     db.refresh(user)
     return user
+
+def get_user_id_by_wallet(db: Session, wallet_address: str) -> uuid.UUID | None:
+    """
+    Находит пользователя по eth_address и возвращает его UUID (id).
+    Использует существующую функцию get_by_eth_address для поиска.
+    """
+    user = get_by_eth_address(db, wallet_address)
+    return user.id if user else None

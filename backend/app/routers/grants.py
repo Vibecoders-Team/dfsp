@@ -1,22 +1,23 @@
 from __future__ import annotations
 
 import uuid
-from typing import Optional, cast, Literal
+import logging
+from typing import Any, Optional, cast, Literal
 
 from eth_typing import HexStr
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from typing_extensions import Annotated
 from web3 import Web3
 
-from app.deps import get_db, get_chain, rds
-from app.models import Grant, User, File
+from app.deps import get_chain, get_db, rds
+from app.models import File, Grant, User
 from app.models.meta_tx_requests import MetaTxRequest
-from app.security import parse_token
 from app.relayer import enqueue_forward_request
+from app.security import parse_token
 from app.services.event_logger import EventLogger
-import logging
+from app.services.event_publisher import EventPublisher
 
 router = APIRouter(prefix="/grants", tags=["grants"])
 logger = logging.getLogger(__name__)
@@ -40,6 +41,48 @@ def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_d
     return user_obj
 
 
+def _ensure_forwarder_domain_for_typed_data(chain: Any, typed: dict) -> dict:
+    """
+    Тот же helper, что и в routers/files.py:
+    гарантия корректного EIP-712 domain для forwarder typedData.
+    """
+    if not isinstance(typed, dict):
+        return typed
+    domain = typed.get("domain")
+    if isinstance(domain, dict) and domain.get("verifyingContract"):
+        return typed
+
+    chain_id_val = 31337
+    try:
+        chain_id_val = int(getattr(chain, "chain_id", 31337))
+    except Exception:
+        pass
+
+    verifying_contract = "0x" + "0" * 40
+    try:
+        fwd = getattr(chain, "contracts", {}).get("MinimalForwarder") if hasattr(
+            chain, "contracts"
+        ) else None
+        addr = getattr(fwd, "address", None) if fwd is not None else None
+        if isinstance(addr, str):
+            verifying_contract = Web3.to_checksum_address(addr)
+        else:
+            try:
+                verifying_contract = Web3.to_checksum_address(chain.get_forwarder().address)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    typed["domain"] = {
+        "name": "MinimalForwarder",
+        "version": "0.0.1",
+        "chainId": chain_id_val,
+        "verifyingContract": verifying_contract,
+    }
+    return typed
+
+
 @router.get("")
 def list_my_grants(
     role: Literal["received", "granted"] = Query("received"),
@@ -51,27 +94,32 @@ def list_my_grants(
     Список грантов для текущего пользователя.
     role=received — я получатель (grantee)
     role=granted  — я выдавший (grantor)
-    Возвращает items: [{ fileId, capId, grantor, grantee, maxDownloads, usedDownloads, status, expiresAt, fileName? }]
+    Возвращает items: [{ fileId, capId, grantor, grantee, maxDownloads, usedDownloads, status, expiresAt, fileName? }].
     """
     if role == "received":
-        rows = db.execute(
-            select(Grant, File.name)
-            .join(File, File.id == Grant.file_id)
-            .where(Grant.grantee_id == user.id)
-            .order_by(Grant.created_at.desc())
-        ).all()
+        rows = (
+            db.execute(
+                select(Grant, File.name)
+                .join(File, File.id == Grant.file_id)
+                .where(Grant.grantee_id == user.id)
+                .order_by(Grant.created_at.desc())
+            ).all()
+        )
     else:
-        rows = db.execute(
-            select(Grant, File.name)
-            .join(File, File.id == Grant.file_id)
-            .where(Grant.grantor_id == user.id)
-            .order_by(Grant.created_at.desc())
-        ).all()
+        rows = (
+            db.execute(
+                select(Grant, File.name)
+                .join(File, File.id == Grant.file_id)
+                .where(Grant.grantor_id == user.id)
+                .order_by(Grant.created_at.desc())
+            ).all()
+        )
 
     from datetime import datetime, timezone
+
     now = datetime.now(timezone.utc)
 
-    items = []
+    items: list[dict[str, Any]] = []
     try:
         ac = chain.get_access_control()
     except Exception:
@@ -96,7 +144,11 @@ def list_my_grants(
                 else:
                     used = on_used
                     max_dl = on_max
-                    expires_at_iso = datetime.fromtimestamp(on_expires_at, tz=timezone.utc).isoformat() if on_expires_at else expires_at_iso
+                    expires_at_iso = (
+                        datetime.fromtimestamp(on_expires_at, tz=timezone.utc).isoformat()
+                        if on_expires_at
+                        else expires_at_iso
+                    )
                     if on_revoked:
                         status = "revoked"
                     elif now.timestamp() > on_expires_at and on_expires_at:
@@ -115,28 +167,30 @@ def list_my_grants(
             elif int(g.used or 0) >= int(g.max_dl or 0):
                 status = "exhausted"
 
-        items.append({
-            "fileId": "0x" + bytes(g.file_id).hex(),
-            "capId": cap_hex,
-            "grantor": str(g.grantor_id),
-            "grantee": str(g.grantee_id),
-            "maxDownloads": max_dl,
-            "usedDownloads": used,
-            "status": status,
-            "expiresAt": expires_at_iso,
-            "fileName": file_name,
-        })
+        items.append(
+            {
+                "fileId": "0x" + bytes(g.file_id).hex(),
+                "capId": cap_hex,
+                "grantor": str(g.grantor_id),
+                "grantee": str(g.grantee_id),
+                "maxDownloads": max_dl,
+                "usedDownloads": used,
+                "status": status,
+                "expiresAt": expires_at_iso,
+                "fileName": file_name,
+            }
+        )
 
     return {"items": items}
 
 
 @router.post("/{cap_id}/revoke")
 def revoke_grant(
-        cap_id: str,
-        response: Response,
-        user: User = Depends(require_user),
-        db: Session = Depends(get_db),
-        chain=Depends(get_chain),
+    cap_id: str,
+    response: Response,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+    chain=Depends(get_chain),
 ):
     # Validate capId format
     if not (isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66):
@@ -155,7 +209,7 @@ def revoke_grant(
     if grant.grantor_id != user.id:
         raise HTTPException(403, "not_grantor")
 
-    # Deterministic request_id for idempotency
+    # Deterministic request_id для идемпотентности meta-tx
     req_name = f"revoke:{cap_id}:{user.id}"
     req_uuid = uuid.uuid5(uuid.NAMESPACE_URL, req_name)
 
@@ -167,8 +221,7 @@ def revoke_grant(
     except Exception as e:
         raise HTTPException(502, f"Failed to build revoke call data: {e}")
 
-    # Log grant revocation event
-    typed = None  # Initialize with a default value
+    typed: dict | None = None
     try:
         event_logger = EventLogger(db)
         event_logger.log_grant_revoked(
@@ -176,10 +229,31 @@ def revoke_grant(
             file_id=grant.file_id,
             revoker_id=user.id,
         )
-        typed = chain.build_forward_typed_data(from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000)
+        raw_typed = chain.build_forward_typed_data(
+            from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000
+        )
+        if not isinstance(raw_typed, dict):
+            raw_typed = {}
+        typed = _ensure_forwarder_domain_for_typed_data(chain, raw_typed)
     except Exception as e:
         logger.warning(f"Failed to log grant_revoked event or build typed data: {e}")
         raise HTTPException(502, f"chain_unavailable: {e}")
+
+    # Публикация события в очередь (grant_revoked), idem по event_id
+    try:
+        publisher = EventPublisher()
+        publisher.publish(
+            "grant_revoked",
+            subject={
+                "capId": cap_id,
+                "fileId": "0x" + bytes(grant.file_id).hex(),
+                "grantor": user.eth_address,
+            },
+            payload={"reason": "user_initiated"},
+            event_id=f"grant_revoked:{cap_id}",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to publish grant_revoked event: {e}")
 
     response.status_code = 200
     return {"status": "prepared", "requestId": str(req_uuid), "typedData": typed}
@@ -187,10 +261,10 @@ def revoke_grant(
 
 @router.get("/{cap_id}")
 def get_grant_status(
-        cap_id: str,
-        user: User = Depends(require_user),
-        db: Session = Depends(get_db),
-        chain=Depends(get_chain),
+    cap_id: str,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+    chain=Depends(get_chain),
 ):
     if not (isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66):
         raise HTTPException(400, "bad_cap_id")
@@ -207,8 +281,8 @@ def get_grant_status(
     if grant.grantor_id != user.id and grant.grantee_id != user.id:
         raise HTTPException(403, "forbidden")
 
-    # Build status (prefer on-chain if available)
     from datetime import datetime, timezone
+
     now = datetime.now(timezone.utc)
 
     status = (grant.status or "pending").lower()
@@ -219,19 +293,20 @@ def get_grant_status(
     try:
         ac = chain.get_access_control()
         g = ac.functions.grants(cap_b).call()
-        on_grantor = Web3.to_checksum_address(g[0]) if g and len(g) >= 1 else None
-        on_grantee = Web3.to_checksum_address(g[1]) if g and len(g) >= 2 else None
         on_expires_at = int(g[3]) if g and len(g) >= 4 else 0
         on_max = int(g[4]) if g and len(g) >= 5 else 0
         on_used = int(g[5]) if g and len(g) >= 6 else 0
         on_revoked = bool(g[7]) if g and len(g) >= 8 else False
-        # if not created (createdAt == 0), treat as pending
         if g and len(g) >= 7 and int(g[6]) == 0:
             status = "pending"
         else:
             used = on_used
             max_dl = on_max
-            expires_at_iso = datetime.fromtimestamp(on_expires_at, tz=timezone.utc).isoformat() if on_expires_at else expires_at_iso
+            expires_at_iso = (
+                datetime.fromtimestamp(on_expires_at, tz=timezone.utc).isoformat()
+                if on_expires_at
+                else expires_at_iso
+            )
             if on_revoked:
                 status = "revoked"
             elif now.timestamp() > on_expires_at and on_expires_at:
@@ -241,7 +316,6 @@ def get_grant_status(
             else:
                 status = "confirmed"
     except Exception:
-        # fallback: use DB-derived status
         if grant.revoked_at is not None:
             status = "revoked"
         elif now > grant.expires_at:

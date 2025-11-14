@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, List, Optional
@@ -134,6 +135,7 @@ class Settings(BaseSettings):
     pow_enabled: bool = Field(default=True, alias="POW_ENABLED") # Глобальный переключатель
 
     chain_rpc_url_raw: str | None = Field(default=None, alias="CHAIN_RPC_URL")
+    chain_public_rpc_url: str = os.getenv("CHAIN_PUBLIC_RPC_URL", "")
 
     # --- NEW: pooling options ---
     postgres_pool_size: int = Field(default=20, alias="POSTGRES_POOL_SIZE")

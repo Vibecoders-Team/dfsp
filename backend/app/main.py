@@ -10,6 +10,7 @@ from app.routers import pow as pow_router
 from app.routers.auth import router as auth_router
 from app.routers.storage import router as storage_router
 from app.routers.admin import router as admin_router
+from app.routers.bot import router as bot_router
 
 from .routers.files import router as files_router
 from .routers.meta_tx import router as mtx_router
@@ -93,3 +94,4 @@ app.include_router(users_router)
 app.include_router(admin_router)
 app.include_router(pow_router.router)
 app.include_router(telegram_router)
+app.include_router(bot_router)

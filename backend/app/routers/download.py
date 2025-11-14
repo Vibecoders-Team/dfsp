@@ -16,16 +16,16 @@ from app.deps import get_db, get_chain
 from app.models import Grant, User, File
 from app.security import parse_token
 
-# --- НОВЫЙ ИМПОРТ ---
+# --- НОВЫЕ ИМПОРТЫ ---
 from app.quotas import protect_download, QuotaManager
 from app.services.event_logger import EventLogger
+from app.services.event_publisher import EventPublisher
 from app.cache import Cache
 import logging
 
 router = APIRouter(prefix="/download", tags=["download"])
 logger = logging.getLogger(__name__)
 
-# ... (функция require_user остается без изменений)
 AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 
 ZERO_ADDR = "0x0000000000000000000000000000000000000000"
@@ -47,27 +47,92 @@ def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_d
     return user_obj
 
 
+def _publish_download_event(
+    kind: str,
+    *,
+    user: User,
+    cap_id: str,
+    file_id_bytes: Optional[bytes],
+    reason: str,
+    status_code: Optional[int] = None,
+) -> None:
+    """
+    Helper: best-effort публикация download_allowed / download_denied.
+    НЕ бросает исключения.
+    """
+    try:
+        publisher = EventPublisher()
+        subject: dict[str, object] = {
+            "capId": cap_id,
+            "user": getattr(user, "eth_address", None) or str(user.id),
+        }
+        if file_id_bytes is not None:
+            subject["fileId"] = "0x" + bytes(file_id_bytes).hex()
+
+        payload: dict[str, object] = {"reason": reason}
+        if status_code is not None:
+            payload["statusCode"] = int(status_code)
+
+        event_id = f"{kind}:{cap_id}:{user.id}"
+        publisher.publish(kind, subject=subject, payload=payload, event_id=event_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Failed to publish download event: %s", e)
+
+
 @router.get("/{cap_id}")
 def get_download_info(
     cap_id: str,
-    # Убираем user=Depends(require_user) и заменяем на зависимость-защитник.
-    # Она внутри вызовет get_current_user, проверит PoW и вернет QuotaManager.
+    # protect_download возвращает QuotaManager, внутри уже проверен JWT + PoW
     quota_manager: QuotaManager = Depends(protect_download),
     db: Session = Depends(get_db),
     chain=Depends(get_chain),
 ):
     user = quota_manager.user  # Получаем пользователя из менеджера
 
+    # --- Валидация cap_id ---
     if not (isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66):
+        _publish_download_event(
+            "download_denied",
+            user=user,
+            cap_id=cap_id,
+            file_id_bytes=None,
+            reason="bad_cap_id",
+            status_code=400,
+        )
         raise HTTPException(400, "bad_cap_id")
     try:
         cap_b = Web3.to_bytes(hexstr=cast(HexStr, cap_id))
     except Exception:
+        _publish_download_event(
+            "download_denied",
+            user=user,
+            cap_id=cap_id,
+            file_id_bytes=None,
+            reason="bad_cap_id",
+            status_code=400,
+        )
         raise HTTPException(400, "bad_cap_id")
+
     grant: Optional[Grant] = db.scalar(select(Grant).where(Grant.cap_id == cap_b))
     if grant is None:
+        _publish_download_event(
+            "download_denied",
+            user=user,
+            cap_id=cap_id,
+            file_id_bytes=None,
+            reason="grant_not_found",
+            status_code=404,
+        )
         raise HTTPException(404, "grant_not_found")
     if grant.grantee_id != user.id:
+        _publish_download_event(
+            "download_denied",
+            user=user,
+            cap_id=cap_id,
+            file_id_bytes=grant.file_id,
+            reason="not_grantee",
+            status_code=403,
+        )
         raise HTTPException(403, "not_grantee")
 
     file_id_bytes = grant.file_id
@@ -97,7 +162,16 @@ def get_download_info(
                 if f and f.cid:
                     cid = f.cid
             if not cid:
+                _publish_download_event(
+                    "download_denied",
+                    user=user,
+                    cap_id=cap_id,
+                    file_id_bytes=file_id_bytes,
+                    reason="registry_unavailable",
+                    status_code=502,
+                )
                 raise HTTPException(502, "registry_unavailable")
+
             quota_manager.consume_download_bytes(file_id_bytes)
             try:
                 file_obj: Optional[File] = db.get(File, file_id_bytes)
@@ -109,7 +183,7 @@ def get_download_info(
                     user_id=user.id,
                     download_size=download_size,
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to log grant_used event: {e}")
 
             enc_b64 = base64.b64encode(grant.enc_key).decode("ascii")
@@ -122,11 +196,22 @@ def get_download_info(
                     from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000
                 )
                 import uuid as _uuid
+
                 req_name = f"useOnce:{cap_id}:{user.id}"
                 req_uuid = _uuid.uuid5(_uuid.NAMESPACE_URL, req_name)
                 out.update({"requestId": str(req_uuid), "typedData": typed})
             except Exception:
                 pass
+
+            # УСПЕШНАЯ ВЫДАЧА — download_allowed
+            _publish_download_event(
+                "download_allowed",
+                user=user,
+                cap_id=cap_id,
+                file_id_bytes=file_id_bytes,
+                reason="ok",
+                status_code=200,
+            )
             return out
 
     # Full recompute path (or cache miss)
@@ -146,6 +231,14 @@ def get_download_info(
         if g and len(g) >= 7 and int(g[6]) == 0:
             raise RuntimeError("not_mined_yet")
         if on_grantee and on_grantee.lower() != user.eth_address.lower():
+            _publish_download_event(
+                "download_denied",
+                user=user,
+                cap_id=cap_id,
+                file_id_bytes=grant.file_id,
+                reason="not_grantee_onchain",
+                status_code=403,
+            )
             raise HTTPException(403, "not_grantee")
         revoked = on_revoked
         expired = now.timestamp() > on_expires_at if on_expires_at else False
@@ -154,6 +247,7 @@ def get_download_info(
             bytes(on_file_id) if isinstance(on_file_id, (bytes, bytearray)) else grant.file_id
         )
     except HTTPException:
+        # Уже опубликовали событие выше (если нужно)
         raise
     except Exception:
         revoked = grant.revoked_at is not None or (grant.status == "revoked")
@@ -163,12 +257,36 @@ def get_download_info(
 
     if revoked:
         Cache.set_text(cache_key, "0", ttl=10)
+        _publish_download_event(
+            "download_denied",
+            user=user,
+            cap_id=cap_id,
+            file_id_bytes=file_id_bytes,
+            reason="revoked",
+            status_code=403,
+        )
         raise HTTPException(403, "revoked")
     if expired:
         Cache.set_text(cache_key, "0", ttl=10)
+        _publish_download_event(
+            "download_denied",
+            user=user,
+            cap_id=cap_id,
+            file_id_bytes=file_id_bytes,
+            reason="expired",
+            status_code=403,
+        )
         raise HTTPException(403, "expired")
     if exhausted:
         Cache.set_text(cache_key, "0", ttl=10)
+        _publish_download_event(
+            "download_denied",
+            user=user,
+            cap_id=cap_id,
+            file_id_bytes=file_id_bytes,
+            reason="exhausted",
+            status_code=403,
+        )
         raise HTTPException(403, "exhausted")
 
     # Allowed → set positive cache
@@ -184,6 +302,14 @@ def get_download_info(
         if f and f.cid:
             cid = f.cid
     if not cid:
+        _publish_download_event(
+            "download_denied",
+            user=user,
+            cap_id=cap_id,
+            file_id_bytes=file_id_bytes,
+            reason="registry_unavailable",
+            status_code=502,
+        )
         raise HTTPException(502, "registry_unavailable")
 
     # В соответствии с AC: "учитываем useOnce только при успешной выдаче encK"
@@ -215,12 +341,21 @@ def get_download_info(
             user_id=user.id,
             download_size=download_size,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to log grant_used event: {e}")
 
     enc_b64 = base64.b64encode(grant.enc_key).decode("ascii")
     out = {"encK": enc_b64, "ipfsPath": f"/ipfs/{cid}"}
     if typed is not None:
         out.update({"requestId": str(req_uuid), "typedData": typed})
-    return out
 
+    # УСПЕШНАЯ ВЫДАЧА — download_allowed
+    _publish_download_event(
+        "download_allowed",
+        user=user,
+        cap_id=cap_id,
+        file_id_bytes=file_id_bytes,
+        reason="ok",
+        status_code=200,
+    )
+    return out

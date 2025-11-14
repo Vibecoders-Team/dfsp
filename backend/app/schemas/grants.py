@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Dict, List
-from pydantic import BaseModel, Field, field_validator
 import re
+from typing import Dict, List
+
+from pydantic import BaseModel, Field, field_validator
 
 ADDR_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
 HEX32_RE = re.compile(r"^0x[a-fA-F0-9]{64}$")
@@ -20,8 +21,8 @@ class ShareIn(BaseModel):
     def validate_users(cls, v: List[str]):
         if not v:
             raise ValueError("users_required")
-        uniq = []
-        seen = set()
+        uniq: list[str] = []
+        seen: set[str] = set()
         for a in v:
             if not isinstance(a, str) or not ADDR_RE.match(a):
                 raise ValueError("bad_address")
@@ -40,7 +41,10 @@ class ShareItemOut(BaseModel):
 
 class ShareOut(BaseModel):
     items: List[ShareItemOut]
+    # Полный список typedData — для всех получателей
     typedDataList: List[dict] | None = None
+    # Удобный шорткат для случая, когда получатель один
+    typedData: dict | None = None
 
 
 class DuplicateOut(BaseModel):

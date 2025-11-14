@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any, cast, Dict, Tuple, Optional
 import time
 import uuid
+import logging
+
 from celery import Celery
 from kombu import Queue
 from web3 import Web3
@@ -14,11 +16,14 @@ from app.config import settings
 from app.deps import get_chain, rds, SessionLocal  # type: ignore[attr-defined]
 from app.models.meta_tx_requests import MetaTxRequest
 from sqlalchemy.orm import Session
+from app.services.event_publisher import EventPublisher  # NEW
 
 # Queue names (env-overridable)
 HIGH_Q = getattr(settings, "relayer_high_queue", None) or "relayer.high"
 DEFAULT_Q = getattr(settings, "relayer_default_queue", None) or "relayer.default"
 ANCHOR_Q = "anchor"
+
+logger = logging.getLogger(__name__)
 
 celery = Celery("relayer", broker=settings.redis_dsn, backend=settings.redis_dsn)
 celery.conf.task_serializer = "json"
@@ -31,6 +36,7 @@ celery.conf.task_queues = (
 )
 
 # route by task name + payload (useOnce/revoke → high)
+
 
 def _route_for_task(name: str, args: tuple, kwargs: dict, options: dict, task=None, **kw):  # noqa: ANN001
     if name == "relayer.submit_forward":
@@ -84,6 +90,39 @@ def _series_key(msg: Dict[str, Any]) -> str:
     return f"relayer:series:{from_addr}"
 
 
+def _publish_relayer_warn(
+    reason: str,
+    *,
+    request_id: str,
+    typed_data: Dict[str, Any] | None,
+    error: str,
+    attempt: int | None = None,
+) -> None:
+    """
+    Best-effort событие relayer_warn, не роняет таску.
+    """
+    try:
+        publisher = EventPublisher()
+        msg = (typed_data or {}).get("message") or {}
+        subject: dict[str, object] = {
+            "requestId": request_id,
+            "from": msg.get("from") or "",
+            "to": msg.get("to") or "",
+        }
+        payload: dict[str, object] = {
+            "reason": reason,
+            "error": error,
+        }
+        if attempt is not None:
+            payload["attempt"] = attempt
+
+        # хотим разные ивенты на разные попытки
+        event_id = f"relayer_warn:{request_id}:{reason}:{attempt or 0}"
+        publisher.publish("relayer_warn", subject=subject, payload=payload, event_id=event_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Failed to publish relayer_warn: %s", e)
+
+
 def _sync_grant_events_from_receipt(receipt: AttributeDict, chain, db: Optional[Session]) -> None:
     """
     Parse events from receipt and update grants table in DB.
@@ -111,6 +150,7 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain, db: Optional[
                 grantor_user = db.get(User, gr.grantor_id)
                 if grantor_user and getattr(grantor_user, "eth_address", None):
                     from eth_utils.address import to_checksum_address as _to_cs
+
                     addr = _to_cs(str(grantor_user.eth_address))
                     key = f"grant_nonce:{addr.lower()}"
                     rds.delete(key)
@@ -121,10 +161,12 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain, db: Optional[
         try:
             used_events = ac.events.Used().process_receipt(receipt)
             for evt in used_events:
-                cap_id = evt.args.capId if hasattr(evt.args, 'capId') else evt.get('args', {}).get('capId')
-                used_count = evt.args.used if hasattr(evt.args, 'used') else evt.get('args', {}).get('used')
+                cap_id = evt.args.capId if hasattr(evt.args, "capId") else evt.get("args", {}).get("capId")
+                used_count = evt.args.used if hasattr(evt.args, "used") else evt.get("args", {}).get("used")
                 if cap_id and used_count is not None:
-                    cap_b = bytes(cap_id) if isinstance(cap_id, (bytes, bytearray)) else Web3.to_bytes(hexstr=cap_id)
+                    cap_b = bytes(cap_id) if isinstance(cap_id, (bytes, bytearray)) else Web3.to_bytes(
+                        hexstr=cap_id
+                    )
                     grant = db.query(Grant).filter(Grant.cap_id == cap_b).first()
                     if grant:
                         grant.used = int(used_count)
@@ -137,9 +179,11 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain, db: Optional[
         try:
             revoked_events = ac.events.Revoked().process_receipt(receipt)
             for evt in revoked_events:
-                cap_id = evt.args.capId if hasattr(evt.args, 'capId') else evt.get('args', {}).get('capId')
+                cap_id = evt.args.capId if hasattr(evt.args, "capId") else evt.get("args", {}).get("capId")
                 if cap_id:
-                    cap_b = bytes(cap_id) if isinstance(cap_id, (bytes, bytearray)) else Web3.to_bytes(hexstr=cap_id)
+                    cap_b = bytes(cap_id) if isinstance(cap_id, (bytes, bytearray)) else Web3.to_bytes(
+                        hexstr=cap_id
+                    )
                     grant = db.query(Grant).filter(Grant.cap_id == cap_b).first()
                     if grant:
                         grant.revoked_at = datetime.now(timezone.utc)
@@ -153,14 +197,20 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain, db: Optional[
         try:
             granted_events = ac.events.Granted().process_receipt(receipt)
             for evt in granted_events:
-                cap_id = evt.args.capId if hasattr(evt.args, 'capId') else evt.get('args', {}).get('capId')
+                cap_id = evt.args.capId if hasattr(evt.args, "capId") else evt.get("args", {}).get("capId")
                 if cap_id:
-                    cap_b = bytes(cap_id) if isinstance(cap_id, (bytes, bytearray)) else Web3.to_bytes(hexstr=cap_id)
+                    cap_b = bytes(cap_id) if isinstance(cap_id, (bytes, bytearray)) else Web3.to_bytes(
+                        hexstr=cap_id
+                    )
                     grant = db.query(Grant).filter(Grant.cap_id == cap_b).first()
                     if grant:
                         grant.status = "confirmed"
                         grant.confirmed_at = datetime.now(timezone.utc)
-                        grant.tx_hash = receipt.get("transactionHash", b"").hex() if receipt.get("transactionHash") else None
+                        grant.tx_hash = (
+                            receipt.get("transactionHash", b"").hex()
+                            if receipt.get("transactionHash")
+                            else None
+                        )
                         db.add(grant)
                         _invalidate_for_grant(grant)
         except Exception:
@@ -192,8 +242,15 @@ def submit_forward(self, request_id: str, typed_data: Dict[str, Any], signature:
     try:
         req_tuple = _build_req_tuple(msg)
         sig_bytes = Web3.to_bytes(hexstr=cast(HexStr, signature))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _metrics_incr("error_total")
+        _publish_relayer_warn(
+            "bad_request",
+            request_id=request_id,
+            typed_data=typed_data,
+            error=str(e),
+            attempt=getattr(self.request, "retries", 0),
+        )
         return {"status": "bad_request", "error": str(e)}
 
     series = _series_key(msg)
@@ -221,9 +278,23 @@ def submit_forward(self, request_id: str, typed_data: Dict[str, Any], signature:
             ok = bool(fwd.functions.verify(req_tuple, sig_bytes).call())
             if not ok:
                 _metrics_incr("error_total")
+                _publish_relayer_warn(
+                    "bad_signature",
+                    request_id=request_id,
+                    typed_data=typed_data,
+                    error="forwarder_verify_false",
+                    attempt=getattr(self.request, "retries", 0),
+                )
                 return {"status": "bad_signature"}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _metrics_incr("error_total")
+            _publish_relayer_warn(
+                "verify_failed",
+                request_id=request_id,
+                typed_data=typed_data,
+                error=str(e),
+                attempt=getattr(self.request, "retries", 0),
+            )
             return {"status": "verify_failed", "error": str(e)}
 
         # gas params with bumping per retry
@@ -273,10 +344,29 @@ def submit_forward(self, request_id: str, typed_data: Dict[str, Any], signature:
         except (ContractLogicError, TransactionNotFound, TimeExhausted) as e:
             # Common replace/nonce errors → retry with backoff and gas bump
             msg_str = str(e)
-            if any(s in msg_str for s in ("nonce too low", "replacement transaction underpriced", "underpriced")):
+            attempt = int(getattr(self.request, "retries", 0) or 0)
+            _publish_relayer_warn(
+                "submit_error",
+                request_id=request_id,
+                typed_data=typed_data,
+                error=msg_str,
+                attempt=attempt,
+            )
+            if any(
+                s in msg_str
+                for s in ("nonce too low", "replacement transaction underpriced", "underpriced")
+            ):
                 raise self.retry(exc=e)
             raise self.retry(exc=e)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
+            attempt = int(getattr(self.request, "retries", 0) or 0)
+            _publish_relayer_warn(
+                "submit_error",
+                request_id=request_id,
+                typed_data=typed_data,
+                error=str(e),
+                attempt=attempt,
+            )
             raise self.retry(exc=e)
     # end with lock
 
@@ -300,9 +390,13 @@ def _decide_queue(typed_data: Dict[str, Any]) -> str:
     return DEFAULT_Q
 
 
-def enqueue_forward_request(request_id: str, typed_data: Dict[str, Any], signature: str, queue: Optional[str] = None) -> str:
+def enqueue_forward_request(
+    request_id: str, typed_data: Dict[str, Any], signature: str, queue: Optional[str] = None
+) -> str:
     q = queue or _decide_queue(typed_data)
     # record a best-effort queue metric
     _metrics_incr(f"enqueue_total:{q}")
-    async_result = cast(Any, submit_forward).apply_async(args=[request_id, typed_data, signature], queue=q)
+    async_result = cast(Any, submit_forward).apply_async(
+        args=[request_id, typed_data, signature], queue=q
+    )
     return async_result.id

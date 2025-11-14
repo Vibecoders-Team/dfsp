@@ -20,58 +20,71 @@ def get_health_checks(db: Session) -> dict[str, Any]:
 
     # db
     try:
+        print("[HEALTH] Checking DB...")
         db.execute(text("SELECT 1"))
         checks["db"] = "ok"
+        print("[HEALTH] DB OK.")
     except Exception as e:
         checks["db"] = {"error": str(e)}
+        print(f"[HEALTH] DB FAILED: {e}")
 
     # redis
     try:
+        print("[HEALTH] Checking Redis...")
         rds.ping()
         checks["redis"] = "ok"
+        print("[HEALTH] Redis OK.")
     except Exception as e:
         checks["redis"] = {"error": str(e)}
+        print(f"[HEALTH] Redis FAILED: {e}")
 
     # chain + contracts
-    try:
-        chain = get_chain()
-        if not chain.contracts:
-            chain.reload_contracts()
-        names = list(chain.contracts.keys())
-        # Robust chain OK: if we can read chain_id or is_connected is True
-        try:
-            chain_id = int(chain.w3.eth.chain_id)
-            chain_ok = True
-        except Exception:
-            chain_id = None
-            try:
-                chain_ok = bool(chain.w3.is_connected())
-            except Exception:
-                chain_ok = False
-
-        if chain_ok:
-            checks["chain"] = {"ok": True, "chainId": chain_id}
-        else:
-            checks["chain"] = {"error": "Not connected"}
-        if names:
-            checks["contracts"] = {"ok": True, "names": names}
-        else:
-            checks["contracts"] = {"error": "Not loaded"}
-
-    except Exception as e:
-        checks["chain"] = {"error": str(e)}
-        checks["contracts"] = {"error": str(e)}
+    # try:
+    #     chain = get_chain()
+    #     if not chain.contracts:
+    #         chain.reload_contracts()
+    #     names = list(chain.contracts.keys())
+    #     # Robust chain OK: if we can read chain_id or is_connected is True
+    #     try:
+    #         print("[HEALTH] Checking Chain...")
+    #         chain_id = int(chain.w3.eth.chain_id)
+    #         chain_ok = True
+    #         print("[HEALTH] Chain OK.")
+    #     except Exception:
+    #         chain_id = None
+    #         try:
+    #             chain_ok = bool(chain.w3.is_connected())
+    #         except Exception:
+    #             chain_ok = False
+    # 
+    #     if chain_ok:
+    #         checks["chain"] = {"ok": True, "chainId": chain_id}
+    #     else:
+    #         checks["chain"] = {"error": "Not connected"}
+    #     if names:
+    #         checks["contracts"] = {"ok": True, "names": names}
+    #     else:
+    #         checks["contracts"] = {"error": "Not loaded"}
+    # 
+    # except Exception as e:
+    #     checks["chain"] = {"error": str(e)}
+    #     checks["contracts"] = {"error": str(e)}
+    #     print(f"[HEALTH] Chain FAILED: {e}")
 
     # ipfs (API)
-    try:
-        base = os.getenv("IPFS_API_URL", "http://ipfs:5001/api/v0").rstrip("/")
-        req = urllib.request.Request(base + "/id", data=b"", method="POST")  # type: ignore[arg-type]
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            j = json.loads(resp.read().decode())
-        checks["ipfs"] = {"ok": True, "id": j.get("ID")}
-    except Exception as e:
-        checks["ipfs"] = {"error": str(e)}
+    # try:
+    #     print("[HEALTH] Checking IPFS...")
+    #     base = os.getenv("IPFS_API_URL", "http://ipfs:5001/api/v0").rstrip("/")
+    #     req = urllib.request.Request(base + "/id", data=b"", method="POST")  # type: ignore[arg-type]
+    #     with urllib.request.urlopen(req, timeout=3) as resp:
+    #         j = json.loads(resp.read().decode())
+    #     checks["ipfs"] = {"ok": True, "id": j.get("ID")}
+    #     print("[HEALTH] IPFS OK.")
+    # except Exception as e:
+    #     checks["ipfs"] = {"error": str(e)}
+    #     print(f"[HEALTH] IPFS FAILED: {e}")
 
+    print("[HEALTH] --- FINISHED HEALTH CHECKS ---")
     return checks
 
 

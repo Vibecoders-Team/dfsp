@@ -36,6 +36,16 @@ class EIP712Signer:
         signature_hex = signed_message.signature.hex()
         return signature_hex, typed_data
 
+    def sign_generic_typed_data(self, typed_data: dict) -> str:
+        """
+        Подписывает произвольную EIP-712 структуру (typed_data).
+        Используется для мета-транзакций.
+        """
+        # Эта логика взята из существующего метода sign(), но теперь
+        # она работает с любой структурой typed_data, а не только с логином.
+        signed_message = self.account.sign_message(encode_typed_data(full_message=typed_data))
+        return signed_message.signature.hex()
+
     def _build_typed_data(self, nonce_hex: str) -> dict:
         """
         Собирает структуру данных для подписи, в точности как на сервере

@@ -1,29 +1,30 @@
 from __future__ import annotations
 
-import uuid
-from typing import Any, Optional, cast, Union, List
-from typing_extensions import Annotated
-
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-from web3 import Web3
-from eth_typing import HexStr
-
-from app.deps import get_db, get_chain, rds
-from app.models import File, FileVersion, User, Grant
-from app.schemas.auth import FileCreateIn, TypedDataOut
-from app.schemas.grants import ShareIn, ShareOut, ShareItemOut, DuplicateOut
-from app.security import parse_token
-from app.quotas import protect_meta_tx
-
 import base64
+import uuid
 from datetime import datetime, timedelta, timezone
-from app.repos.user_repo import get_by_eth_address
-from sqlalchemy.exc import IntegrityError
+from typing import Any, List, Optional, Union, cast
+
 import logging
+from eth_typing import HexStr
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+from typing_extensions import Annotated
+from web3 import Web3
+
 from app.config import settings
+from app.deps import get_chain, get_db, rds
+from app.models import File, FileVersion, Grant, User
+from app.quotas import protect_meta_tx
+from app.repos.user_repo import get_by_eth_address
+from app.schemas.auth import FileCreateIn, TypedDataOut
+from app.schemas.grants import DuplicateOut, ShareIn, ShareItemOut, ShareOut
+from app.security import parse_token
 from app.services.event_logger import EventLogger
+from app.services.event_publisher import EventPublisher
 
 router = APIRouter(prefix="/files", tags=["files"])
 logger = logging.getLogger(__name__)
@@ -49,10 +50,8 @@ def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_d
 
 
 # ---- NEW: Schema for file list response ----
-from pydantic import BaseModel
-
 class FileListItem(BaseModel):
-    id: str  # hex string
+    id: str  # hex string (0x + 64)
     name: str
     size: int
     mime: str
@@ -73,15 +72,13 @@ def list_my_files(
     offset: int = Query(0, ge=0),
 ):
     """
-    Возвращает список всех файлов текущего пользователя
+    Возвращает список всех файлов текущего пользователя.
     """
-    # Extra diagnostics
     try:
         dsn = settings.postgres_dsn
     except Exception:
         dsn = "<unknown>"
 
-    # Count total files and per-user count for diagnostics
     total_files = db.query(File).count()
     user_files_q = (
         select(File)
@@ -93,7 +90,7 @@ def list_my_files(
     files = db.scalars(user_files_q).all()
     per_user_count = len(files)
 
-    # Fallback: join on users.eth_address if nothing found (diagnostic/workaround)
+    # fallback по eth_address — диагоностика
     if per_user_count == 0:
         try:
             fallback_q = (
@@ -106,16 +103,20 @@ def list_my_files(
             if fb_files:
                 logger.warning(
                     "list_my_files: fallback by eth_address found %d items for user=%s",
-                    len(fb_files), str(user.id)
+                    len(fb_files),
+                    str(user.id),
                 )
                 files = fb_files
                 per_user_count = len(files)
         except Exception as e:
             logger.warning("list_my_files: fallback query failed: %s", e)
 
-    # Log owner_ids of a few recent files for visibility
     try:
-        sample = db.execute(select(File.owner_id, File.id).order_by(File.created_at.desc()).limit(5)).all()
+        sample = (
+            db.execute(
+                select(File.owner_id, File.id).order_by(File.created_at.desc()).limit(5)
+            ).all()
+        )
         sample_str = ", ".join([f"(owner={row[0]}, id={row[1].hex()})" for row in sample])
     except Exception:
         sample_str = "<n/a>"
@@ -123,33 +124,39 @@ def list_my_files(
     try:
         logger.info(
             "list_my_files: dsn=%s user=%s total_files=%d per_user=%d recent=%s",
-            dsn, str(user.id), total_files, per_user_count, sample_str
+            dsn,
+            str(user.id),
+            total_files,
+            per_user_count,
+            sample_str,
         )
     except Exception:
         pass
 
-    result = []
+    result: list[FileListItem] = []
     for f in files:
-        result.append(FileListItem(
-            id="0x" + f.id.hex(),
-            name=f.name or "Unnamed",
-            size=f.size,
-            mime=f.mime or "application/octet-stream",
-            cid=f.cid or "",
-            checksum="0x" + f.checksum.hex(),
-            created_at=f.created_at.isoformat() if f.created_at else "",
-        ))
+        result.append(
+            FileListItem(
+                id="0x" + f.id.hex(),
+                name=f.name or "Unnamed",
+                size=f.size,
+                mime=f.mime or "application/octet-stream",
+                cid=f.cid or "",
+                checksum="0x" + f.checksum.hex(),
+                created_at=f.created_at.isoformat() if f.created_at else "",
+            )
+        )
 
     return result
 
 
 @router.post("", response_model=TypedDataOut)
 def create_file(
-        meta: FileCreateIn,
-        user: User = Depends(require_user),
-        db: Session = Depends(get_db),
+    meta: FileCreateIn,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
 ):
-    # Schema validation already enforces fileId/checksum hex32, size<=200MB, mime whitelist, sanitized name
+    # Schema validation уже проверила hex32, размер и т.п.
     try:
         fid = Web3.to_bytes(hexstr=cast(HexStr, meta.fileId))
     except Exception:
@@ -159,7 +166,7 @@ def create_file(
     except Exception:
         raise HTTPException(400, "bad_checksum")
 
-    # Denylist by checksum: Redis set + global DB uniqueness emulation
+    # denylist по checksum (Redis)
     try:
         if rds.sismember("denylist:checksum", meta.checksum):
             raise HTTPException(409, "duplicate_checksum")
@@ -172,7 +179,7 @@ def create_file(
     if exists:
         raise HTTPException(409, "already_registered")
 
-    # Global duplicate by checksum across all users
+    # глобальная проверка на дубликат checksum
     dup_global = db.scalar(select(File.id).where(File.checksum == checksum))
     if dup_global:
         raise HTTPException(409, "duplicate_checksum")
@@ -188,6 +195,7 @@ def create_file(
     )
     db.add(file)
     db.flush()
+
     ver = FileVersion(
         file_id=file.id,
         version=1,
@@ -198,7 +206,7 @@ def create_file(
     )
     db.add(ver)
 
-    # Log event for anchoring
+    # event → anchoring
     try:
         event_logger = EventLogger(db)
         event_logger.log_file_registered(
@@ -213,9 +221,8 @@ def create_file(
 
     db.commit()
 
-    # Try to build typed data via chain, fallback to placeholders if chain is unavailable
+    # Пытаемся собрать EIP-712 typedData через chain, иначе — плейсхолдер
     fwd = None
-    fwd_addr: Optional[str] = None
     chain_id_val: int = 31337
     verifying_contract = "0x0000000000000000000000000000000000000000"
     nonce_val: int = 0
@@ -227,7 +234,6 @@ def create_file(
         if isinstance(addr, str):
             verifying_contract = Web3.to_checksum_address(addr)
         else:
-            # try eip712Domain on forwarder
             try:
                 verifying_contract = Web3.to_checksum_address(chain.get_forwarder().address)
             except Exception:
@@ -263,7 +269,9 @@ def create_file(
         "primaryType": "ForwardRequest",
         "message": {
             "from": Web3.to_checksum_address(user.eth_address),
-            "to": Web3.to_checksum_address(verifying_contract) if verifying_contract != "0x0000000000000000000000000000000000000000" else Web3.to_checksum_address("0x0000000000000000000000000000000000000000"),
+            "to": Web3.to_checksum_address(verifying_contract)
+            if verifying_contract != "0x0000000000000000000000000000000000000000"
+            else Web3.to_checksum_address("0x0000000000000000000000000000000000000000"),
             "value": 0,
             "gas": 200_000,
             "nonce": nonce_val,
@@ -273,31 +281,77 @@ def create_file(
     return {"typedData": typed_data}
 
 
+# --- helper: гарантируем корректный EIP-712 domain для forwarder ---
+def _ensure_forwarder_domain_for_typed_data(chain: Any, typed: dict) -> dict:
+    if not isinstance(typed, dict):
+        return typed
+    domain = typed.get("domain")
+    if isinstance(domain, dict) and domain.get("verifyingContract"):
+        return typed
+
+    chain_id_val = 31337
+    try:
+        chain_id_val = int(getattr(chain, "chain_id", 31337))
+    except Exception:
+        pass
+
+    verifying_contract = "0x" + "0" * 40
+    try:
+        fwd = getattr(chain, "contracts", {}).get("MinimalForwarder") if hasattr(
+            chain, "contracts"
+        ) else None
+        addr = getattr(fwd, "address", None) if fwd is not None else None
+        if isinstance(addr, str):
+            verifying_contract = Web3.to_checksum_address(addr)
+        else:
+            try:
+                verifying_contract = Web3.to_checksum_address(chain.get_forwarder().address)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    typed["domain"] = {
+        "name": "MinimalForwarder",
+        "version": "0.0.1",
+        "chainId": chain_id_val,
+        "verifyingContract": verifying_contract,
+    }
+    return typed
+
+
 @router.post("/{id}/share", response_model=Union[ShareOut, DuplicateOut])
 def share_file(
     id: str,
     body: ShareIn,
-    # Заменяем `Depends(require_user)` на нашу новую зависимость-защитник
+    # Meta-tx защита + PoW
     user: User = Depends(protect_meta_tx),
     db: Session = Depends(get_db),
     chain=Depends(get_chain),
 ):
+    # валидация fileId (0x + 64)
     if not (isinstance(id, str) and id.startswith("0x") and len(id) == 66):
         raise HTTPException(400, "bad_file_id")
-    file_id_bytes = Web3.to_bytes(hexstr=cast(HexStr, id))
+    try:
+        file_id_bytes = Web3.to_bytes(hexstr=cast(HexStr, id))
+    except Exception:
+        raise HTTPException(400, "bad_file_id")
+
     file_row: Optional[File] = db.get(File, file_id_bytes)
     if file_row is None:
         raise HTTPException(404, "file_not_found")
     if file_row.owner_id != user.id:
         raise HTTPException(403, "not_owner")
+
     import json as _json
+
     key = f"share:req:{body.request_id}"
 
-    # Reserve idempotency key early to avoid races. If present, return duplicate.
+    # idempotency key в Redis
     try:
         reserved = rds.set(key, "{}", ex=3600, nx=True)
     except Exception:
-        reserved = True  # fail-open: proceed normally
+        reserved = True  # fail-open
     if not reserved:
         try:
             existing = rds.get(key)
@@ -327,34 +381,76 @@ def share_file(
         if u is None:
             raise HTTPException(400, f"unknown_grantee_{addr_in}")
         grantees.append((Web3.to_checksum_address(addr_in), u))
+
     ac = chain.get_access_control()
     grantor_addr = Web3.to_checksum_address(user.eth_address)
+
     try:
         start_nonce = int(chain.read_grant_nonce_cached(grantor_addr))
     except Exception as e:
         raise HTTPException(502, f"chain_unavailable: {e}")
+
     cap_ids_bytes: list[bytes] = []
     cap_ids_hex: list[str] = []
     for idx, (grantee_addr, _) in enumerate(grantees):
-        cap_b = chain.predict_cap_id(grantor_addr, grantee_addr, file_id_bytes, nonce=start_nonce, offset=idx)
+        cap_b = chain.predict_cap_id(
+            grantor_addr, grantee_addr, file_id_bytes, nonce=start_nonce, offset=idx
+        )
         cap_ids_bytes.append(cap_b)
         cap_ids_hex.append("0x" + cap_b.hex())
+
     typed_list: list[dict] = []
     ttl_sec = int(body.ttl_days) * 86400
     to_addr = getattr(ac, "address", grantor_addr)
+
     for (grantee_addr, _), _cap in zip(grantees, cap_ids_bytes):
-        call_data = chain.encode_grant_call(file_id_bytes, grantee_addr, ttl_sec, int(body.max_dl))
-        td = chain.build_forward_typed_data(from_addr=grantor_addr, to_addr=to_addr, data=call_data, gas=180_000)
+        # Закодированный вызов гранта
+        try:
+            call_data = chain.encode_grant_call(
+                file_id_bytes, grantee_addr, ttl_sec, int(body.max_dl)
+            )
+        except Exception as e:
+            raise HTTPException(502, f"chain_unavailable: {e}")
+
+        td: dict | None = None
+        try:
+            td = chain.build_forward_typed_data(
+                from_addr=grantor_addr, to_addr=to_addr, data=call_data, gas=180_000
+            )
+        except Exception:
+            td = None
+        if not isinstance(td, dict):
+            td = {}
+
+        # Гарантируем корректный EIP-712 domain для eth_account.encode_typed_data
+        td = _ensure_forwarder_domain_for_typed_data(chain, td)
+
+        # Если по какой-то причине forwarder не проставил message — подстрахуем
+        if "message" not in td or not isinstance(td["message"], dict):
+            td["message"] = {
+                "from": grantor_addr,
+                "to": to_addr,
+                "value": 0,
+                "gas": 180_000,
+                "nonce": 0,
+                "data": call_data,
+            }
+
         typed_list.append(td)
 
-    # Overwrite idempotency key with final data (no NX to update placeholder)
+    # Сохраняем idempotency payload
     try:
-        rds.set(key, _json.dumps({"grantor": grantor_addr, "fileId": id, "capIds": cap_ids_hex}), ex=3600)
+        rds.set(
+            key,
+            _json.dumps({"grantor": grantor_addr, "fileId": id, "capIds": cap_ids_hex}),
+            ex=3600,
+        )
     except Exception:
         pass
 
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=int(body.ttl_days))
+
     for (grantee_addr, grantee_user), cap_b in zip(grantees, cap_ids_bytes):
         exists = db.query(Grant).filter(Grant.cap_id == cap_b).one_or_none()
         if exists is not None:
@@ -379,14 +475,17 @@ def share_file(
             enc_key=enc_bytes,
         )
         db.add(grant)
+
     try:
         db.commit()
     except IntegrityError as ie:
         db.rollback()
-        if "uq_grants_cap_id" not in str(ie.orig) if hasattr(ie, "orig") else str(ie):
+        if "uq_grants_cap_id" not in (
+            str(ie.orig) if hasattr(ie, "orig") else str(ie)
+        ):
             raise
 
-    # Log grant_created events for all new grants
+    # event → anchoring
     try:
         event_logger = EventLogger(db)
         for (grantee_addr, grantee_user), cap_b in zip(grantees, cap_ids_bytes):
@@ -401,8 +500,37 @@ def share_file(
     except Exception as e:
         logger.warning(f"Failed to log grant_created events: {e}")
 
-    items = [ShareItemOut(grantee=addr_lower_to_input[ga.lower()], capId=ch, status="queued") for (ga, _), ch in zip(grantees, cap_ids_hex)]
-    return ShareOut(items=items, typedDataList=typed_list)
+    # event → очередь (grant_created), best-effort, не ломает основной флоу
+    try:
+        publisher = EventPublisher()
+        for (grantee_addr, _), cap_hex in zip(grantees, cap_ids_hex):
+            publisher.publish(
+                "grant_created",
+                subject={
+                    "capId": cap_hex,
+                    "fileId": id,
+                    "grantor": user.eth_address,
+                    "grantee": grantee_addr,
+                },
+                payload={
+                    "ttlDays": int(body.ttl_days),
+                    "maxDownloads": int(body.max_dl),
+                },
+            )
+    except Exception as e:
+        logger.warning(f"Failed to publish grant_created events: {e}")
+
+    items = [
+        ShareItemOut(
+            grantee=addr_lower_to_input[ga.lower()],
+            capId=ch,
+            status="queued",
+        )
+        for (ga, _), ch in zip(grantees, cap_ids_hex)
+    ]
+
+    single_td = typed_list[0] if len(typed_list) == 1 else None
+    return ShareOut(items=items, typedDataList=typed_list, typedData=single_td)
 
 
 @router.get("/{id}/grants")
@@ -420,27 +548,26 @@ def list_file_grants(
     except Exception:
         raise HTTPException(400, "bad_file_id")
 
-    # Ensure file exists and belongs to current user
     file_row: Optional[File] = db.get(File, file_id_bytes)
     if file_row is None:
         raise HTTPException(404, "file_not_found")
     if file_row.owner_id != user.id:
         raise HTTPException(403, "not_owner")
 
-    # Collect grants joined with grantee address
-    rows = db.execute(
-        select(Grant, User.eth_address)
-        .join(User, Grant.grantee_id == User.id)
-        .where(Grant.file_id == file_id_bytes)
-        .order_by(Grant.created_at.desc())
-    ).all()
+    rows = (
+        db.execute(
+            select(Grant, User.eth_address)
+            .join(User, Grant.grantee_id == User.id)
+            .where(Grant.file_id == file_id_bytes)
+            .order_by(Grant.created_at.desc())
+        ).all()
+    )
 
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
+    from datetime import timezone as _tz
 
-    # Try to use on-chain info when possible
-    items = []
-    ac = None
+    now = datetime.now(_tz.utc)
+
+    items: list[dict[str, Any]] = []
     try:
         ac = chain.get_access_control()
     except Exception:
@@ -465,7 +592,11 @@ def list_file_grants(
                 else:
                     used = on_used
                     max_dl = on_max
-                    expires_at_iso = datetime.fromtimestamp(on_expires_at, tz=timezone.utc).isoformat() if on_expires_at else expires_at_iso
+                    expires_at_iso = (
+                        datetime.fromtimestamp(on_expires_at, tz=_tz.utc).isoformat()
+                        if on_expires_at
+                        else expires_at_iso
+                    )
                     if on_revoked:
                         status = "revoked"
                     elif now.timestamp() > on_expires_at and on_expires_at:
@@ -475,9 +606,8 @@ def list_file_grants(
                     else:
                         status = "confirmed"
             except Exception:
-                # fallback below
                 pass
-        if ac is None:
+        else:
             if g.revoked_at is not None:
                 status = "revoked"
             elif now > g.expires_at:
@@ -485,13 +615,15 @@ def list_file_grants(
             elif int(g.used or 0) >= int(g.max_dl or 0):
                 status = "exhausted"
 
-        items.append({
-            "grantee": grantee_addr,
-            "capId": cap_hex,
-            "maxDownloads": max_dl,
-            "usedDownloads": used,
-            "expiresAt": expires_at_iso,
-            "status": status,
-        })
+        items.append(
+            {
+                "grantee": grantee_addr,
+                "capId": cap_hex,
+                "maxDownloads": max_dl,
+                "usedDownloads": used,
+                "expiresAt": expires_at_iso,
+                "status": status,
+            }
+        )
 
     return {"items": items}
