@@ -1,3 +1,4 @@
+from typing import Literal
 from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,6 +15,11 @@ class Settings(BaseSettings):
     PUBLIC_WEB_ORIGIN: AnyHttpUrl
 
     PROM_PORT: int = 8001
+
+    # новый конфиг
+    BOT_MODE: Literal["dev", "prod"] = "dev"  # dev = polling, prod = webhook
+    APP_HOST: str = "0.0.0.0"
+    APP_PORT: int = 8080
 
     model_config = SettingsConfigDict(
         env_file=".env",
