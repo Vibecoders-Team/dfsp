@@ -12,6 +12,7 @@ from .middlewares.error_handler import ErrorHandlerMiddleware
 from .middlewares.rate_limit import RateLimitMiddleware
 from .handlers import start as start_handlers
 from .handlers import link as link_handlers
+from .handlers import unlink as unlink_handlers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,7 +37,8 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
 
     dp_.include_router(start_handlers.router)
     dp_.include_router(link_handlers.router)
-    # остальные роутеры: unlink, me, files, grants, verify, callbacks
+    dp_.include_router(unlink_handlers.router)
+    # остальные роутеры: me, files, grants, verify, callbacks
 
     return bot_, dp_
 

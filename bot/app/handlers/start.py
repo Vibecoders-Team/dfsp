@@ -21,9 +21,15 @@ START_KEYBOARD = InlineKeyboardMarkup(
         [
             InlineKeyboardButton(
                 text="🔗 Привязать аккаунт",
-                callback_data="link:start",  # логически тот же flow, что и /link
+                callback_data="link:start",
             )
-        ]
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔓 Отвязать аккаунт",
+                callback_data="unlink:start",
+            )
+        ],
     ]
 )
 
