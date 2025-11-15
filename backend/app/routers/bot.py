@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List, Tuple, Dict, Any
+from typing import Optional, List, Tuple
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from typing_extensions import Annotated
@@ -21,6 +21,7 @@ from app.schemas.action_intent import (
     ActionIntentConsumeIn,
     ActionIntentConsumeOut,
 )
+from app.schemas.bot import BotProfileResponse  # 👈 вот этого не хватало
 
 router = APIRouter(prefix="/bot", tags=["Bot"])
 
@@ -32,6 +33,7 @@ AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 # =========================
 # JWT helper for bot endpoints (action-intents)
 # =========================
+
 
 def _require_jwt_user(
     authorization: AuthorizationHeader,
@@ -59,6 +61,7 @@ def _require_jwt_user(
 # =========================
 # Helpers for Telegram-based auth (files/grants)
 # =========================
+
 
 def _parse_chat_id(x_tg_chat_id: str) -> int:
     try:
@@ -98,7 +101,7 @@ def _parse_cursor(cursor: Optional[str]) -> Optional[datetime]:
       - стабильный URL-safe формат, когда мы сами генерим курсор;
       - обратную совместимость, если кто-то шлёт ISO-дату.
 
-    При неудаче кидаем 400 с сообщением из логов теста.
+    При неудаче кидаем 400.
     """
     if cursor is None:
         return None
@@ -134,8 +137,34 @@ def _datetime_to_cursor(dt: Optional[datetime]) -> Optional[str]:
 
 
 # =========================
+# GET /bot/me
+# =========================
+
+
+@router.get("/me", response_model=BotProfileResponse)
+def bot_get_me(
+    user: User = Depends(_get_user_by_chat_id),
+) -> BotProfileResponse:
+    """
+    Bot-friendly профиль пользователя по Telegram chat_id.
+
+    Вход:
+      - X-TG-Chat-Id (header)
+
+    Выход:
+      - address: связанный wallet-адрес
+      - display_name: имя пользователя, если задано
+    """
+    return BotProfileResponse(
+        address=(user.eth_address or "").lower(),
+        display_name=getattr(user, "display_name", None),
+    )
+
+
+# =========================
 # GET /bot/files
 # =========================
+
 
 @router.get("/files")
 def bot_list_files(
@@ -205,6 +234,7 @@ def bot_list_files(
 # =========================
 # GET /bot/grants
 # =========================
+
 
 @router.get("/grants")
 def bot_list_grants(
@@ -299,6 +329,7 @@ def bot_list_grants(
 # GET /bot/verify/{file_id}
 # =========================
 
+
 @router.get("/verify/{file_id}")
 def bot_verify_file(
     file_id: str,
@@ -310,20 +341,6 @@ def bot_verify_file(
     Валидация:
       - формат 0x + 64 hex, иначе 400.
       - если файла нет в БД — 404.
-
-    Возвращаем:
-      {
-        "onchain_ok": bool,
-        "offchain_ok": bool,
-        "match": bool,
-        "lastAnchorTx": str | None
-      }
-
-    Сейчас реализуем простую версию:
-      - offchain_ok = True, если файл существует.
-      - onchain_ok = False (мы не трогаем цепь).
-      - match = onchain_ok and offchain_ok.
-      - lastAnchorTx = None.
     """
     # валидация формата
     if not (isinstance(file_id, str) and file_id.startswith("0x") and len(file_id) == 66):
@@ -354,6 +371,7 @@ def bot_verify_file(
 # POST /bot/action-intents (JWT)
 # =========================
 
+
 @router.post("/action-intents", response_model=ActionIntentCreateOut)
 def create_action_intent(
     body: ActionIntentCreateIn,
@@ -362,13 +380,6 @@ def create_action_intent(
 ):
     """
     Создаёт одноразовый интент (handoff) для текущего пользователя.
-
-    Вход: { type, params }
-    Шаги:
-      - генерим UUID (через PK id)
-      - expires_at = now + 10–15 мин (здесь 15)
-      - пишем в action_intents(owner_address, type, data, expires_at)
-      - возвращаем { state, expires_at }, где state = str(id)
     """
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(seconds=ACTION_INTENT_TTL_SECONDS)
@@ -396,6 +407,7 @@ def create_action_intent(
 # POST /bot/action-intents/consume (JWT)
 # =========================
 
+
 @router.post("/action-intents/consume", response_model=ActionIntentConsumeOut)
 def consume_action_intent(
     body: ActionIntentConsumeIn,
@@ -404,20 +416,9 @@ def consume_action_intent(
 ):
     """
     Потребляет одноразовый интент.
-
-    Вход: { state }
-
-    Шаги:
-      - находим интент по state (PK id)
-      - проверяем, что JWT.addr совпадает с owner_address
-      - проверяем TTL (expires_at > now)
-      - проверяем, что not used (used_at is NULL)
-      - помечаем used_at = now
-      - возвращаем { type, params }
     """
     owner_addr = (user.eth_address or "").lower()
 
-    # state — это просто string(UUID), который мы вернули ранее = PK id
     try:
         state_uuid = uuid.UUID(body.state)
     except Exception:

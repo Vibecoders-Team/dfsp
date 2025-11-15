@@ -17,6 +17,7 @@ pytestmark = pytest.mark.e2e
 # Вспомогательные функции
 # =========================
 
+
 def setup_user_with_files(client: httpx.Client, file_count: int) -> tuple[int, dict, EIP712Signer]:
     """
     Регистрирует нового пользователя, линкует Telegram chat_id
@@ -183,8 +184,37 @@ def _register_user_for_bot_jwt(client: httpx.Client) -> tuple[EIP712Signer, dict
 
 
 # =========================
+# Тесты для /bot/me
+# =========================
+
+
+def test_bot_me_linked_chat_id(client: httpx.Client):
+    chat_id, _, signer = setup_user_with_files(client, 1)
+    headers = {"X-TG-Chat-Id": str(chat_id)}
+
+    resp = client.get("/bot/me", headers=headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["address"].lower() == signer.address.lower()
+    assert "display_name" in data
+
+
+def test_bot_me_no_header(client: httpx.Client):
+    resp = client.get("/bot/me")
+    # Поведение выравниваем с /bot/files: отсутствие заголовка -> 400
+    assert resp.status_code == 400
+
+
+def test_bot_me_unlinked_chat_id(client: httpx.Client):
+    headers = {"X-TG-Chat-Id": "999999999"}
+    resp = client.get("/bot/me", headers=headers)
+    assert resp.status_code == 404
+
+
+# =========================
 # Тесты для /bot/files
 # =========================
+
 
 def test_get_files_successfully(client: httpx.Client):
     chat_id, _, _ = setup_user_with_files(client, 3)
@@ -236,6 +266,7 @@ def test_get_files_invalid_cursor(client: httpx.Client):
 # =========================
 # Тесты для /bot/grants
 # =========================
+
 
 def test_get_outgoing_grants(client: httpx.Client, pow_header_factory: Callable):
     setup_data = setup_user_with_grants(client, 2, pow_header_factory)
@@ -289,6 +320,7 @@ def test_grants_invalid_direction(client: httpx.Client):
 # Тесты для /bot/verify/{fileId}
 # =========================
 
+
 def test_bot_verify_existing_file(client: httpx.Client):
     chat_id, _, _ = setup_user_with_files(client, 1)
     headers = {"X-TG-Chat-Id": str(chat_id)}
@@ -325,6 +357,7 @@ def test_bot_verify_not_found(client: httpx.Client):
 # =========================
 # Тесты для /bot/action-intents
 # =========================
+
 
 def test_action_intent_create_and_consume(client: httpx.Client):
     """
