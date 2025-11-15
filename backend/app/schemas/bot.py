@@ -1,11 +1,15 @@
 # backend/app/schemas/bot.py
 from __future__ import annotations
+
 from datetime import datetime
-from pydantic import BaseModel, Field
 from enum import Enum
+
+from pydantic import BaseModel, Field
+
 
 class BotFile(BaseModel):
     """Компактное представление файла для ответа боту."""
+
     id_hex: str = Field(..., description="File ID в виде hex-строки (32 байта)")
     name: str
     size: int
@@ -19,8 +23,12 @@ class BotFile(BaseModel):
 
 class BotFileListResponse(BaseModel):
     """Ответ со списком файлов и курсором для следующей страницы."""
+
     files: list[BotFile]
-    cursor: str | None = Field(None, description="Курсор для следующей страницы (ISO timestamp)")
+    cursor: str | None = Field(
+        None,
+        description="Курсор для следующей страницы (ISO timestamp)",
+    )
 
 
 class GrantDirection(str, Enum):
@@ -38,7 +46,7 @@ class BotGrant(BaseModel):
     used: int
     max_dl: int = Field(
         ..., alias="max"
-    )  # <--- ИЗМЕНЕНИЕ: Используем max_dl из модели и отдаем как max
+    )  # используем max_dl из модели и отдаём как max
     expiresAt: datetime
     status: str  # "active", "expired", "revoked", "used_up"
 
@@ -50,4 +58,17 @@ class BotGrantListResponse(BaseModel):
     """Ответ со списком грантов и курсором для следующей страницы."""
 
     grants: list[BotGrant]
-    cursor: str | None = Field(None, description="Курсор для следующей страницы (ISO timestamp)")
+    cursor: str | None = Field(
+        None,
+        description="Курсор для следующей страницы (ISO timestamp)",
+    )
+
+
+class BotProfileResponse(BaseModel):
+    """Профиль пользователя для бота (/bot/me)."""
+
+    address: str = Field(..., description="Связанный wallet-адрес пользователя")
+    display_name: str | None = Field(
+        None,
+        description="Отображаемое имя пользователя, если задано",
+    )
