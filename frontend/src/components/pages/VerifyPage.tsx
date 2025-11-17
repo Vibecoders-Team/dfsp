@@ -66,6 +66,7 @@ export default function VerifyPage() {
         fileId,
         cid: meta.cid || undefined,
         checksum: meta.checksum || undefined,
+        name: (meta as any).name || undefined,
         size: meta.size || undefined,
         createdAt: meta.createdAt || undefined,
         mime: meta.mime || undefined,
@@ -171,6 +172,12 @@ export default function VerifyPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
+                {onChainData.name && (
+                  <div>
+                    <div className="text-sm text-gray-500 mb-1">File Name</div>
+                    <div>{onChainData.name}</div>
+                  </div>
+                )}
                 <div>
                   <div className="text-sm text-gray-500 mb-1">CID</div>
                   <code className="text-sm bg-gray-100 px-2 py-1 rounded block">

@@ -58,7 +58,9 @@ extend-exclude = [".venv/*"]
 
 [tool.ruff.lint]
 select = ["E","F","W","I","UP","B","ANN","N","C4","T20","Q","S","RUF"]
-ignore = ["ANN101","ANN102","S101"]
+# ANN101 and ANN102 were removed in newer ruff releases; ignoring them has no effect
+# Keep S101 ignored (project preference)
+ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN", "S"]

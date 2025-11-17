@@ -48,6 +48,7 @@ def verify(
             checksum=normalize_checksum(db_file.checksum) or "0x",
             size=db_file.size,
             mime=db_file.mime,
+            name=db_file.name,
         )
 
     # 2. Получаем данные из блокчейна (on-chain)
@@ -61,11 +62,13 @@ def verify(
         if raw_onchain_meta and any(raw_onchain_meta.values()):
             checksum_hex = normalize_checksum(raw_onchain_meta.get("checksum"))
             if checksum_hex:
+                oc_name = raw_onchain_meta.get("name") if isinstance(raw_onchain_meta.get("name"), str) else None
                 onchain_data = FileMeta(
                     cid=raw_onchain_meta.get("cid", ""),
                     checksum=checksum_hex,
                     size=int(raw_onchain_meta.get("size", 0)),
                     mime=raw_onchain_meta.get("mime", None),
+                    name=oc_name,
                 )
     except Exception as e:
         # Логируем ошибку, но не прерываем выполнение, чтобы можно было сравнить с пустыми данными

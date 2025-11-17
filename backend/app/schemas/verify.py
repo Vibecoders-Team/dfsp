@@ -7,6 +7,7 @@ class FileMeta(BaseModel):
     checksum: str = Field(pattern=r"^0x[0-9a-fA-F]{64}$")
     size: int
     mime: str | None
+    name: str | None = None
 
 class VerifyOut(BaseModel):
     """Схема ответа для эндпоинта верификации."""

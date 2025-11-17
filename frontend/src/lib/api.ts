@@ -64,7 +64,8 @@ export type MetaOut = {
     checksum: string;
     size: number;
     mime: string;
-    createdAt: number;
+    name?: string;
+    createdAt?: number;
 };
 export type VersionsOut = {
     versions: Array<{

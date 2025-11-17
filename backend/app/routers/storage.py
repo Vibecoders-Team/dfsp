@@ -231,13 +231,24 @@ class MetaOut(BaseModel):
     size: int | None = None
     mime: str | None = None
     createdAt: int | None = None
+    name: str | None = None
 
 
 @router.get("/meta/{id_hex}", response_model=MetaOut)
-def meta(id_hex: str, chain: Chain = Depends(get_chain)):
+def meta(id_hex: str, chain: Chain = Depends(get_chain), db: Session = Depends(get_db)):
     if not (isinstance(id_hex, str) and id_hex.startswith("0x") and len(id_hex) == 66):
         raise HTTPException(400, "bad_id")
+    # Get on-chain meta
     m: dict[str, Any] = chain.meta_of_full(bytes.fromhex(id_hex[2:]))
+    # Try to fetch off-chain DB record for optional fields like `name`
+    file_name: str | None = None
+    try:
+        file_id_bytes = bytes.fromhex(id_hex[2:])
+        db_file = db.get(FileModel, file_id_bytes)
+        if db_file and getattr(db_file, 'name', None):
+            file_name = db_file.name
+    except Exception:
+        file_name = None
 
     cs = m.get("checksum")
     if isinstance(cs, (bytes, bytearray)):
@@ -254,6 +265,7 @@ def meta(id_hex: str, chain: Chain = Depends(get_chain)):
         size=int(m.get("size") or 0),
         mime=m.get("mime"),
         createdAt=int(m.get("createdAt") or 0),
+        name=file_name,
     )
 
 

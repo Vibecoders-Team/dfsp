@@ -106,7 +106,7 @@ export default function UploadPage() {
       setProgress(0);
 
       const start = performance.now();
-      const res = await storeEncrypted(enc.blob, { idHex, checksum: kch, plainSize: uploadedFile.size, filename: uploadedFile.name + '.enc' });
+      const res = await storeEncrypted(enc.blob, { idHex, checksum: kch, plainSize: uploadedFile.size, filename: uploadedFile.name + '.enc', origName: uploadedFile.name, origMime: uploadedFile.mimeType });
       const elapsedMs = performance.now() - start;
       // Если бэкенд изменил id (например, коллизия персонифицирована), перенесём ключ
       if (res.id_hex && res.id_hex !== idHex) {
