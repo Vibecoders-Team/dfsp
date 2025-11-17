@@ -1,16 +1,16 @@
 from __future__ import annotations
-from datetime import datetime
+
 import uuid
+from datetime import datetime
 
 import sqlalchemy as sa
-from sqlalchemy import ForeignKey, UniqueConstraint, Index, func
+from sqlalchemy import ForeignKey, Index, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.models.grants import Grant
 
 from app.db.base import Base
+from app.models.grants import Grant
 
-from typing import List
 
 class File(Base):
     __tablename__ = "files"
@@ -24,8 +24,10 @@ class File(Base):
     id: Mapped[bytes] = mapped_column(sa.LargeBinary(32), primary_key=True)
 
     owner_id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"),
-        index=True, nullable=False
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
     )
 
     name: Mapped[str] = mapped_column(nullable=False)
@@ -38,9 +40,10 @@ class File(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    grants: Mapped[List["Grant"]] = relationship(
+    grants: Mapped[list[Grant]] = relationship(
         "Grant", back_populates="file", cascade="all, delete-orphan"
     )
+
 
 class FileVersion(Base):
     __tablename__ = "file_versions"

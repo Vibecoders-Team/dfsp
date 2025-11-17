@@ -1,5 +1,5 @@
-import pytest
 import httpx
+import pytest
 
 # Предполагаем, что DEV_CHAIN_ID будет импортирован из conftest
 # Если нет, можно определить его здесь: DEV_CHAIN_ID = 31337
@@ -23,7 +23,9 @@ def test_health_ok_minimal(client: httpx.Client):
     )
 
     data = response.json()
-    assert data.get("status") in ("healthy", "degraded"), "API status should be 'healthy' or 'degraded'"
+    assert data.get("status") in ("healthy", "degraded"), (
+        "API status should be 'healthy' or 'degraded'"
+    )
 
 
 def test_health_dependencies(client: httpx.Client):

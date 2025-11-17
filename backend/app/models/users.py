@@ -9,10 +9,8 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-
 from app.models.grants import Grant
 
-from typing import List
 
 class User(Base):
     __tablename__ = "users"
@@ -34,13 +32,13 @@ class User(Base):
         sa.DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    given_grants: Mapped[List["Grant"]] = relationship(
+    given_grants: Mapped[list[Grant]] = relationship(
         "Grant",
         foreign_keys="Grant.grantor_id",
         back_populates="grantor",
         cascade="all, delete-orphan",
     )
-    received_grants: Mapped[List["Grant"]] = relationship(
+    received_grants: Mapped[list[Grant]] = relationship(
         "Grant",
         foreign_keys="Grant.grantee_id",
         back_populates="grantee",

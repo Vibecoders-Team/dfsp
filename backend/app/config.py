@@ -5,7 +5,7 @@ import logging
 import os
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, PositiveInt, field_validator
@@ -15,20 +15,21 @@ log = logging.getLogger("dfsp.settings")
 
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.is_file():
-    print(f"Loading environment variables from: {env_path}")
+    log.info("Loading environment variables from: %s", env_path)
     load_dotenv(dotenv_path=env_path)
 else:
-    print(f"Warning: .env file not found at {env_path}")
+    log.warning("Warning: .env file not found at %s", env_path)
 
 
 # ------------------------------- вспомогательные вещи -------------------------------
+
 
 class Quotas(BaseModel):
     download_bytes_day: int = 2_000_000_000  # 2 ГБ
     meta_tx_per_day: int = 50
 
 
-def _parse_origins(val: str | List[str] | None) -> List[str]:
+def _parse_origins(val: str | list[str] | None) -> list[str]:
     """
     Принимает JSON-массив или CSV-строку и возвращает уникальный список, очищенный от пустых значений.
     Поддерживает '*' (любой источник).
@@ -71,6 +72,7 @@ def _mask(s: str | None, keep: int = 4) -> str | None:
 
 # ------------------------------- цепочка/контракты (опционально) -------------------------------
 
+
 class ChainConfig(BaseModel):
     chainId: int
     verifyingContracts: dict[str, str]
@@ -78,6 +80,7 @@ class ChainConfig(BaseModel):
 
 
 # --------------------------------------- основные настройки ---------------------------------------
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -91,8 +94,8 @@ class Settings(BaseSettings):
     # --- База/Redis ---
     postgres_dsn: str = Field(alias="POSTGRES_DSN")
     # поддерживаем и REDIS_URL, и REDIS_DSN — возьмём первый не-пустой
-    redis_url_raw: Optional[str] = Field(default=None, alias="REDIS_URL")
-    redis_dsn_raw: Optional[str] = Field(default=None, alias="REDIS_DSN")
+    redis_url_raw: str | None = Field(default=None, alias="REDIS_URL")
+    redis_dsn_raw: str | None = Field(default=None, alias="REDIS_DSN")
 
     # --- Интеграции (пока могут быть None; подключим позже) ---
     ipfs_api: str | None = Field(default=None, alias="IPFS_API")
@@ -110,25 +113,27 @@ class Settings(BaseSettings):
     jwt_refresh_ttl_days: PositiveInt = Field(7, alias="JWT_REFRESH_TTL_DAYS")
 
     # --- Auth challenge ---
-    auth_nonce_ttl: Union[timedelta, int] = Field(default=timedelta(minutes=5), alias="AUTH_NONCE_TTL")
+    auth_nonce_ttl: timedelta | int = Field(default=timedelta(minutes=5), alias="AUTH_NONCE_TTL")
     auth_nonce_bytes: PositiveInt = Field(default=16, alias="AUTH_NONCE_BYTES")
 
-    @field_validator('auth_nonce_ttl', mode='before')
+    @field_validator("auth_nonce_ttl", mode="before")
     @classmethod
-    def parse_auth_nonce_ttl(cls, v):
+    def parse_auth_nonce_ttl(cls, v: object):
         if isinstance(v, int):
             return timedelta(seconds=v)
         return v
 
     # --- CORS ---
-    cors_origins_raw: str | List[str] | None = Field(default=None, alias="CORS_ORIGINS")
+    cors_origins_raw: str | list[str] | None = Field(default=None, alias="CORS_ORIGINS")
     cors_origin_raw: str | None = Field(default=None, alias="CORS_ORIGIN")
 
     # --- Квоты (вложенные, дефолты) ---
     quotas: Quotas = Field(default_factory=Quotas, alias="QUOTAS")
     # Плоские env-переменные для квот (удобные для DevOps)
-    quota_download_bytes_day_env: Optional[int] = Field(default=None, alias="QUOTA_DOWNLOAD_BYTES_PER_DAY")
-    quota_meta_tx_per_day_env: Optional[int] = Field(default=None, alias="QUOTA_META_TX_PER_DAY")
+    quota_download_bytes_day_env: int | None = Field(
+        default=None, alias="QUOTA_DOWNLOAD_BYTES_PER_DAY"
+    )
+    quota_meta_tx_per_day_env: int | None = Field(default=None, alias="QUOTA_META_TX_PER_DAY")
 
     # --- Relayer/Celery очереди ---
     relayer_high_queue: str = Field(default="relayer.high", alias="RELAYER_HIGH_QUEUE")
@@ -138,8 +143,8 @@ class Settings(BaseSettings):
     pow_difficulty_base: int = Field(default=18, alias="POW_DIFFICULTY_BASE")
     pow_challenge_ttl_seconds: int = Field(
         default=300, alias="POW_CHALLENGE_TTL_SECONDS"
-    ) # 5 минут
-    pow_enabled: bool = Field(default=True, alias="POW_ENABLED") # Глобальный переключатель
+    )  # 5 минут
+    pow_enabled: bool = Field(default=True, alias="POW_ENABLED")  # Глобальный переключатель
 
     chain_rpc_url_raw: str | None = Field(default=None, alias="CHAIN_RPC_URL")
     chain_public_rpc_url: str = os.getenv("CHAIN_PUBLIC_RPC_URL", "")
@@ -154,13 +159,13 @@ class Settings(BaseSettings):
     relayer_private_key: str | None = Field(default=None, alias="RELAYER_PRIVATE_KEY")
 
     def __init__(
-            self,
-            jwt_secret: str = "dev_secret",
-            jwt_algorithm: str = "HS256",
-            jwt_access_ttl_minutes: int = 15,
-            jwt_refresh_ttl_days: int = 7,
-            chain_rpc_url_raw: str | None = None,
-            **values: Any,
+        self,
+        jwt_secret: str = "dev_secret",
+        jwt_algorithm: str = "HS256",
+        jwt_access_ttl_minutes: int = 15,
+        jwt_refresh_ttl_days: int = 7,
+        chain_rpc_url_raw: str | None = None,
+        **values: Any,  # noqa: ANN401 - forwarded kwargs to BaseSettings are intentionally untyped
     ) -> None:
         """
         Поддерживаем явный конструктор только ради статического анализатора:
@@ -182,7 +187,9 @@ class Settings(BaseSettings):
         """Возвращает CHAIN_RPC_URL или бросает ошибку — явная и ранняя ошибка конфигурации."""
         val = self.chain_rpc_url_raw
         if not val:
-            raise RuntimeError("Missing required configuration: CHAIN_RPC_URL (set env CHAIN_RPC_URL)")
+            raise RuntimeError(
+                "Missing required configuration: CHAIN_RPC_URL (set env CHAIN_RPC_URL)"
+            )
         return val
 
     @property

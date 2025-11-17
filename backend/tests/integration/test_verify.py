@@ -1,8 +1,14 @@
 # backend/tests/integration/test_files_meta_verify.py
+import logging
 import secrets
-import pytest
+
 import httpx
+import pytest
+
 from .conftest import is_hex_bytes32
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 pytestmark = pytest.mark.e2e
 
@@ -56,7 +62,7 @@ def test_verify_full_storage_to_match_true(client: httpx.Client, auth_headers: d
     """
     # Шаг 1: Готовим и загружаем файл через эндпоинт /storage/store.
     # Этот эндпоинт должен создавать запись и в БД, и в блокчейне.
-    file_content = f"Test file content {secrets.token_hex(8)}".encode("utf-8")
+    file_content = f"Test file content {secrets.token_hex(8)}".encode()
     files_payload = {"file": ("test_verify.txt", file_content, "text/plain")}
 
     # Отправляем запрос на загрузку
@@ -93,6 +99,8 @@ def test_verify_full_storage_to_match_true(client: httpx.Client, auth_headers: d
 
     # Дополнительная проверка: чек-суммы действительно совпадают
     assert verify_data["onchain"]["checksum"] == verify_data["offchain"]["checksum"]
-    print(
-        f"\nVerification successful for file {file_id_hex}. Checksum: {verify_data['onchain']['checksum']}"
+    logger.info(
+        "Verification successful for file %s. Checksum: %s",
+        file_id_hex,
+        verify_data["onchain"]["checksum"],
     )

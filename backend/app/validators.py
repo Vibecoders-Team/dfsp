@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 
-from eth_utils.address import is_address
-from cryptography.hazmat.primitives.serialization import load_pem_public_key
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from eth_utils.address import is_address
+
+logger = logging.getLogger(__name__)
 
 HEX32_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
 
@@ -29,6 +32,7 @@ def validate_eth_address(addr: str) -> bool:
     try:
         return bool(is_address(addr))
     except Exception:
+        logger.debug("validate_eth_address failed for %r", addr, exc_info=True)
         return False
 
 
@@ -69,4 +73,6 @@ def validate_rsa_spki_pem(pem: str) -> bool:
     except (ValueError, UnsupportedAlgorithm):
         return False
     except Exception:
+        logger.debug("validate_rsa_spki_pem unexpected failure for given pem (truncated): %s",
+                     (pem[:60] + "...") if isinstance(pem, str) else str(pem), exc_info=True)
         return False

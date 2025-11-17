@@ -1,9 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from fastapi.middleware.cors import CORSMiddleware
 
 try:
     from starlette.middleware.proxy_headers import ProxyHeadersMiddleware  # type: ignore
@@ -13,27 +13,27 @@ except Exception:
     except Exception:
         ProxyHeadersMiddleware = None  # type: ignore
 
-from app.routers.health import router as health_router
+from app.middleware import SecurityHeadersMiddleware
+from app.middleware.observability import ObservabilityMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import pow as pow_router
-from app.routers.auth import router as auth_router
-from app.routers.storage import router as storage_router
 from app.routers.admin import router as admin_router
-
-from .routers.files import router as files_router
-from .routers.meta_tx import router as mtx_router
-from .routers.verify import router as verify_router
-from .routers.download import router as download_router
-from .routers.grants import router as grants_router
-from .routers.users import router as users_router
-from .routers.anchors import router as anchors_router
-from .routers.chain_info import router as chain_info_router
+from app.routers.auth import router as auth_router
+from app.routers.health import router as health_router
+from app.routers.storage import router as storage_router
 
 # NEW: telemetry
 from app.telemetry.logging import init_logging
 from app.telemetry.metrics import router as metrics_router
-from app.middleware.observability import ObservabilityMiddleware
-from app.middleware.rate_limit import RateLimitMiddleware
-from app.middleware import SecurityHeadersMiddleware
+
+from .routers.anchors import router as anchors_router
+from .routers.chain_info import router as chain_info_router
+from .routers.download import router as download_router
+from .routers.files import router as files_router
+from .routers.grants import router as grants_router
+from .routers.meta_tx import router as mtx_router
+from .routers.users import router as users_router
+from .routers.verify import router as verify_router
 
 # Initialize structured logging
 init_logging()
@@ -64,9 +64,10 @@ app.add_middleware(
 # Security headers for all responses
 app.add_middleware(SecurityHeadersMiddleware)
 
+
 # Convert 422 validation errors to 400 as per AC
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request, exc: RequestValidationError):  # type: ignore[no-redef]
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:  # type: ignore[no-redef]
     # Sanitize pydantic error objects so they are always JSON serializable
     sanitized: list[dict] = []
     try:
@@ -87,6 +88,7 @@ async def validation_exception_handler(request, exc: RequestValidationError):  #
     except Exception:
         sanitized = [{"type": "validation_error", "detail": "invalid input"}]
     return JSONResponse(status_code=400, content={"detail": sanitized})
+
 
 app.include_router(health_router)
 app.include_router(metrics_router)  # /metrics

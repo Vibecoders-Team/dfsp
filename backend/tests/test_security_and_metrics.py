@@ -33,4 +33,3 @@ def test_prometheus_metrics_endpoint_and_increment():
     # After 2 health hits, api_requests_total should contain lines for /health
     assert "api_requests_total" in body
     assert "api_request_duration_seconds" in body
-

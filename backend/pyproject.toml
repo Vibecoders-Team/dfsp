@@ -52,15 +52,19 @@ dev = [
 ]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py311"
-extend-exclude = [".venv/*"]
+extend-exclude = [
+    ".venv/*",
+    "build/*",
+    "migrations/*",
+]
 
 [tool.ruff.lint]
-select = ["E","F","W","I","UP","B","ANN","N","C4","T20","Q","S","RUF"]
+select = ["E","F","W","I","UP","B","ANN","C4","T20","Q","S","RUF"]
 # ANN101 and ANN102 were removed in newer ruff releases; ignoring them has no effect
 # Keep S101 ignored (project preference)
-ignore = ["S101"]
+ignore = ["S101", "RUF002", "RUF003", "RUF059"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN", "S"]
@@ -72,6 +76,11 @@ line-ending = "lf"
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"
+multiline-quotes = "double"
+docstring-quotes = "double"
 
 [tool.pyright]
 pythonVersion = "3.11"

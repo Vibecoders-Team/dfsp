@@ -1,6 +1,14 @@
-import os, time, argparse, sys
+import argparse
+import logging
+import os
+import sys
+import time
+
 import psycopg
 import redis
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
 def _normalize_dsn(dsn: str) -> str:
@@ -26,12 +34,12 @@ def wait_db(dsn: str, deadline: float) -> None:
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1;")
                     cur.fetchone()
-            print("[wait] DB OK")
+            logger.info("[wait] DB OK")
             return
         except Exception as e:
-            print(f"[wait] DB not ready: {e}")
+            logger.warning(f"[wait] DB not ready: {e}")
             time.sleep(1)
-    print("[wait] DB timeout", file=sys.stderr)
+    logger.error("[wait] DB timeout")
     sys.exit(1)
 
 
@@ -40,12 +48,12 @@ def wait_redis(url: str, deadline: float) -> None:
         try:
             r = redis.Redis.from_url(url, socket_connect_timeout=5)
             if r.ping():
-                print("[wait] Redis OK")
+                logger.info("[wait] Redis OK")
                 return
         except Exception as e:
-            print(f"[wait] Redis not ready: {e}")
+            logger.warning(f"[wait] Redis not ready: {e}")
             time.sleep(1)
-    print("[wait] Redis timeout", file=sys.stderr)
+    logger.error("[wait] Redis timeout")
     sys.exit(1)
 
 
@@ -61,9 +69,9 @@ if __name__ == "__main__":
     if dsn:
         wait_db(dsn, deadline)
     else:
-        print("[wait] POSTGRES_DSN not set -> skip DB wait")
+        logger.info("[wait] POSTGRES_DSN not set -> skip DB wait")
 
     if redis_url:
         wait_redis(redis_url, deadline)
     else:
-        print("[wait] REDIS_URL not set -> skip Redis wait")
+        logger.info("[wait] REDIS_URL not set -> skip Redis wait")

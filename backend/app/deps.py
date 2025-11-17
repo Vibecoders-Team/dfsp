@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Generator
 
 import redis
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from typing import Generator
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.blockchain.web3_client import Chain
+from app.config import Settings, settings
 from app.ipfs.client import IpfsClient
-from app.config import settings
 
 
-def get_settings():
+def get_settings() -> Settings:
     return settings
 
 
@@ -26,7 +25,9 @@ engine = create_engine(
 SessionLocal = sessionmaker(engine, autoflush=False, autocommit=False, future=True)
 
 # Redis connection with pool
-_pool = redis.ConnectionPool.from_url(settings.redis_dsn, max_connections=int(getattr(settings, "redis_max_connections", 100)))
+_pool = redis.ConnectionPool.from_url(
+    settings.redis_dsn, max_connections=int(getattr(settings, "redis_max_connections", 100))
+)
 rds = redis.Redis(connection_pool=_pool, decode_responses=True)
 
 
@@ -54,7 +55,9 @@ def get_chain() -> Chain:
             chain_id=int(os.getenv("CHAIN_ID", "31337")),
             contract_name=os.getenv("REGISTRY_CONTRACT_NAME", "FileRegistry"),
             tx_from=os.getenv("CHAIN_TX_FROM") or None,
-            deploy_json_path=os.getenv("CONTRACTS_DEPLOYMENT_JSON", "/app/shared/deployment.localhost.json"),
+            deploy_json_path=os.getenv(
+                "CONTRACTS_DEPLOYMENT_JSON", "/app/shared/deployment.localhost.json"
+            ),
             relayer_private_key=os.getenv("RELAYER_PRIVATE_KEY") or settings.relayer_private_key,
         )
     # если инстанс уже жив, но контрактов нет — попробуем перечитать файл

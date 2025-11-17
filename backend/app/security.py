@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -16,8 +16,8 @@ bearer = HTTPBearer(auto_error=True)
 
 
 def get_current_user(
-        creds: HTTPAuthorizationCredentials = Depends(bearer),
-        db: Session = Depends(get_db),
+    creds: HTTPAuthorizationCredentials = Depends(bearer),
+    db: Session = Depends(get_db),
 ) -> User:
     token = creds.credentials
     try:
@@ -37,8 +37,12 @@ def get_current_user(
 
 
 def make_token(sub: str, ttl_min: int) -> str:
-    now = datetime.now(timezone.utc)
-    payload = {"sub": sub, "iat": int(now.timestamp()), "exp": int((now + timedelta(minutes=ttl_min)).timestamp())}
+    now = datetime.now(UTC)
+    payload = {
+        "sub": sub,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=ttl_min)).timestamp()),
+    }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 

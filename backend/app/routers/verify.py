@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, cast
 import logging
+from typing import cast
 
 from eth_typing import HexStr
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,15 +10,15 @@ from sqlalchemy.orm import Session
 from web3 import Web3
 
 from app.blockchain.web3_client import Chain
-from app.deps import get_db, get_chain
+from app.deps import get_chain, get_db
 from app.models import File
-from app.schemas.verify import VerifyOut, FileMeta
+from app.schemas.verify import FileMeta, VerifyOut
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/verify", tags=["verify"])
 
 
-def normalize_checksum(value: Any) -> str | None:
+def normalize_checksum(value: object) -> str | None:
     """Приводит чек-сумму в байтах к hex-строке '0x...'."""
     if isinstance(value, (bytes, bytearray)):
         return "0x" + value.hex()
@@ -62,7 +62,11 @@ def verify(
         if raw_onchain_meta and any(raw_onchain_meta.values()):
             checksum_hex = normalize_checksum(raw_onchain_meta.get("checksum"))
             if checksum_hex:
-                oc_name = raw_onchain_meta.get("name") if isinstance(raw_onchain_meta.get("name"), str) else None
+                oc_name = (
+                    raw_onchain_meta.get("name")
+                    if isinstance(raw_onchain_meta.get("name"), str)
+                    else None
+                )
                 onchain_data = FileMeta(
                     cid=raw_onchain_meta.get("cid", ""),
                     checksum=checksum_hex,

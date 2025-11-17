@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional
+from collections.abc import Iterable
+from typing import Any
 
 from fastapi.testclient import TestClient
 
-from app.main import app
 import app.deps as deps
-import app.telemetry.metrics as metrics_mod
 import app.routers.health as health_mod
+import app.telemetry.metrics as metrics_mod
+from app.main import app
 
 
 class _Pipe:
-    def __init__(self, rds: "FakeRedis"):
-        self._ops: List[tuple[str, tuple[Any, ...]]] = []
+    def __init__(self, rds: FakeRedis):
+        self._ops: list[tuple[str, tuple[Any, ...]]] = []
         self._rds = rds
 
     def incr(self, key: str):
@@ -40,8 +41,8 @@ class _Pipe:
 
 class FakeRedis:
     def __init__(self):
-        self.kv: Dict[str, Any] = {}
-        self.lists: Dict[str, List[Any]] = {}
+        self.kv: dict[str, Any] = {}
+        self.lists: dict[str, list[Any]] = {}
 
     def ping(self):
         return True
@@ -49,7 +50,7 @@ class FakeRedis:
     def get(self, key: str):
         return self.kv.get(key)
 
-    def set(self, key: str, val: Any, ex: Optional[int] = None):
+    def set(self, key: str, val: Any, ex: int | None = None):
         self.kv[key] = val
         return True
 
@@ -77,7 +78,7 @@ class FakeRedis:
         arr = self.lists.get(key, [])
         if stop < 0:
             stop = len(arr) + stop
-        return arr[start: stop + 1]
+        return arr[start : stop + 1]
 
     def lpush(self, key: str, val: Any):
         self.lists.setdefault(key, []).insert(0, val)
@@ -85,7 +86,7 @@ class FakeRedis:
 
     def ltrim(self, key: str, start: int, stop: int):
         arr = self.lists.get(key, [])
-        self.lists[key] = arr[start: stop + 1]
+        self.lists[key] = arr[start : stop + 1]
         return True
 
     def scan_iter(self, match: str) -> Iterable[bytes]:
@@ -126,8 +127,10 @@ def override_db():
     class _Res:
         def __init__(self, val: int):
             self._val = val
+
         def scalar(self):
             return self._val
+
     class _DB:
         def execute(self, stmt):
             q = str(stmt)
@@ -136,8 +139,10 @@ def override_db():
             if "from grants" in q:
                 return _Res(0)
             return _Res(1)
+
     def _gen():
         yield _DB()
+
     return _gen
 
 
@@ -168,4 +173,3 @@ def test_metrics_prometheus_and_health_ok(monkeypatch):
     j = hresp.json()
     assert isinstance(j, dict)
     assert "status" in j
-

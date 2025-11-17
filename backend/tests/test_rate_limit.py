@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import time
+
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.deps import rds
+from app.main import app
 
 client = TestClient(app)
 
@@ -24,7 +25,7 @@ def test_auth_login_rate_limit_per_endpoint():
     # Perform 10 login attempts; the 11th should be 429 (limit 10/hour per IP)
     last_status = None
     got_429 = False
-    for i in range(12):
+    for _i in range(12):
         resp = client.post("/auth/login", json={})
         last_status = resp.status_code
         if last_status == 429:
@@ -40,7 +41,7 @@ def test_auth_register_rate_limit_per_endpoint():
     # Perform 3 register attempts; the 4th should be 429 (limit 3/hour per IP)
     last_status = None
     got_429 = False
-    for i in range(5):
+    for _i in range(5):
         resp = client.post("/auth/register", json={})
         last_status = resp.status_code
         if last_status == 429:
@@ -60,11 +61,10 @@ def test_global_public_rate_limit_health_endpoint():
 
     # Hit /health more than 100 times; expect at least one 429
     got_429 = False
-    for i in range(120):
+    for _i in range(120):
         r = client.get("/health")
         if r.status_code == 429:
             assert r.headers.get("Retry-After") is not None
             got_429 = True
             break
     assert got_429, "expected 429 for global per-IP rate limit on /health"
-

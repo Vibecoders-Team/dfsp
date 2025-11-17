@@ -159,7 +159,9 @@ services:
         echo "Starting Celery worker...";
         echo "Waiting for Redis at $${REDIS_URL}...";
         uv run python -c "
-        import redis, time, sys, os
+        import redis, time, sys, os, logging
+        logging.basicConfig(level=logging.INFO)
+        log = logging.getLogger('wait-for-redis')
         url = os.getenv('REDIS_URL', 'redis://dfsp-redis:6379/0')
         timeout = int(os.getenv('WAIT_FOR_TIMEOUT', '60'))
         deadline = time.time() + timeout
@@ -167,12 +169,12 @@ services:
             try:
                 r = redis.Redis.from_url(url, socket_connect_timeout=5)
                 if r.ping():
-                    print('[wait] Redis OK')
+                    log.info('[wait] Redis OK')
                     sys.exit(0)
             except Exception as e:
-                print(f'[wait] Redis not ready: {e}')
+                log.warning(f'[wait] Redis not ready: {e}')
                 time.sleep(2)
-        print('[wait] Redis timeout', file=sys.stderr)
+        log.error('[wait] Redis timeout')
         sys.exit(1)
         ";
         echo "Redis OK, starting worker...";
@@ -186,4 +188,3 @@ services:
         condition: service_healthy
     restart: unless-stopped
     networks: [ dfsp ]
-

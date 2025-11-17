@@ -1,6 +1,7 @@
 import secrets
-import pytest
+
 import httpx
+import pytest
 from web3 import Web3
 
 from .conftest import is_hex_bytes32
@@ -15,6 +16,7 @@ def _hex32() -> str:
 def _fake_cid() -> str:
     # бэкенд CID не валидирует строго — для теста любой строковый плейсхолдер
     return "bafy" + secrets.token_hex(16)
+
 
 def test_files_create_typeddata_ok(client: httpx.Client, auth_headers: dict):
     """
@@ -46,7 +48,9 @@ def test_files_create_typeddata_ok(client: httpx.Client, auth_headers: dict):
     # допускаем обе формы chainId: int/str
     assert int(dom.get("chainId", 0)) > 0
     assert dom.get("name") in ("MinimalForwarder",)  # по нашему ТЗ
-    assert isinstance(dom.get("verifyingContract"), str) and dom["verifyingContract"].startswith("0x")
+    assert isinstance(dom.get("verifyingContract"), str) and dom["verifyingContract"].startswith(
+        "0x"
+    )
 
     # типы
     fr = td["types"].get("ForwardRequest")

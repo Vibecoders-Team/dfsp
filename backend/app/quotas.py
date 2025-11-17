@@ -1,31 +1,34 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 from datetime import date, timedelta
-from typing import Any
 
 import redis
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, Header, HTTPException
 
+from app.blockchain.web3_client import Chain
 from app.config import Settings
-from app.deps import get_chain, get_settings, get_redis
+from app.deps import get_chain, get_redis, get_settings
 from app.models import User
 from app.security import get_current_user
-from app.blockchain.web3_client import Chain
+
+logger = logging.getLogger(__name__)
 
 
 # --- Метрики ---
-def _count_rejection(reason: str, redis_client: redis.Redis):
+def _count_rejection(reason: str, redis_client: redis.Redis) -> None:
     redis_client.incr(f"metrics:pow_quota_rejections:{reason}")
 
 
-def _as_int(val: Any) -> int:
+def _as_int(val: object) -> int:
     try:
         if val is None:
             return 0
         if isinstance(val, (bytes, bytearray)):
-            val = val.decode("utf-8", errors="ignore")
+            v = val.decode("utf-8", errors="ignore")
+            return int(v)
         return int(val)  # type: ignore[arg-type]
     except Exception:
         return 0
@@ -43,7 +46,7 @@ class QuotaManager:
         self.chain = chain
         self._today = date.today().isoformat()
 
-    def consume_meta_tx(self):
+    def consume_meta_tx(self) -> None:
         quota_limit = int(self.settings.quotas_effective.meta_tx_per_day)
         key = f"quota:tx:{self.user.id}:{self._today}"
         current_usage = _as_int(self.rds.get(key))
@@ -55,7 +58,7 @@ class QuotaManager:
         pipe.expire(key, timedelta(hours=24, minutes=5))
         pipe.execute()
 
-    def consume_download_bytes(self, file_id: bytes):
+    def consume_download_bytes(self, file_id: bytes) -> None:
         quota_limit = int(self.settings.quotas_effective.download_bytes_day)
         key = f"quota:dl_bytes:{self.user.id}:{self._today}"
         try:
@@ -81,7 +84,9 @@ class PoWValidator:
     """
 
     def __init__(
-        self, redis_client: redis.Redis = Depends(get_redis), settings: Settings = Depends(get_settings)
+        self,
+        redis_client: redis.Redis = Depends(get_redis),
+        settings: Settings = Depends(get_settings),
     ):
         self.rds = redis_client
         self.settings = settings
@@ -101,11 +106,11 @@ class PoWValidator:
         # Метрика: количество выданных PoW-челленджей
         try:
             self.rds.incr("metrics:pow_challenges_total")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to increment pow_challenges_total: %s", e, exc_info=True)
         return {"challenge": challenge, "difficulty": self.difficulty, "ttl": ttl}
 
-    def verify_token(self, pow_token: str | None):
+    def verify_token(self, pow_token: str | None) -> None:
         """
         Проверяет PoW токен. Эту логику мы вынесли из __call__.
         При успешной верификации инкрементируем счётчик успешных проверок.
@@ -136,8 +141,8 @@ class PoWValidator:
         # Успешная проверка
         try:
             self.rds.incr("metrics:pow_verifications_total:ok")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to increment pow_verifications_total: %s", e, exc_info=True)
 
 
 # --- Новая функция-зависимость для проверки ---
@@ -146,7 +151,7 @@ class PoWValidator:
 def validate_pow_token(
     pow_validator: PoWValidator = Depends(PoWValidator),
     pow_token: str | None = Header(None, alias="X-PoW-Token"),
-):
+) -> None:
     """
     Эта зависимость теперь отвечает ТОЛЬКО за проверку токена.
     """

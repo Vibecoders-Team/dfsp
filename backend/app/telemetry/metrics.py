@@ -1,14 +1,23 @@
 from __future__ import annotations
 
-from typing import Any, cast
+import logging
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST  # type: ignore[reportMissingImports]
+from prometheus_client import (  # type: ignore[reportMissingImports]
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.deps import get_db, rds
+
+logger = logging.getLogger(__name__)
 
 # In-process API metrics
 api_requests_total = Counter(
@@ -33,14 +42,12 @@ pow_challenges_total = Gauge("pow_challenges_total", "PoW challenges issued tota
 pow_verifications_total = Gauge(
     "pow_verifications_total", "PoW verifications total by status", ["status"]
 )
-quota_exceeded_total = Gauge(
-    "quota_exceeded_total", "Quota exceeded total by type", ["type"]
-)
+quota_exceeded_total = Gauge("quota_exceeded_total", "Quota exceeded total by type", ["type"])
 
 router = APIRouter()
 
 
-def _parse_int(x: Any) -> int:
+def _parse_int(x: object) -> int:
     try:
         if x is None:
             return 0
@@ -48,11 +55,12 @@ def _parse_int(x: Any) -> int:
             x = x.decode()
         return int(x)
     except Exception:
+        logger.debug("_parse_int failed to convert %r", x, exc_info=True)
         return 0
 
 
 @router.get("/metrics")
-def metrics(db: Session = Depends(get_db)) -> PlainTextResponse:
+def metrics(db: Annotated[Session, Depends(get_db)]) -> PlainTextResponse:
     """Prometheus metrics endpoint.
 
     Before rendering, pull selected gauges from Redis/DB to current values.
@@ -63,23 +71,23 @@ def metrics(db: Session = Depends(get_db)) -> PlainTextResponse:
             try:
                 ln = rds.llen(q)  # type: ignore[attr-defined]
                 relayer_queue_length.labels(queue=q).set(_parse_int(ln))
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as e:
+                logger.debug("metrics: failed to read redis list len for %s: %s", q, e, exc_info=True)
+    except Exception as e:
+        logger.warning("metrics: unexpected error while populating relayer queue gauges: %s", e, exc_info=True)
 
     # Active users / grants DB counters
     try:
         users = db.execute(text("select count(1) from users")).scalar() or 0
         active_users_total.set(int(users))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("metrics: failed to fetch active users count: %s", e, exc_info=True)
     try:
         grants_res = db.execute(text("select count(1) from grants where revoked_at is null"))
-        cnt = (grants_res.scalar() or 0)
+        cnt = grants_res.scalar() or 0
         active_grants_total.set(int(cnt))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("metrics: failed to fetch active grants count: %s", e, exc_info=True)
 
     # Relayer totals and durations from Redis keys populated by relayer
     try:
@@ -92,17 +100,21 @@ def metrics(db: Session = Depends(get_db)) -> PlainTextResponse:
 
         raw_any = rds.lrange("metrics:relayer:durations:submit_forward", 0, 199) or []  # type: ignore[attr-defined]
         raw_list = cast(list[Any], list(raw_any))
-        vals = []
+        vals: list[float] = []
+
         for x in raw_list:
             try:
-                if isinstance(x, bytes):
-                    x = x.decode()
-                vals.append(float(x) / 1000.0)  # ms → seconds
-            except Exception:
-                continue
+                raw = x.decode() if isinstance(x, bytes) else x
+                vals.append(float(raw) / 1000.0)  # ms → seconds
+            except (UnicodeDecodeError, ValueError, TypeError) as e:
+                logger.debug("metrics: skip value %r: %s", x, e, exc_info=True)
+                # нет continue — просто идём к следующему элементу
+                # (после except в теле цикла всё равно больше кода нет)
+
         if vals:
             vals_sorted = sorted(vals)
             n = len(vals_sorted)
+
             def pct(p: float) -> float:
                 if n == 0:
                     return 0.0
@@ -112,35 +124,44 @@ def metrics(db: Session = Depends(get_db)) -> PlainTextResponse:
                 if f == c:
                     return float(vals_sorted[f])
                 return float(vals_sorted[f] * (c - k) + vals_sorted[c] * (k - f))
+
             meta_tx_confirmation_seconds_p50.set(pct(0.5))
             meta_tx_confirmation_seconds_p95.set(pct(0.95))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("metrics: failed to populate relayer metrics: %s", e, exc_info=True)
 
     # PoW / quotas from Redis
     try:
         pow_challenges_total.set(_parse_int(rds.get("metrics:pow_challenges_total")))  # type: ignore[attr-defined]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("metrics: failed to set pow_challenges_total: %s", e, exc_info=True)
     try:
         ok = _parse_int(rds.get("metrics:pow_verifications_total:ok"))  # type: ignore[attr-defined]
         pow_verifications_total.labels(status="ok").set(ok)
         # Aggregate error statuses prefixed pow_ (compat with quotas.py keys)
         for key in rds.scan_iter(match="metrics:pow_quota_rejections:pow_*"):  # type: ignore[attr-defined]
+            name: str | None = None
             try:
                 name = key.decode().split(":", 2)[-1]
                 val = _parse_int(rds.get(key))  # type: ignore[arg-type]
                 pow_verifications_total.labels(status=name).set(val)
-            except Exception:
-                continue
-    except Exception:
-        pass
+            except (UnicodeDecodeError, ValueError, TypeError, AttributeError) as e:
+                logger.debug(
+                    "metrics: skip malformed pow metric %r (key %r): %s",
+                    name or key,
+                    key,
+                    e,
+                    exc_info=True,
+                )
+                # опять же, без continue — цикл сам идёт дальше
+    except Exception as e:
+        logger.debug("metrics: failed to populate pow verification metrics: %s", e, exc_info=True)
     try:
         for t in ("meta_tx_quota", "download_quota"):
             quota_exceeded_total.labels(type=t).set(
                 _parse_int(rds.get(f"metrics:pow_quota_rejections:{t}"))  # type: ignore[attr-defined]
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("metrics: failed to set quota_exceeded_total: %s", e, exc_info=True)
 
     return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)

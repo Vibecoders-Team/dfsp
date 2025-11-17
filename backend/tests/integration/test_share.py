@@ -1,13 +1,16 @@
+from __future__ import annotations
+
+import logging
 import secrets
-import pytest
+from collections.abc import Callable
+
 import httpx
-
-from typing import Optional, Tuple, Callable
-from web3 import Web3
-
-from .conftest import is_hex_bytes32
+import pytest
 
 pytestmark = pytest.mark.e2e
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def _hex32() -> str:
@@ -22,9 +25,9 @@ def _create_file(
     client: httpx.Client,
     headers: dict,
     *,
-    file_id: Optional[str] = None,
-    checksum: Optional[str] = None,
-) -> Tuple[str, str]:
+    file_id: str | None = None,
+    checksum: str | None = None,
+) -> tuple[str, str]:
     fid = file_id or _hex32()
     chk = checksum or _hex32()
     payload = {
@@ -77,7 +80,7 @@ def test_share_bad_file_id_400(
         "encK_map": {addr: "a"},
         "request_id": "r1",
     }
-    r = client.post(f"/files/0x1234/share", json=body, headers=headers)
+    r = client.post("/files/0x1234/share", json=body, headers=headers)
     assert r.status_code == 400
 
 
@@ -182,7 +185,7 @@ def test_share_meta_tx_quota(
         if r.status_code == 429:
             assert "meta_tx_quota_exceeded" in r.text
             quota_exceeded = True
-            print(f"\nQuota exceeded on request #{i + 1}, which is expected.")
+            logger.info("Quota exceeded on request #%d, which is expected.", i + 1)
             break  # Выходим из цикла, как только получили нужную ошибку
 
     # Финальная проверка: убеждаемся, что мы действительно поймали ошибку превышения квоты

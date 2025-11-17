@@ -1,4 +1,5 @@
 """Pydantic schemas for anchoring API."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -21,4 +22,3 @@ class AnchorDetailResponse(AnchorResponse):
     """Detailed anchor response including event count."""
 
     event_count: int = Field(..., description="Number of events in this period")
-

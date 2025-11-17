@@ -3,15 +3,14 @@ from __future__ import annotations
 import hashlib
 import time
 import uuid
-from typing import Callable
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
-from app.telemetry.logging import get_logger
-from app.telemetry.metrics import api_requests_total, api_request_duration_seconds
 from app.security import parse_token
+from app.telemetry.logging import get_logger
+from app.telemetry.metrics import api_request_duration_seconds, api_requests_total
 
 
 class ObservabilityMiddleware(BaseHTTPMiddleware):
@@ -35,8 +34,9 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
                 sub = str(getattr(payload, "sub", None) or payload.get("sub"))
                 if sub and sub.lower() != "none":
                     user_id_hash = hashlib.sha256(sub.encode("utf-8")).hexdigest()
-            except Exception:
+            except Exception as e:
                 user_id_hash = None
+                logger.debug("observability: failed to parse token for user id: %s", e, exc_info=True)
 
         # Timing
         t0 = time.perf_counter()
@@ -51,10 +51,12 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             dt = time.perf_counter() - t0
             # Metrics
             try:
-                api_requests_total.labels(method=method, endpoint=endpoint, status=str(status_code)).inc()
+                api_requests_total.labels(
+                    method=method, endpoint=endpoint, status=str(status_code)
+                ).inc()
                 api_request_duration_seconds.labels(endpoint=endpoint).observe(dt)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("observability: failed to update metrics: %s", e, exc_info=True)
             # Structured log (no IP / headers)
             try:
                 action = f"{method} {endpoint}"
@@ -66,6 +68,5 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
                     status=status_code,
                     user_id_hash=user_id_hash,
                 )
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.warning("observability: failed to emit structured log: %s", e, exc_info=True)

@@ -13,9 +13,7 @@ from app.db.base import Base
 
 class MetaTxRequest(Base):
     __tablename__ = "meta_tx_requests"
-    __table_args__ = (
-        Index("ix_mtx_status_created", "status", "created_at"),
-    )
+    __table_args__ = (Index("ix_mtx_status_created", "status", "created_at"),)
 
     request_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

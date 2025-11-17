@@ -1,16 +1,19 @@
 """Event logging service for audit trail and anchoring."""
+
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 from eth_hash.auto import keccak
+from sqlalchemy.orm import Session
+
 from app.config import settings
-from app.models.events import Event
 from app.deps import SessionLocal  # use isolated session
+from app.models.events import Event
 
 log = logging.getLogger(__name__)
 
@@ -18,7 +21,7 @@ log = logging.getLogger(__name__)
 class EventLogger:
     """Service for logging events to database for anchoring."""
 
-    def __init__(self, db=None) -> None:
+    def __init__(self, db: Session | None = None) -> None:
         # keep signature compatible; db is unused now (we use isolated sessions)
         self._unused_db = db
 
@@ -29,7 +32,7 @@ class EventLogger:
         period_id = floor(timestamp / period_seconds)
         """
         if ts is None:
-            ts = datetime.now(timezone.utc)
+            ts = datetime.now(UTC)
         # Convert to Unix timestamp
         timestamp = int(ts.timestamp())
         period_seconds = settings.anchor_period_min * 60
@@ -53,8 +56,8 @@ class EventLogger:
                 s.commit()
                 try:
                     s.refresh(event)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("EventLogger: s.refresh failed: %s", e, exc_info=True)
         except Exception as e:
             log.warning("EventLogger: failed to persist event: %s", e)
         return event
@@ -81,7 +84,7 @@ class EventLogger:
             Created Event instance
         """
         if ts is None:
-            ts = datetime.now(timezone.utc)
+            ts = datetime.now(UTC)
         period_id = self.compute_period_id(ts)
         payload_hash = self.compute_payload_hash(payload)
 

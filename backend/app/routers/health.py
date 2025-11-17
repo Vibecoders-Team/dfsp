@@ -1,24 +1,29 @@
+from __future__ import annotations
+
 import json
 import os
 import time
 import urllib.request
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.deps import get_db, rds, get_chain
+from app.deps import get_chain, get_db, rds
 
 router = APIRouter(tags=["health"])
 START_TIME = time.time()
 
 
-def _ok(v: Any) -> bool:
-    return (isinstance(v, dict) and bool(v.get("ok"))) or v == "ok"
+def _ok(v: object) -> bool:
+    try:
+        return (isinstance(v, dict) and bool(v.get("ok"))) or v == "ok"
+    except Exception:
+        return False
 
 
-def _parse_required(env_val: Optional[str]) -> list[str]:
+def _parse_required(env_val: str | None) -> list[str]:
     if not env_val:
         return ["db", "redis"]
     items = [x.strip() for x in env_val.split(",") if x.strip()]
@@ -86,7 +91,7 @@ def get_health_checks(db: Session) -> dict[str, Any]:
 
 
 @router.get("/health", status_code=status.HTTP_200_OK)
-def health(db: Session = Depends(get_db)):
+def health(db: Session = Depends(get_db)) -> dict[str, Any]:
     checks = get_health_checks(db)
     is_healthy = all(_ok(v) for v in checks.values())
     status_str = "healthy" if is_healthy else "degraded"
@@ -99,12 +104,12 @@ def health(db: Session = Depends(get_db)):
 
 
 @router.get("/live", status_code=status.HTTP_200_OK)
-def live():
+def live() -> dict[str, str]:
     return {"status": "alive"}
 
 
 @router.get("/ready")
-def ready(db: Session = Depends(get_db), response: Response = Response()):
+def ready(db: Session = Depends(get_db), response: Response = Response()) -> dict[str, Any]:
     checks = get_health_checks(db)
     required = _parse_required(os.getenv("READINESS_REQUIRED"))  # default: ["db", "redis"]
     is_ready = all(_ok(checks.get(k)) for k in required)
