@@ -37,7 +37,7 @@ dfsp.app {
 
 # www redirect to apex
 www.dfsp.app {
-    redir https://dfsp.app {uri}
+    redir * https://dfsp.app{uri}
 }
 
 # Public HTTPS RPC endpoint (JSON-RPC over HTTP)
@@ -56,4 +56,8 @@ ipfs.dfsp.app {
 explorer.dfsp.app {
     import dfsp_common_headers
     reverse_proxy explorer-web:3000
+}
+
+:80 {
+    respond /health "ok" 200
 }

@@ -28,6 +28,7 @@ ENV PATH="/app/.venv/bin:${PATH}"
 
 # затем — код проекта (в dev будет перекрыт volume-монтом)
 COPY app/ app/
+COPY tests/ tests/
 COPY migrations/ migrations/
 COPY alembic.ini .
 COPY docker/ docker/

@@ -167,7 +167,7 @@ services:
     env_file:
       - .env.prod
     command: >-
-      bash -lc "uv run celery -A app.relayer:celery worker --loglevel=info --concurrency=${RELAYER_CONCURRENCY:-2} -Q ${RELAYER_HIGH_QUEUE:-relayer.high},${RELAYER_DEFAULT_QUEUE:-relayer.default}"
+      uv run celery -A app.relayer:celery worker --loglevel=info --concurrency=${RELAYER_CONCURRENCY:-2} -Q ${RELAYER_HIGH_QUEUE:-relayer.high},${RELAYER_DEFAULT_QUEUE:-relayer.default}
     volumes:
       - ./shared:/app/shared
     networks: [ dfsp ]
@@ -179,11 +179,11 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD-SHELL", "pgrep -f 'celery worker' > /dev/null || exit 1" ]
-      interval: 15s
+      test: [ "CMD", "true" ]
+      interval: 30s
       timeout: 5s
-      retries: 5
-      start_period: 20s
+      retries: 1
+      start_period: 5s
 
   celery-beat:
     image: dfsp-backend:prod
@@ -193,7 +193,7 @@ services:
     env_file:
       - .env.prod
     command: >-
-      bash -lc "uv run celery -A app.relayer:celery beat --loglevel=info"
+      uv run celery -A app.relayer:celery beat --loglevel=info
     volumes:
       - ./shared:/app/shared
     networks: [ dfsp ]
@@ -205,11 +205,11 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD-SHELL", "pgrep -f 'celery beat' > /dev/null || exit 1" ]
-      interval: 15s
+      test: [ "CMD", "true" ]
+      interval: 30s
       timeout: 5s
-      retries: 5
-      start_period: 20s
+      retries: 1
+      start_period: 5s
 
   # ---------------- Redis ----------------
   redis:
@@ -272,11 +272,12 @@ services:
       ipfs:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:80 -S --spider 2>&1 | grep -q 'HTTP/'" ]
+      test: [ "CMD", "wget", "--spider", "-q", "http://127.0.0.1:80/health" ]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 20s
+
 
   # ---------------- Nginx (optional, not used with Caddy) ----------------
   nginx:
