@@ -91,7 +91,7 @@ export default function GrantsPage() {
         <div className="flex items-center justify-between">
           <h1>{role === 'received' ? 'Received Grants' : 'My Shared Grants'}</h1>
           <div className="flex items-center gap-2">
-            <Select value={role} onValueChange={(v: any) => setRole(v)}>
+            <Select value={role} onValueChange={(v: 'received' | 'granted') => setRole(v)}>
               <SelectTrigger className="w-40">
                 <SelectValue />
               </SelectTrigger>
@@ -108,7 +108,7 @@ export default function GrantsPage() {
         </div>
 
         <div className="flex items-center gap-4">
-          <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
+          <Select value={statusFilter} onValueChange={(v: 'all' | 'active' | 'pending' | 'expired' | 'revoked' | 'exhausted') => setStatusFilter(v)}>
             <SelectTrigger className="w-48">
               <SelectValue />
             </SelectTrigger>

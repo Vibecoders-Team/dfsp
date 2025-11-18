@@ -144,7 +144,7 @@ export async function ensureRSA(): Promise<{ privateKey: CryptoKey; publicPem: s
     try {
       const privOaep = await importPkcs8As("RSA-OAEP", existing);
       const storedPem = await idbGet<string>(KEY_RSA_PUB_PEM);
-      let pubPem = storedPem || await exportRsaPublicPemFromPrivate(privOaep);
+      const pubPem = storedPem || await exportRsaPublicPemFromPrivate(privOaep);
       if (!storedPem) await idbSet(KEY_RSA_PUB_PEM, pubPem);
       await idbSet(KEY_RSA_ALGO, "OAEP");
       return { privateKey: privOaep, publicPem: pubPem };
@@ -158,7 +158,7 @@ export async function ensureRSA(): Promise<{ privateKey: CryptoKey; publicPem: s
         await idbSet(KEY_RSA_PUB_PEM, converted.pem);
         await idbSet(KEY_RSA_ALGO, "OAEP");
         return { privateKey: converted.oaepPriv, publicPem: converted.pem };
-      } catch (e) {
+      } catch {
         // Fallback: generate brand new OAEP
         const fresh = await generateRsaOaep();
         await idbSet(KEY_RSA_PRIV_PKCS8, fresh.pkcs8);

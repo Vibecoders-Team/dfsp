@@ -1,4 +1,3 @@
-import { getSelectedAgentKind } from '@/lib/agent/manager';
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
@@ -9,15 +8,11 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Progress } from '../ui/progress';
-import { Key, User, Shield, Download, Upload, AlertCircle, CheckCircle2, Copy } from 'lucide-react';
+import { Key, User, Download, Upload, AlertCircle, CheckCircle2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { ensureRSA, createBackupBlob, createBackupBlobRSAOnly } from '../../lib/keychain';
 import { publishMyKeyCard } from '../../lib/publishMyKey';
-import { reencryptEOA } from '../../lib/keychain';
 import { isEOAUnlocked } from '@/lib/keychain';
-
-const AUTOLOCK_KEY = 'dfsp_autolock_enabled';
 
 function SettingsNav() {
   const location = useLocation();

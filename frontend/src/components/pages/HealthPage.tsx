@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Layout from '../Layout';
 import { Button } from '../ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { CheckCircle2, XCircle, AlertCircle, RefreshCw, Database, Server, Link as LinkIcon, Box } from 'lucide-react';
 

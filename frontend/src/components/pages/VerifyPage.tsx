@@ -66,7 +66,7 @@ export default function VerifyPage() {
         fileId,
         cid: meta.cid || undefined,
         checksum: meta.checksum || undefined,
-        name: (meta as any).name || undefined,
+        name: meta.name || undefined,
         size: meta.size || undefined,
         createdAt: meta.createdAt || undefined,
         mime: meta.mime || undefined,
@@ -125,11 +125,6 @@ export default function VerifyPage() {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
-  };
-
-  const truncate = (str: string, length: number) => {
-    if (str.length <= length) return str;
-    return str.slice(0, length / 2) + '...' + str.slice(-length / 2);
   };
 
   return (

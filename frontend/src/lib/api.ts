@@ -9,7 +9,7 @@ import { getAgent } from "./agent/manager"; // normalized quotes
 
 // export const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE });
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE ?? "/api";
+const API_BASE = (import.meta as unknown as { env?: Record<string,string> }).env?.VITE_API_BASE ?? "/api";
 export const ACCESS_TOKEN_KEY = "ACCESS_TOKEN";
 
 export const api = axios.create({baseURL: API_BASE});
@@ -29,7 +29,7 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 /** ---- 401/403 handler ---- */
 api.interceptors.response.use(
     (r: AxiosResponse) => r,
-    (err: any) => {
+    (err: unknown) => {
         if (isAxiosError(err)) {
             const status = err.response?.status;
             if (status === 401 || status === 403) {
@@ -206,7 +206,7 @@ export async function fetchGranteePubKey(addr: string): Promise<string> {
     } else {
       me = await agent.getAddress();
     }
-  } catch (e: any) {
+  } catch {
     // Fallback to local ensureEOA if agent retrieval fails
     me = (await ensureEOA()).address;
   }
@@ -228,7 +228,7 @@ export async function fetchGranteePubKey(addr: string): Promise<string> {
       saveKey(a, data.rsa_public);
       return data.rsa_public;
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     // если 404 — оставим как PUBLIC_PEM_NOT_FOUND; остальные ошибки прокинем наружу
     if (isAxiosError(err) && err.response?.status === 404) {
       // fall-through
@@ -250,7 +250,7 @@ export async function listGrants(fileId: string): Promise<Grant[]> {
   try {
     const { data } = await api.get<{ items: Grant[] }>(`/files/${fileId}/grants`);
     return data.items;
-  } catch (e: any) {
+  } catch (e: unknown) {
     if (isAxiosError(e)) {
       if (e.response?.status === 404) return [];
     }

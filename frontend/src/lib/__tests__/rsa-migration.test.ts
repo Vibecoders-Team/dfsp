@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { __resetKeychainForTests, __injectLegacyRsaPkcs8, __getRsaAlgoForTests, ensureRSA } from '../keychain';
 import { webcrypto as nodeCrypto } from 'crypto';
 
-if (!(globalThis as any).crypto || !(globalThis as any).crypto.subtle) {
-  (globalThis as any).crypto = nodeCrypto as unknown as Crypto;
+if (!(globalThis as unknown as { crypto?: Crypto }).crypto || !(globalThis as unknown as { crypto?: Crypto }).crypto!.subtle) {
+  (globalThis as unknown as { crypto?: Crypto }).crypto = nodeCrypto as unknown as Crypto;
 }
 
 async function generateLegacyPSS(): Promise<ArrayBuffer> {
@@ -27,4 +27,3 @@ describe('RSA migration from PSS to OAEP', () => {
     expect(after).toBe('OAEP');
   });
 });
-

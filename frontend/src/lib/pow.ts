@@ -16,7 +16,7 @@ export async function getPowToken(forceNew = true): Promise<PowToken> {
 
   const ch: PowChallenge = await requestPowChallenge();
 
-  const cores = Math.max(2, Math.min((navigator as any).hardwareConcurrency || 4, 8));
+  const cores = Math.max(2, Math.min((navigator as unknown as { hardwareConcurrency?: number }).hardwareConcurrency || 4, 8));
   const workers = Array.from({ length: cores }, () => new Worker(new URL("../workers/pow.worker.ts", import.meta.url), { type: "module" }));
 
   // A controller to stop all workers
@@ -24,36 +24,65 @@ export async function getPowToken(forceNew = true): Promise<PowToken> {
   const stopAll = () => {
     if (settled) return;
     settled = true;
-    for (const w of workers) try { w.terminate(); } catch {}
+    for (const w of workers) {
+      try {
+        w.terminate();
+      } catch {
+        // ignore
+      }
+    }
   };
 
-  const promises = workers.map((w, i) => new Promise<string>((resolve, reject) => {
-    const onMsg = (ev: MessageEvent<{ nonce: string }>) => {
-      resolve(ev.data.nonce);
+  const promises = workers.map((w, i) => new Promise<{ ok: boolean; v?: string }>((resolve) => {
+    const onMsg = (ev: MessageEvent) => {
+      try {
+        const data = (ev.data as unknown) as { nonce?: string };
+        if (data && typeof data.nonce === 'string') {
+          resolve({ ok: true, v: data.nonce });
+        } else {
+          resolve({ ok: false });
+        }
+      } catch {
+        resolve({ ok: false });
+      }
     };
-    const onErr = () => reject(new Error("Worker error"));
+    const onErr = () => resolve({ ok: false });
     w.onmessage = onMsg;
     w.onerror = onErr;
     w.postMessage({ challenge: ch.challenge, difficulty: ch.difficulty, start: i, step: cores });
+    return undefined as unknown as { ok: boolean; v?: string };
   }));
 
-  const timer = new Promise<string>((_, reject) => setTimeout(() => reject(new Error("PoW timeout")), 30_000));
-  // emulate Promise.any: wrap each promise to never reject (map to resolve with token 'REJECTED') and then filter
-  const guarded = promises.map(p => p.then(v => ({ ok: true as const, v })).catch(() => ({ ok: false as const })));
+  // Promise.any is not available in older TS lib targets; implement a small helper
+  function promiseAny<T>(ps: Promise<T>[]): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let remaining = ps.length;
+      if (remaining === 0) {
+        reject(new Error('No promises'));
+        return;
+      }
+      let rejected = 0;
+      for (const p of ps) {
+        p.then((v) => resolve(v)).catch(() => {
+          rejected += 1;
+          if (rejected === ps.length) reject(new Error('All promises rejected'));
+        });
+      }
+    });
+  }
 
   try {
-    const winner = await Promise.race<[Promise<unknown>, Promise<string>]>([Promise.race(guarded) as any, timer] as any);
-    const result = (winner as unknown as { ok?: boolean; v?: string });
-    if (!result || !result.ok || !result.v) throw new Error('No PoW solution');
-    const nonce = result.v;
+    const winner = await promiseAny(promises);
+    if (!winner || !winner.ok || !winner.v) throw new Error('No PoW solution');
+    const nonce = winner.v as string;
     stopAll();
     const token: PowToken = { challenge: ch.challenge, nonce };
     const ttlMs = Math.max(0, (ch.ttl ?? 0) * 1000);
     cached = { token, expiresAt: Date.now() + ttlMs };
     return token;
-  } catch (e) {
+  } catch (err) {
     stopAll();
-    throw e;
+    throw err;
   }
 }
 
