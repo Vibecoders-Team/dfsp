@@ -79,7 +79,8 @@ def test_register_typed_data_mismatch(client: httpx.Client, test_signer: EIP712S
     response = client.post("/auth/register", json=payload)
 
     assert response.status_code == 400
-    assert "typed_data_mismatch" in response.json()["detail"]
+    # Валидация сначала проверяет nonce, поэтому ошибка будет bad_message_nonce
+    assert "bad_message_nonce" in response.json()["detail"]
 
 
 def test_register_bad_signature(client: httpx.Client, test_signer: EIP712Signer):

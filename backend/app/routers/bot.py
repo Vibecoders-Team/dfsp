@@ -2,19 +2,22 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from typing_extensions import Annotated
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.deps import get_db
+from app.deps import get_db, get_chain
+from app.blockchain.web3_client import Chain
 from app.models import File, Grant, User
 from app.models.action_intent import ActionIntent
+from app.models.anchors import Anchor
 from app.repos import telegram_repo
 from app.repos.user_repo import get_by_eth_address
 from app.security import parse_token
+import logging
 from app.schemas.action_intent import (
     ActionIntentCreateIn,
     ActionIntentCreateOut,
@@ -330,10 +333,18 @@ def bot_list_grants(
 # =========================
 
 
+def _normalize_checksum(value: Any) -> str | None:
+    """Приводит чек-сумму в байтах к hex-строке '0x...'."""
+    if isinstance(value, (bytes, bytearray)):
+        return "0x" + value.hex()
+    return None
+
+
 @router.get("/verify/{file_id}")
 def bot_verify_file(
     file_id: str,
     db: Session = Depends(get_db),
+    chain: Chain = Depends(get_chain),
 ):
     """
     Bot-friendly верификация файла по fileId.
@@ -341,7 +352,15 @@ def bot_verify_file(
     Валидация:
       - формат 0x + 64 hex, иначе 400.
       - если файла нет в БД — 404.
+
+    Возвращает:
+      - onchain_ok: есть ли файл в блокчейне
+      - offchain_ok: есть ли файл в БД
+      - match: совпадают ли checksum on-chain и off-chain
+      - lastAnchorTx: последняя транзакция анкора (если есть)
     """
+    log = logging.getLogger(__name__)
+    
     # валидация формата
     if not (isinstance(file_id, str) and file_id.startswith("0x") and len(file_id) == 66):
         raise HTTPException(status_code=400, detail="bad_file_id")
@@ -350,14 +369,50 @@ def bot_verify_file(
     except ValueError:
         raise HTTPException(status_code=400, detail="bad_file_id")
 
+    # 1. Проверяем off-chain (БД)
     file_row = db.get(File, file_id_bytes)
-    if file_row is None:
+    offchain_ok = file_row is not None
+    
+    if not offchain_ok:
         raise HTTPException(status_code=404, detail="file_not_found")
 
-    offchain_ok = True
+    # 2. Проверяем on-chain (блокчейн)
     onchain_ok = False
-    match = onchain_ok and offchain_ok
+    match = False
+    
+    try:
+        raw_onchain_meta = chain.meta_of_full(file_id_bytes)
+        
+        # Проверяем, что смарт-контракт вернул непустые данные
+        # (обычно возвращает нули для несуществующего id)
+        if raw_onchain_meta and any(raw_onchain_meta.values()):
+            onchain_ok = True
+            
+            # Сравниваем checksum если есть данные в обеих системах
+            if file_row.checksum:
+                onchain_checksum = _normalize_checksum(raw_onchain_meta.get("checksum"))
+                offchain_checksum = _normalize_checksum(file_row.checksum)
+                
+                if onchain_checksum and offchain_checksum:
+                    match = onchain_checksum.lower() == offchain_checksum.lower()
+    except Exception as e:
+        # Логируем ошибку, но не прерываем выполнение
+        log.warning(f"Failed to fetch on-chain meta for {file_id}: {e}")
+        onchain_ok = False
+
+    # 3. Получаем последнюю транзакцию анкора (если есть)
     last_anchor_tx: Optional[str] = None
+    try:
+        latest_anchor = db.scalar(
+            select(Anchor)
+            .where(Anchor.tx_hash.isnot(None))
+            .order_by(Anchor.created_at.desc())
+            .limit(1)
+        )
+        if latest_anchor and latest_anchor.tx_hash:
+            last_anchor_tx = latest_anchor.tx_hash
+    except Exception as e:
+        log.warning(f"Failed to fetch latest anchor tx: {e}")
 
     return {
         "onchain_ok": onchain_ok,

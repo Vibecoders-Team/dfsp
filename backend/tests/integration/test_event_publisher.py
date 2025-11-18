@@ -6,6 +6,7 @@ from app.deps import rds
 
 def _clear_events():
     rds.delete("events:queue")
+    rds.delete("events:seen")  # Удаляем set для идемпотентности
     for key in list(rds.scan_iter("events:seen:*")):
         rds.delete(key)
 
