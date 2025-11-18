@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from aiogram import BaseMiddleware
 from aiogram.types import Update
@@ -12,7 +13,7 @@ from ..utils.format import mask_chat_id
 logger = logging.getLogger(__name__)
 
 
-def _get_chat_id(event: Update) -> Optional[int]:
+def _get_chat_id(event: Update) -> int | None:
     if event.message:
         return event.message.chat.id
     if event.callback_query and event.callback_query.message:

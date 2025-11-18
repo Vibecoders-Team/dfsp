@@ -1,4 +1,5 @@
 from typing import Literal
+
 from pydantic import AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,6 +11,7 @@ class Settings(BaseSettings):
     DFSP_API_TOKEN: str | None = None
 
     QUEUE_DSN: str | None = None
+    REDIS_DSN: str = "redis://localhost:6379/0"
 
     WEBHOOK_SECRET: str
     PUBLIC_WEB_ORIGIN: AnyHttpUrl
@@ -18,7 +20,7 @@ class Settings(BaseSettings):
 
     # новый конфиг
     BOT_MODE: Literal["dev", "prod"] = "dev"  # dev = polling, prod = webhook
-    APP_HOST: str = "0.0.0.0"
+    APP_HOST: str = "0.0.0.0"  # noqa: S104
     APP_PORT: int = 8080
 
     model_config = SettingsConfigDict(

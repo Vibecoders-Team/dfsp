@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import time
 import logging
-from typing import Any, Awaitable, Callable, Optional
+import time
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from aiogram import BaseMiddleware
-from aiogram.types import Update, Message, CallbackQuery
+from aiogram.types import CallbackQuery, Message, Update
 
 try:
-    import aioredis  # type: ignore[import]
+    from redis import asyncio as aioredis  # type: ignore[import]
 except Exception:  # на всякий, если пакета нет
     aioredis = None  # type: ignore[assignment]
 
@@ -30,7 +31,7 @@ class RateLimiter:
         # key -> (count, reset_at_ts)
         self._buckets: dict[int, tuple[int, float]] = {}
 
-    def check(self, key: int, *, now: Optional[float] = None) -> tuple[bool, float]:
+    def check(self, key: int, *, now: float | None = None) -> tuple[bool, float]:
         """
         :return: (allowed, retry_after_seconds)
         """
@@ -70,7 +71,7 @@ class RateLimitMiddleware(BaseMiddleware):
         self.window_seconds = window_seconds
         self._limiter = RateLimiter(max_requests, window_seconds)
 
-        self._redis_dsn: Optional[str] = None
+        self._redis_dsn: str | None = None
         self._redis = None
 
         if settings.QUEUE_DSN and settings.QUEUE_DSN.startswith("redis://"):
@@ -107,7 +108,7 @@ class RateLimitMiddleware(BaseMiddleware):
         return True, 0.0
 
     @staticmethod
-    def _get_chat_id(event: Update) -> Optional[int]:
+    def _get_chat_id(event: Update) -> int | None:
         if event.message:
             return event.message.chat.id
         if event.callback_query and event.callback_query.message:
@@ -137,7 +138,7 @@ class RateLimitMiddleware(BaseMiddleware):
         )
 
         # Ответ в чат
-        retry_seconds = max(1, int(round(retry_after))) or self.window_seconds
+        retry_seconds = max(1, round(retry_after))
         text = f"Слишком часто 😅 Попробуйте ещё раз через {retry_seconds} секунд."
 
         if event.message and isinstance(event.message, Message):

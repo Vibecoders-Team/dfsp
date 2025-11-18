@@ -1,10 +1,9 @@
-import httpx
-from typing import Any, Optional
-
-from ..config import settings
+from typing import Any
 
 import httpx
 from pydantic import BaseModel
+
+from ..config import settings
 
 
 class DFSPClient:
@@ -22,13 +21,32 @@ class DFSPClient:
         r = await self._client.get("/health")
         r.raise_for_status()
         return r.json()
-    
+
+
 class BotProfile(BaseModel):
     address: str
     display_name: str | None = None
 
 
-async def get_bot_profile(chat_id: int) -> Optional[BotProfile]:
+class BotFile(BaseModel):
+    """Файл из ответа /bot/files."""
+
+    id_hex: str
+    name: str
+    size: int
+    mime: str
+    cid: str
+    updatedAt: str  # ISO 8601 datetime string
+
+
+class BotFileListResponse(BaseModel):
+    """Ответ со списком файлов."""
+
+    files: list[BotFile]
+    cursor: str | None = None
+
+
+async def get_bot_profile(chat_id: int) -> BotProfile | None:
     """
     Запрос профиля пользователя у бэкенда по Telegram chat_id.
 
@@ -37,8 +55,9 @@ async def get_bot_profile(chat_id: int) -> Optional[BotProfile]:
 
     Возвращает BotProfile или None, если чат не залинкован (404).
     """
-    # ВАЖНО: без .rstrip — AnyHttpUrl не умеет rstrip
-    url = f"{settings.DFSP_API_URL}/bot/me"
+    # Убираем завершающий слеш из URL, если он есть
+    api_url = str(settings.DFSP_API_URL).rstrip("/")
+    url = f"{api_url}/bot/me"
 
     async with httpx.AsyncClient(timeout=5.0) as client:
         resp = await client.get(url, headers={"X-TG-Chat-Id": str(chat_id)})
@@ -55,3 +74,35 @@ async def get_bot_profile(chat_id: int) -> Optional[BotProfile]:
 
     data = resp.json()
     return BotProfile.model_validate(data)
+
+
+async def get_bot_files(chat_id: int, limit: int = 10, cursor: str | None = None) -> BotFileListResponse | None:
+    """
+    Запрос списка файлов у бэкенда по Telegram chat_id.
+
+    GET {DFSP_API_URL}/bot/files?limit=10&cursor=...
+    Header: X-TG-Chat-Id: <chat_id>
+
+    Возвращает BotFileListResponse или None, если чат не залинкован (404).
+    """
+    # Убираем завершающий слеш из URL, если он есть
+    api_url = str(settings.DFSP_API_URL).rstrip("/")
+    url = f"{api_url}/bot/files"
+    params: dict[str, Any] = {"limit": limit}
+    if cursor:
+        params["cursor"] = cursor
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.get(url, headers={"X-TG-Chat-Id": str(chat_id)}, params=params)
+
+    if resp.status_code == 404:
+        # Чат не привязан к кошельку
+        return None
+
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise ValueError(f"DFSP GET /bot/files failed: {exc}") from exc
+
+    data = resp.json()
+    return BotFileListResponse.model_validate(data)

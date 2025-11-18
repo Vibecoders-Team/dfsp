@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 
 def mask_hex_id(value: int | str | None) -> str:
     """
@@ -22,5 +20,5 @@ def mask_hex_id(value: int | str | None) -> str:
     return f"0x{hex_str[:4]}…{hex_str[-4:]}"
 
 
-def mask_chat_id(chat_id: Optional[int]) -> str:
+def mask_chat_id(chat_id: int | None) -> str:
     return mask_hex_id(chat_id)

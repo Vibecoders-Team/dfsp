@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import logging
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
-from aiogram import Router, F
+from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import (
-    Message,
     CallbackQuery,
-    InlineKeyboardMarkup,
     InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
 )
-from aiohttp import ClientSession, ClientError
+from aiohttp import ClientError, ClientSession
 
 from ..config import settings
 
@@ -51,9 +51,7 @@ async def _request_unlink(chat_id: int) -> None:
                     return
 
                 text = await resp.text()
-                logger.error(
-                    "DFSP DELETE /tg/link failed: %s %s", resp.status, text
-                )
+                logger.error("DFSP DELETE /tg/link failed: %s %s", resp.status, text)
                 raise UnlinkBackendError()
 
     except ClientError as e:
@@ -68,10 +66,7 @@ async def _perform_unlink(
     try:
         await _request_unlink(chat_id)
     except UnlinkBackendError:
-        await send(
-            "😔 Сейчас не получается отвязать этот Telegram от аккаунта DFSP.\n"
-            "Попробуй ещё раз чуть позже."
-        )
+        await send("😔 Сейчас не получается отвязать этот Telegram от аккаунта DFSP.\nПопробуй ещё раз чуть позже.")
         return
 
     await send(
@@ -90,15 +85,12 @@ CONFIRM_TEXT = (
 CONFIRM_KB = InlineKeyboardMarkup(
     inline_keyboard=[
         [
-            InlineKeyboardButton(
-                text="✅ Да, отвязать", callback_data="unlink:confirm"
-            ),
-            InlineKeyboardButton(
-                text="↩️ Отмена", callback_data="unlink:cancel"
-            ),
+            InlineKeyboardButton(text="✅ Да, отвязать", callback_data="unlink:confirm"),
+            InlineKeyboardButton(text="↩️ Отмена", callback_data="unlink:cancel"),
         ]
     ]
 )
+
 
 @router.message(Command("unlink"))
 async def cmd_unlink(message: Message) -> None:
@@ -138,4 +130,10 @@ async def cb_unlink_confirm(callback: CallbackQuery) -> None:
         await callback.message.edit_text(text)
 
     await _perform_unlink(chat_id=chat_id, send=send)
-    await callback.answer()
+    await callback.answer("✅ Аккаунт отвязан")
+
+    # Показываем главное меню после отвязки
+    from ..handlers import start as start_handlers
+
+    keyboard = start_handlers.get_main_keyboard(is_linked=False)
+    await callback.message.answer(start_handlers.START_TEXT_UNLINKED, reply_markup=keyboard)

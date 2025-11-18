@@ -3,5 +3,11 @@
 __pycache__/
 bot/.env
 
-.venv/
-bot/.venv/
+# Virtual environments - игнорируем все venv папки
+.venv
+**/.venv
+venv
+**/venv
+
+# Worktrees
+backend-test/

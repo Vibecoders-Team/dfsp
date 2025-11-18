@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from aiogram import BaseMiddleware
-from aiogram.types import Update, Message, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import CallbackQuery, Message, Update
 
 from ..utils.format import mask_chat_id
 
 logger = logging.getLogger(__name__)
 
 
-def _get_chat_id(event: Update) -> Optional[int]:
+def _get_chat_id(event: Update) -> int | None:
     if event.message:
         return event.message.chat.id
     if event.callback_query and event.callback_query.message:
@@ -40,8 +41,7 @@ class ErrorHandlerMiddleware(BaseMiddleware):
             return await handler(event, data)
         except Exception as exc:
             logger.exception(
-                "Unhandled error while processing update "
-                "(trace=%s chat=%s): %s",
+                "Unhandled error while processing update (trace=%s chat=%s): %s",
                 trace_id,
                 masked_chat,
                 exc,
@@ -51,10 +51,7 @@ class ErrorHandlerMiddleware(BaseMiddleware):
             if isinstance(exc, TelegramBadRequest) and "chat not found" in str(exc):
                 return None
 
-            text = (
-                "Ой, что-то пошло не так 🤕\n"
-                "Мы уже смотрим, попробуйте ещё раз чуть позже."
-            )
+            text = "Ой, что-то пошло не так 🤕\nМы уже смотрим, попробуйте ещё раз чуть позже."  # noqa: RUF001
 
             # старательно, но аккуратно отвечаем пользователю
             if event.message and isinstance(event.message, Message):
