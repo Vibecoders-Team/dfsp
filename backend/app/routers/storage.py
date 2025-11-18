@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,17 +33,17 @@ class StoreOut(BaseModel):
 
 @router.post("/store", response_model=StoreOut)
 async def store_file(
-    file: UploadFile = File(...),
-    id_hex: str | None = Form(None),
-    checksum: str | None = Form(None),
-    plain_size: int | None = Form(None),
-    orig_name: str | None = Form(None),
-    orig_mime: str | None = Form(None),
-    chain: Chain = Depends(get_chain),
-    ipfs: IpfsClient = Depends(get_ipfs),
+    file: Annotated[UploadFile, File(...)],
+    id_hex: Annotated[str | None, Form(None)],
+    checksum: Annotated[str | None, Form(None)],
+    plain_size: Annotated[int | None, Form(None)],
+    orig_name: Annotated[str | None, Form(None)],
+    orig_mime: Annotated[str | None, Form(None)],
+    chain: Annotated[Chain, Depends(get_chain)],
+    ipfs: Annotated[IpfsClient, Depends(get_ipfs)],
     # --- ИЗМЕНЕНИЯ ЗДЕСЬ (Зависимость) ---
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> StoreOut:
     MAX_BYTES = 200 * 1024 * 1024  # 200MB
     data = await file.read()
@@ -79,8 +79,8 @@ async def store_file(
             if len(raw) != 32:
                 raise ValueError("bad_len")
             checksum32 = raw
-        except Exception:
-            raise HTTPException(400, "bad_checksum")
+        except Exception as e:
+            raise HTTPException(400, "bad_checksum") from e
     if checksum32 is None:
         checksum32 = Web3.keccak(data)
 
@@ -149,7 +149,7 @@ async def store_file(
         )
     except Exception as e:
         log.error(f"Chain transaction failed: {e}", exc_info=True)
-        raise HTTPException(502, f"chain_error: {e}")
+        raise HTTPException(502, f"chain_error: {e}") from e
 
     try:
         # Проверяем, существует ли уже запись, чтобы обновить ее (логика update)
@@ -216,7 +216,7 @@ async def store_file(
             f"DATABASE FAILED after successful chain transaction {tx_hash}: {e}", exc_info=True
         )
         # Сообщаем об ошибке, чтобы фронт не считал загрузку успешной
-        raise HTTPException(500, "db_error")
+        raise HTTPException(500, "db_error") from e
 
     return StoreOut(
         id_hex="0x" + item_id.hex(),
@@ -233,7 +233,11 @@ class ResolveOut(BaseModel):
 
 
 @router.get("/cid/{id_hex}", response_model=ResolveOut)
-def resolve(id_hex: str, chain: Chain = Depends(get_chain), ipfs: IpfsClient = Depends(get_ipfs)) -> ResolveOut:
+def resolve(
+    id_hex: str,
+    chain: Annotated[Chain, Depends(get_chain)],
+    ipfs: Annotated[IpfsClient, Depends(get_ipfs)],
+) -> ResolveOut:
     if not (isinstance(id_hex, str) and id_hex.startswith("0x") and len(id_hex) == 66):
         raise HTTPException(400, "bad_id")
     cid = chain.cid_of(bytes.fromhex(id_hex[2:]))
@@ -253,7 +257,7 @@ class MetaOut(BaseModel):
 
 
 @router.get("/meta/{id_hex}", response_model=MetaOut)
-def meta(id_hex: str, chain: Chain = Depends(get_chain), db: Session = Depends(get_db)) -> MetaOut:
+def meta(id_hex: str, chain: Annotated[Chain, Depends(get_chain)], db: Annotated[Session, Depends(get_db)]) -> MetaOut:
     if not (isinstance(id_hex, str) and id_hex.startswith("0x") and len(id_hex) == 66):
         raise HTTPException(400, "bad_id")
     # Get on-chain meta
@@ -301,7 +305,7 @@ class VersionsOut(BaseModel):
 
 
 @router.get("/versions/{id_hex}", response_model=VersionsOut)
-def versions(id_hex: str, chain: Chain = Depends(get_chain)) -> VersionsOut:
+def versions(id_hex: str, chain: Annotated[Chain, Depends(get_chain)]) -> VersionsOut:
     if not (isinstance(id_hex, str) and id_hex.startswith("0x") and len(id_hex) == 66):
         raise HTTPException(400, "bad_id")
 
@@ -355,13 +359,13 @@ class HistoryOut(BaseModel):
 @router.get("/history/{id_hex}", response_model=HistoryOut)
 def history(
     id_hex: str,
+    chain: Annotated[Chain, Depends(get_chain)],
     owner: str | None = None,
     event_type: Literal["FileRegistered", "FileVersioned"] | None = None,
     from_block: int | None = None,
     to_block: int | None = None,
     order: Literal["asc", "desc"] = "asc",
     limit: int = 100,
-    chain: Chain = Depends(get_chain),
 ) -> HistoryOut:
     if not (isinstance(id_hex, str) and id_hex.startswith("0x") and len(id_hex) == 66):
         raise HTTPException(400, "bad_id")

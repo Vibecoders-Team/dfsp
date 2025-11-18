@@ -17,7 +17,7 @@ class ShareIn(BaseModel):
 
     @field_validator("users")
     @classmethod
-    def validate_users(cls, v: list[str]):
+    def validate_users(cls, v: list[str]) -> list[str]:
         if not v:
             raise ValueError("users_required")
         uniq = []

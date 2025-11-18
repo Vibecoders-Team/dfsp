@@ -21,7 +21,7 @@ class DatabaseTask(Task):
 
     _db = None
 
-    def after_return(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+    def after_return(self, *args: object, **kwargs: object) -> None:  # type: ignore[no-untyped-def]
         if self._db is not None:
             self._db.close()
 

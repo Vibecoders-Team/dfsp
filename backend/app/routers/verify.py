@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import cast
+from typing import Annotated, cast
 
 from eth_typing import HexStr
 from fastapi import APIRouter, Depends, HTTPException
@@ -28,8 +28,8 @@ def normalize_checksum(value: object) -> str | None:
 @router.get("/{file_id_hex}", response_model=VerifyOut)
 def verify(
     file_id_hex: str,
-    db: Session = Depends(get_db),
-    chain: Chain = Depends(get_chain),
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
 ) -> VerifyOut:
     # Валидация формата file_id, чтобы вернуть 400 вместо 422
     if not (

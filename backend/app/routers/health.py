@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json
 import os
 import time
-import urllib.request
-from typing import Any
+from typing import Annotated, Any
 
+import requests
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -80,9 +79,12 @@ def get_health_checks(db: Session) -> dict[str, Any]:
     # ipfs (API)
     try:
         base = os.getenv("IPFS_API_URL", "http://ipfs:5001/api/v0").rstrip("/")
-        req = urllib.request.Request(base + "/id", data=b"", method="POST")  # type: ignore[arg-type]
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            j = json.loads(resp.read().decode())
+        # allow only http/https schemes to avoid file: or other unexpected schemes
+        if not (base.startswith("http://") or base.startswith("https://")):
+            raise RuntimeError("IPFS_API_URL uses unsupported scheme")
+        resp = requests.post(f"{base}/id", timeout=3)
+        resp.raise_for_status()
+        j = resp.json()
         checks["ipfs"] = {"ok": True, "id": j.get("ID")}
     except Exception as e:
         checks["ipfs"] = {"error": str(e)}
@@ -91,7 +93,7 @@ def get_health_checks(db: Session) -> dict[str, Any]:
 
 
 @router.get("/health", status_code=status.HTTP_200_OK)
-def health(db: Session = Depends(get_db)) -> dict[str, Any]:
+def health(db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
     checks = get_health_checks(db)
     is_healthy = all(_ok(v) for v in checks.values())
     status_str = "healthy" if is_healthy else "degraded"
@@ -109,7 +111,10 @@ def live() -> dict[str, str]:
 
 
 @router.get("/ready")
-def ready(db: Session = Depends(get_db), response: Response = Response()) -> dict[str, Any]:
+def ready(db: Annotated[Session, Depends(get_db)], response: Response | None = None) -> dict[str, Any]:
+    # Provide Response via FastAPI injection if needed by declaring a parameter of type Response
+    if response is None:
+        response = Response()
     checks = get_health_checks(db)
     required = _parse_required(os.getenv("READINESS_REQUIRED"))  # default: ["db", "redis"]
     is_ready = all(_ok(checks.get(k)) for k in required)

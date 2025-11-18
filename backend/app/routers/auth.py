@@ -5,7 +5,7 @@ import logging
 import re
 import secrets
 from os import getenv
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
 from eth_account import Account
 from eth_account.messages import encode_typed_data
@@ -79,11 +79,11 @@ def _verify_login_signature(typed_data: dict[str, Any], signature: str) -> str:
     try:
         msg = encode_typed_data(full_message=typed_data)
     except Exception as e:
-        raise HTTPException(400, f"typed_data_invalid: {e}")
+        raise HTTPException(400, f"typed_data_invalid: {e}") from e
     try:
         return Account.recover_message(msg, signature=signature)
     except Exception as e:
-        raise HTTPException(401, f"bad_signature: {e}")
+        raise HTTPException(401, f"bad_signature: {e}") from e
 
 
 def _recover_login_with_nonce(eth_address: str, nonce_hex: str, signature: str) -> str:
@@ -97,8 +97,8 @@ def _recover_login_with_nonce(eth_address: str, nonce_hex: str, signature: str) 
         sig = Signature(sig_bytes)
         pub = sig.recover_public_key_from_msg_hash(digest)
         return pub.to_checksum_address()
-    except Exception:
-        raise HTTPException(401, "bad_signature")
+    except Exception as e:
+        raise HTTPException(401, "bad_signature") from e
 
 
 def build_login_typed_data(nonce_hex: str, eth_address: str) -> dict[str, Any]:
@@ -172,7 +172,7 @@ def challenge() -> ChallengeOut:
         )
     ],
 )
-def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Tokens:
+def register(payload: RegisterIn, db: Annotated[Session, Depends(get_db)]) -> Tokens:
     key = f"auth:chal:{payload.challenge_id}"
     raw = rds.get(key)
     if not raw:
@@ -235,7 +235,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Tokens:
         )
     ],
 )
-def login(payload: LoginIn, db: Session = Depends(get_db)) -> Tokens:
+def login(payload: LoginIn, db: Annotated[Session, Depends(get_db)]) -> Tokens:
     key = f"auth:chal:{payload.challenge_id}"
     raw = rds.get(key)
     if not raw:

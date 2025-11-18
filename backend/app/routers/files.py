@@ -4,10 +4,11 @@ import base64
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any, Union, cast
+from typing import Annotated, Any, cast
 
 from eth_typing import HexStr
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -31,7 +32,7 @@ AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 
 
 # ---- auth helper: достаём текущего пользователя из Bearer-токена ----
-def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_db)) -> User:
+def require_user(authorization: AuthorizationHeader, db: Annotated[Session, Depends(get_db)]) -> User:
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(401, "auth_required")
@@ -39,8 +40,8 @@ def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_d
         payload = parse_token(token)
         sub = getattr(payload, "sub", None) or payload.get("sub")
         user_id = uuid.UUID(str(sub))
-    except Exception:
-        raise HTTPException(401, "bad_token")
+    except Exception as e:
+        raise HTTPException(401, "bad_token") from e
     user_obj: User | None = db.get(User, user_id)
     if user_obj is None:
         raise HTTPException(401, "user_not_found")
@@ -48,9 +49,6 @@ def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_d
 
 
 # ---- NEW: Schema for file list response ----
-from pydantic import BaseModel
-
-
 class FileListItem(BaseModel):
     id: str  # hex string
     name: str
@@ -67,8 +65,8 @@ class FileListItem(BaseModel):
 # ---- GET /files - List all files for current user ----
 @router.get("", response_model=list[FileListItem])
 def list_my_files(
-    user: User = Depends(require_user),
-    db: Session = Depends(get_db),
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> list[FileListItem]:
@@ -156,18 +154,18 @@ def list_my_files(
 @router.post("", response_model=TypedDataOut)
 def create_file(
     meta: FileCreateIn,
-    user: User = Depends(require_user),
-    db: Session = Depends(get_db),
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     # Schema validation already enforces fileId/checksum hex32, size<=200MB, mime whitelist, sanitized name
     try:
         fid = Web3.to_bytes(hexstr=cast(HexStr, meta.fileId))
-    except Exception:
-        raise HTTPException(400, "bad_file_id")
+    except Exception as e:
+        raise HTTPException(400, "bad_file_id") from e
     try:
         checksum = Web3.to_bytes(hexstr=cast(HexStr, meta.checksum))
-    except Exception:
-        raise HTTPException(400, "bad_checksum")
+    except Exception as e:
+        raise HTTPException(400, "bad_checksum") from e
 
     # Denylist by checksum: Redis set + global DB uniqueness emulation
     try:
@@ -225,7 +223,6 @@ def create_file(
 
     # Try to build typed data via chain, fallback to placeholders if chain is unavailable
     fwd = None
-    fwd_addr: str | None = None
     chain_id_val: int = 31337
     verifying_contract = "0x0000000000000000000000000000000000000000"
     nonce_val: int = 0
@@ -285,14 +282,14 @@ def create_file(
     return {"typedData": typed_data}
 
 
-@router.post("/{id}/share", response_model=Union[ShareOut, DuplicateOut])
+@router.post("/{id}/share", response_model=ShareOut | DuplicateOut)
 def share_file(
     id: str,
     body: ShareIn,
-    # Заменяем `Depends(require_user)` на нашу новую зависимость-защитник
-    user: User = Depends(protect_meta_tx),
-    db: Session = Depends(get_db),
-    chain: Chain = Depends(get_chain),
+    # dependencies as Annotated to avoid calling Depends() at import time (B008)
+    user: Annotated[User, Depends(protect_meta_tx)],
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
 ) -> ShareOut | DuplicateOut:
     if not (isinstance(id, str) and id.startswith("0x") and len(id) == 66):
         raise HTTPException(400, "bad_file_id")
@@ -345,7 +342,7 @@ def share_file(
     try:
         start_nonce = int(chain.read_grant_nonce_cached(grantor_addr))
     except Exception as e:
-        raise HTTPException(502, f"chain_unavailable: {e}")
+        raise HTTPException(502, f"chain_unavailable: {e}") from e
     cap_ids_bytes: list[bytes] = []
     cap_ids_hex: list[str] = []
     for idx, (grantee_addr, _) in enumerate(grantees):
@@ -383,8 +380,8 @@ def share_file(
         enc_b64 = enc_map[grantee_addr.lower()]
         try:
             enc_bytes = base64.b64decode(enc_b64)
-        except Exception:
-            raise HTTPException(400, f"bad_encK_for_{grantee_addr}")
+        except Exception as e:
+            raise HTTPException(400, f"bad_encK_for_{grantee_addr}") from e
         grant = Grant(
             cap_id=cap_b,
             file_id=file_id_bytes,
@@ -410,7 +407,7 @@ def share_file(
     # Log grant_created events for all new grants
     try:
         event_logger = EventLogger(db)
-        for (grantee_addr, grantee_user), cap_b in zip(grantees, cap_ids_bytes, strict=False):
+        for (_grantee_addr, grantee_user), cap_b in zip(grantees, cap_ids_bytes, strict=False):
             event_logger.log_grant_created(
                 cap_id=cap_b,
                 file_id=file_id_bytes,
@@ -432,17 +429,17 @@ def share_file(
 @router.get("/{id}/grants")
 def list_file_grants(
     id: str,
-    user: User = Depends(require_user),
-    db: Session = Depends(get_db),
-    chain: Chain = Depends(get_chain),
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
 ) -> dict[str, Any]:
     # Validate file id (0x + 64)
     if not (isinstance(id, str) and id.startswith("0x") and len(id) == 66):
         raise HTTPException(400, "bad_file_id")
     try:
         file_id_bytes = Web3.to_bytes(hexstr=cast(HexStr, id))
-    except Exception:
-        raise HTTPException(400, "bad_file_id")
+    except Exception as e:
+        raise HTTPException(400, "bad_file_id") from e
 
     # Ensure file exists and belongs to current user
     file_row: File | None = db.get(File, file_id_bytes)

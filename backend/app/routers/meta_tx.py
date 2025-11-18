@@ -3,7 +3,7 @@ from __future__ import annotations
 # NEW: optional sync execution in dev
 import os
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
@@ -27,7 +27,7 @@ def _validate_typed_data(td: dict) -> None:
 
 
 @router.post("/submit")
-def submit(req: MetaTxSubmitIn, response: Response, db: Session = Depends(get_db)) -> dict[str, Any]:
+def submit(req: MetaTxSubmitIn, response: Response, db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
     """
     Принимаем подписанный ForwardRequest и кладем задачу в релейер.
     Гарантируем детерминированный JSON-ответ со статусом.
@@ -52,8 +52,8 @@ def submit(req: MetaTxSubmitIn, response: Response, db: Session = Depends(get_db
     # upsert в БД запись MetaTxRequest (для внутренних дедупов и мониторинга)
     try:
         rid = uuid.UUID(str(req.request_id))
-    except Exception:
-        raise HTTPException(400, "bad_request_id")
+    except Exception as e:
+        raise HTTPException(400, "bad_request_id") from e
     try:
         m = db.get(MetaTxRequest, rid)
         if m is None:

@@ -7,8 +7,10 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from eth_abi.abi import encode as abi_encode
+from eth_typing import HexStr
 from eth_utils.address import to_checksum_address
 from web3 import HTTPProvider, Web3
+from web3.contract import Contract, Event
 from web3.types import TxParams
 
 from app.cache import Cache
@@ -29,7 +31,7 @@ class Chain:
         contract_name: str,
         tx_from: str | None = None,
         relayer_private_key: str | None = None,
-    ):
+    ) -> None:
         self.rpc_url = rpc_url or os.getenv("CHAIN_RPC_URL", "http://chain:8545")
         self.w3 = Web3(HTTPProvider(self.rpc_url))
         self.chain_id = chain_id
@@ -114,8 +116,8 @@ class Chain:
 
     # ----------------- базовое -----------------
 
-    def _tx(self) -> TxParams:
-        tx: TxParams = {"chainId": self.chain_id, "gas": 2_000_000, "value": 0}
+    def _tx(self) -> dict[str, Any]:
+        tx: dict[str, Any] = {"chainId": self.chain_id, "gas": 2_000_000, "value": 0}
         if self.tx_from:
             tx["from"] = self.tx_from
         return tx
@@ -143,7 +145,8 @@ class Chain:
                         if v is not None
                         and k in {"from", "to", "data", "value", "nonce", "chainId"}
                     }
-                    gas_est = self.w3.eth.estimate_gas(cast(TxParams, allowed))
+                    # cast to object first to satisfy strict type-checkers
+                    gas_est = self.w3.eth.estimate_gas(cast(TxParams, cast(object, allowed)))
                     tx["gas"] = min(
                         int(gas_est), 2_000_000
                     )  # Ограничиваем gas, чтобы не превысить баланс
@@ -221,7 +224,7 @@ class Chain:
     def reload_contracts(self) -> None:
         self._load_contracts()
 
-    def get_contract(self, name: str) -> Any:
+    def get_contract(self, name: str) -> Contract:
         c = self.contracts.get(name)
         if not c:
             raise RuntimeError(f"contract {name} not loaded")
@@ -285,7 +288,7 @@ class Chain:
             Cache.set_json(key, {"cid": cid}, ttl=300)
         return cid
 
-    def meta_of_full(self, item_id: bytes) -> dict:
+    def meta_of_full(self, item_id: bytes) -> dict[str, Any]:
         key = f"file_meta:{_hex32(item_id)}"
         cached = Cache.get_json(key)
         if isinstance(cached, dict) and cached:
@@ -297,7 +300,7 @@ class Chain:
         comps = outs.get("components") or []
         res = self.contract.functions.metaOf(item_id).call()
 
-        def to_dict(vals: object) -> dict:
+        def to_dict(vals: object) -> dict[str, object]:
             if isinstance(vals, dict):
                 return vals
             if isinstance(vals, (list, tuple)):
@@ -313,14 +316,14 @@ class Chain:
             Cache.set_json(key, out, ttl=300)  # 5 minutes
         return out
 
-    def versions_of(self, item_id: bytes) -> list[dict]:
+    def versions_of(self, item_id: bytes) -> list[dict[str, Any]]:
         if "versionsOf" not in self._fn:
             return []
         fn = self._fn["versionsOf"]
         outs = (fn.get("outputs") or [{}])[0]
         comps = outs.get("components") or []
         res = self.contract.functions.versionsOf(item_id).call()
-        out: list[dict] = []
+        out: list[dict[str, Any]] = []
         if isinstance(res, (list, tuple)):
             for el in res:
                 if isinstance(el, dict):
@@ -338,10 +341,10 @@ class Chain:
                     out.append({"value": el})
         return out
 
-    def history(self, item_id: bytes, owner: str | None = None) -> list[dict]:
+    def history(self, item_id: bytes, owner: str | None = None) -> list[dict[str, Any]]:
         events: list[dict] = []
 
-        def _evt_logs(evt: object, arg_filters: dict[str, object]) -> list[object]:
+        def _evt_logs(evt: Event, arg_filters: dict[str, object]) -> list[object]:
             try:
                 return list(
                     evt.get_logs(from_block=0, to_block="latest", argument_filters=arg_filters)
@@ -368,7 +371,7 @@ class Chain:
             if evt_name not in self._events:
                 return
             evt = getattr(self.contract.events, evt_name)
-            # ✅ аннотация значения как Any, чтобы не застрять на bytes vs str
+            # Ensure filters are Any for type-checker compatibility
             arg_filters: dict[str, Any] = {"fileId": item_id}
             if owner and any(
                 i.get("name") == "owner" and i.get("indexed")
@@ -404,10 +407,10 @@ class Chain:
 
     # ----------------- НОВОЕ: encode + EIP-712 для форвардера -----------------
 
-    def get_forwarder(self) -> Any:
+    def get_forwarder(self) -> Contract:
         return self.get_contract("MinimalForwarder")
 
-    def get_access_control(self) -> Any:
+    def get_access_control(self) -> Contract:
         return self.get_contract("AccessControlDFSP")
 
     def encode_register_call(
@@ -527,7 +530,7 @@ class Chain:
         if isinstance(file_id, (bytes, bytearray)):
             fid = bytes(file_id)
         elif isinstance(file_id, str) and file_id.startswith("0x") and len(file_id) == 66:
-            fid = Web3.to_bytes(hexstr=cast("HexStr", file_id))  # type: ignore[name-defined]
+            fid = Web3.to_bytes(hexstr=cast(HexStr, file_id))
         else:
             raise ValueError("file_id must be bytes32 or 0x-hex32")
         encoded = abi_encode(
@@ -546,10 +549,10 @@ class Chain:
                 int(msg.get("gas", 0)),
                 int(msg["nonce"]),
                 # ✅ подсказываем типизатору, что это hex-строка
-                Web3.to_bytes(hexstr=cast("HexStr", msg["data"])),  # type: ignore[name-defined]
+                Web3.to_bytes(hexstr=cast(HexStr, msg["data"])),
             )
         except Exception as e:
-            raise RuntimeError(f"bad_forward_request: {e}")
+            raise RuntimeError(f"bad_forward_request: {e}") from e
 
         try:
             ok = bool(fwd.functions.verify(req, signature).call())
@@ -565,7 +568,7 @@ class Chain:
         if isinstance(cap_id, (bytes, bytearray)):
             cap_b = bytes(cap_id)
         elif isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66:
-            cap_b = Web3.to_bytes(hexstr=cast("HexStr", cap_id))  # type: ignore[name-defined]
+            cap_b = Web3.to_bytes(hexstr=cast(HexStr, cap_id))
         else:
             raise ValueError("cap_id must be bytes32 or 0x-hex32")
         tx = ac.functions.useOnce(cap_b).build_transaction(self._tx())
@@ -577,7 +580,7 @@ class Chain:
         if isinstance(cap_id, (bytes, bytearray)):
             cap_b = bytes(cap_id)
         elif isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66:
-            cap_b = Web3.to_bytes(hexstr=cast("HexStr", cap_id))  # type: ignore[name-defined]
+            cap_b = Web3.to_bytes(hexstr=cast(HexStr, cap_id))
         else:
             raise ValueError("cap_id must be bytes32 or 0x-hex32")
         tx = ac.functions.revoke(cap_b).build_transaction(self._tx())

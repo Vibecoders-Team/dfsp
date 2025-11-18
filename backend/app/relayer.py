@@ -3,24 +3,24 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import Any, cast
 
-from app.blockchain.web3_client import Chain
-
-log = logging.getLogger(__name__)
-from datetime import UTC, datetime
-
-from celery import Celery
+from celery import Celery, Task
 from eth_typing import HexStr
 from kombu import Queue
 from sqlalchemy.orm import Session
 from web3 import Web3
 from web3.datastructures import AttributeDict
 from web3.exceptions import ContractLogicError, TimeExhausted, TransactionNotFound
+from web3.types import TxParams
 
+from app.blockchain.web3_client import Chain
 from app.config import settings
 from app.deps import SessionLocal, get_chain, rds  # type: ignore[attr-defined]
 from app.models.meta_tx_requests import MetaTxRequest
+
+log = logging.getLogger(__name__)
 
 # Queue names (env-overridable)
 HIGH_Q = getattr(settings, "relayer_high_queue", None) or "relayer.high"
@@ -40,18 +40,26 @@ celery.conf.task_queues = (
 _existing_imports = celery.conf.get("imports", ())
 if isinstance(_existing_imports, list):
     _existing_imports = tuple(_existing_imports)
-celery.conf.imports = tuple(_existing_imports) + ("app.tasks.anchor",)
+celery.conf.imports = (*tuple(_existing_imports), "app.tasks.anchor")
 
 # route by task name + payload (useOnce/revoke → high)
 
 
-def _route_for_task(name: str, args: tuple, kwargs: dict, options: dict, task=None, **kw) -> dict[str, str]:  # noqa: ANN001
+def _route_for_task(
+    name: str,
+    args: tuple[object, ...],
+    kwargs: dict[str, object],
+    options: dict[str, object],
+    task: Task | None = None,
+) -> dict[str, str]:
+    """Route tasks by name + payload. Typed args/kwargs to satisfy static checks."""
     if name == "relayer.submit_forward":
-        typed: dict[str, Any] | None = None
-        if args and isinstance(args, tuple) and len(args) >= 2 and isinstance(args[1], dict):
-            typed = cast(dict[str, Any], args[1])
-        elif isinstance(kwargs, dict):
-            typed = cast(dict[str, Any] | None, kwargs.get("typed_data")) or None
+        typed: dict[str, object] | None = None
+        # args may be positional: (request_id, typed_data, signature)
+        if isinstance(args, tuple) and len(args) >= 2 and isinstance(args[1], dict):
+            typed = cast(dict[str, object], args[1])
+        else:
+            typed = cast(dict[str, object] | None, kwargs.get("typed_data")) or None
         if typed:
             q = _decide_queue(typed)
             return {"queue": q}
@@ -77,7 +85,7 @@ def _metrics_add_duration(task_type: str, ms: float) -> None:
     pipe.execute()
 
 
-def _build_req_tuple(msg: dict[str, Any]) -> tuple:
+def _build_req_tuple(msg: dict[str, Any]) -> tuple[str, str, int, int, int, bytes]:
     """
     Приводим message из typedData к tuple ForwardRequest:
     (from, to, value, gas, nonce, data)
@@ -113,7 +121,7 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain: Chain, db: Se
 
         ac = chain.get_access_control()
 
-        def _invalidate_for_grant(gr: object) -> None:
+        def _invalidate_for_grant(gr: Grant) -> None:
             try:
                 file_hex = "0x" + bytes(gr.file_id).hex()
                 # Invalidate can_dl for grantee
@@ -129,7 +137,13 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain: Chain, db: Se
                     key = f"grant_nonce:{addr.lower()}"
                     rds.delete(key)
             except Exception as e:
-                log.debug("_invalidate_for_grant: cache invalidation failed for grant %s: %s", getattr(gr, "cap_id", None), e, exc_info=True)
+                # keep message compact to satisfy line-length rule
+                log.debug(
+                    "_invalidate_for_grant: cache invalidation failed for grant %s: %s",
+                    getattr(gr, "cap_id", None),
+                    e,
+                    exc_info=True,
+                )
 
         # Process Used events
         try:
@@ -228,7 +242,7 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain: Chain, db: Se
     retry_backoff=True,
     retry_jitter=True,
 )
-def submit_forward(self: object, request_id: str, typed_data: dict[str, Any], signature: str) -> dict[str, Any]:
+def submit_forward(self: Task, request_id: str, typed_data: dict[str, Any], signature: str) -> dict[str, Any]:
     """
     Отправка meta-тx в OZ MinimalForwarder c пер-Grantor блокировкой, ретраями, метриками и структурированными логами.
     """
@@ -298,17 +312,10 @@ def submit_forward(self: object, request_id: str, typed_data: dict[str, Any], si
             # Build transaction and send as raw (signed) tx to avoid requiring a signer on the node
             fn = fwd.functions.execute(req_tuple, sig_bytes)
             # If tx_params is empty, use chain defaults
-            built = fn.build_transaction(tx_params or chain._tx())
-            # chain._send_tx returns hex string tx hash
-            log.info(
-                "submit_forward: built tx summary: from=%s to=%s nonce=%s gas=%s gasPrice=%s",
-                built.get("from"),
-                built.get("to"),
-                built.get("nonce"),
-                built.get("gas"),
-                built.get("gasPrice") or built.get("maxFeePerGas"),
-            )
-            tx_hash = chain._send_tx(built)
+            # build_transaction expects TxParams | None; cast chain._tx() result appropriately
+            built = fn.build_transaction(cast(TxParams, cast(object, tx_params or chain._tx())))
+            # chain._send_tx expects dict[str, Any]
+            tx_hash = chain._send_tx(cast(dict[str, Any], built))
             log.info("submit_forward: sent tx_hash=%s", tx_hash)
             # Ensure tx_hash is 0x-prefixed hex and cast to HexStr for wait_for_transaction_receipt
             tx_hash_hex = (
@@ -332,9 +339,9 @@ def submit_forward(self: object, request_id: str, typed_data: dict[str, Any], si
                 logs_len,
             )
             try:
-                for i, l in enumerate((receipt.get("logs") or [])[:10]):
-                    addr = l.get("address") if isinstance(l, dict) else getattr(l, "address", None)
-                    topics = l.get("topics") if isinstance(l, dict) else getattr(l, "topics", None)
+                for i, lg in enumerate((receipt.get("logs") or [])[:10]):
+                    addr = lg.get("address") if isinstance(lg, dict) else getattr(lg, "address", None)
+                    topics = lg.get("topics") if isinstance(lg, dict) else getattr(lg, "topics", None)
                     log.info(
                         "submit_forward: receipt.log[%d] address=%s topics_count=%s",
                         i,
@@ -393,10 +400,10 @@ def submit_forward(self: object, request_id: str, typed_data: dict[str, Any], si
                 s in msg_str
                 for s in ("nonce too low", "replacement transaction underpriced", "underpriced")
             ):
-                raise self.retry(exc=e)
-            raise self.retry(exc=e)
+                raise self.retry(exc=e) from e
+            raise self.retry(exc=e) from e
         except Exception as e:
-            raise self.retry(exc=e)
+            raise self.retry(exc=e) from e
     # end with lock
 
 
@@ -432,7 +439,10 @@ def enqueue_forward_request(
 
 
 def _reconcile_pending_for_grantor(grantor_addr: str, chain: Chain, db: Session | None) -> None:
-    """Fallback reconciliation: for pending grants with this grantor, call grantOf(capId) and mark confirmed if present on-chain."""
+    """
+    Fallback reconciliation: for pending grants with this grantor,
+    call grantOf(capId) and mark confirmed if present on-chain.
+    """
     if db is None:
         return
     try:

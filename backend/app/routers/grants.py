@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 
 
-def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_db)) -> User:
+def require_user(authorization: AuthorizationHeader, db: Annotated[Session, Depends(get_db)]) -> User:
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(401, "auth_required")
@@ -31,8 +31,8 @@ def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_d
         payload = parse_token(token)
         sub = getattr(payload, "sub", None) or payload.get("sub")
         user_id = cast("uuid.UUID", uuid.UUID(str(sub)))
-    except Exception:
-        raise HTTPException(401, "bad_token")
+    except Exception as e:
+        raise HTTPException(401, "bad_token") from e
     user_obj: User | None = db.get(User, user_id)
     if user_obj is None:
         raise HTTPException(401, "user_not_found")
@@ -41,10 +41,10 @@ def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_d
 
 @router.get("")
 def list_my_grants(
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
     role: Literal["received", "granted"] = Query("received"),
-    user: User = Depends(require_user),
-    db: Session = Depends(get_db),
-    chain: Chain = Depends(get_chain),
 ) -> dict[str, Any]:
     """
     Список грантов для текущего пользователя.
@@ -140,17 +140,17 @@ def list_my_grants(
 def revoke_grant(
     cap_id: str,
     response: Response,
-    user: User = Depends(require_user),
-    db: Session = Depends(get_db),
-    chain: Chain = Depends(get_chain),
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
 ) -> dict[str, Any]:
     # Validate capId format
     if not (isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66):
         raise HTTPException(400, "bad_cap_id")
     try:
         cap_b = Web3.to_bytes(hexstr=cast(HexStr, cap_id))
-    except Exception:
-        raise HTTPException(400, "bad_cap_id")
+    except Exception as e:
+        raise HTTPException(400, "bad_cap_id") from e
 
     # Lookup grant by capId
     grant: Grant | None = db.scalar(select(Grant).where(Grant.cap_id == cap_b))
@@ -171,7 +171,7 @@ def revoke_grant(
         to_addr = getattr(ac, "address", None) or Web3.to_checksum_address("0x" + "00" * 20)
         call_data = chain.encode_revoke_call(cap_b)
     except Exception as e:
-        raise HTTPException(502, f"Failed to build revoke call data: {e}")
+        raise HTTPException(502, f"Failed to build revoke call data: {e}") from e
 
     # Log grant revocation event
     typed = None  # Initialize with a default value
@@ -187,7 +187,7 @@ def revoke_grant(
         )
     except Exception as e:
         logger.warning(f"Failed to log grant_revoked event or build typed data: {e}")
-        raise HTTPException(502, f"chain_unavailable: {e}")
+        raise HTTPException(502, f"chain_unavailable: {e}") from e
 
     response.status_code = 200
     return {"status": "prepared", "requestId": str(req_uuid), "typedData": typed}
@@ -196,16 +196,16 @@ def revoke_grant(
 @router.get("/{cap_id}")
 def get_grant_status(
     cap_id: str,
-    user: User = Depends(require_user),
-    db: Session = Depends(get_db),
-    chain: Chain = Depends(get_chain),
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
 ) -> dict[str, Any]:
     if not (isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66):
         raise HTTPException(400, "bad_cap_id")
     try:
         cap_b = Web3.to_bytes(hexstr=cast(HexStr, cap_id))
-    except Exception:
-        raise HTTPException(400, "bad_cap_id")
+    except Exception as e:
+        raise HTTPException(400, "bad_cap_id") from e
 
     grant: Grant | None = db.scalar(select(Grant).where(Grant.cap_id == cap_b))
     if grant is None:
@@ -228,8 +228,6 @@ def get_grant_status(
     try:
         ac = chain.get_access_control()
         g = ac.functions.grants(cap_b).call()
-        on_grantor = Web3.to_checksum_address(g[0]) if g and len(g) >= 1 else None
-        on_grantee = Web3.to_checksum_address(g[1]) if g and len(g) >= 2 else None
         on_expires_at = int(g[3]) if g and len(g) >= 4 else 0
         on_max = int(g[4]) if g and len(g) >= 5 else 0
         on_used = int(g[5]) if g and len(g) >= 6 else 0

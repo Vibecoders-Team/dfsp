@@ -21,7 +21,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     Default policy: 100 req/min per IP if request has no Authorization header.
     """
 
-    def __init__(self, app: ASGIApp, limit_per_minute: int = 100):  # type: ignore[no-untyped-def]
+    def __init__(self, app: ASGIApp, limit_per_minute: int = 100) -> None:  # type: ignore[no-untyped-def]
         super().__init__(app)
         self.limit = int(limit_per_minute)
         self._exempt_prefixes = ("/auth/",)

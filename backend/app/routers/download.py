@@ -31,7 +31,7 @@ AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 ZERO_ADDR = "0x0000000000000000000000000000000000000000"
 
 
-def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_db)) -> User:
+def require_user(authorization: AuthorizationHeader, db: Annotated[Session, Depends(get_db)]) -> User:
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(401, "auth_required")
@@ -39,8 +39,8 @@ def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_d
         payload = parse_token(token)
         sub = getattr(payload, "sub", None) or payload.get("sub")
         user_id = cast("uuid.UUID", uuid.UUID(str(sub)))
-    except Exception:
-        raise HTTPException(401, "bad_token")
+    except Exception as e:
+        raise HTTPException(401, "bad_token") from e
     user_obj: User | None = db.get(User, user_id)
     if user_obj is None:
         raise HTTPException(401, "user_not_found")
@@ -52,9 +52,9 @@ def get_download_info(
     cap_id: str,
     # Убираем user=Depends(require_user) и заменяем на зависимость-защитник.
     # Она внутри вызовет get_current_user, проверит PoW и вернет QuotaManager.
-    quota_manager: QuotaManager = Depends(protect_download),
-    db: Session = Depends(get_db),
-    chain: Chain = Depends(get_chain),
+    quota_manager: Annotated[QuotaManager, Depends(protect_download)],
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
 ) -> dict[str, Any]:
     user = quota_manager.user  # Получаем пользователя из менеджера
 
@@ -62,8 +62,8 @@ def get_download_info(
         raise HTTPException(400, "bad_cap_id")
     try:
         cap_b = Web3.to_bytes(hexstr=cast(HexStr, cap_id))
-    except Exception:
-        raise HTTPException(400, "bad_cap_id")
+    except Exception as e:
+        raise HTTPException(400, "bad_cap_id") from e
     grant: Grant | None = db.scalar(select(Grant).where(Grant.cap_id == cap_b))
     if grant is None:
         raise HTTPException(404, "grant_not_found")

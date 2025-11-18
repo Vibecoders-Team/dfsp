@@ -7,7 +7,7 @@ from starlette.types import ASGIApp
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app: ASGIApp):
+    def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:

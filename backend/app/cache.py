@@ -3,13 +3,19 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import redis
 
 logger = logging.getLogger(__name__)
+
+JSONType = dict[str, object] | list[object] | str | int | float | bool | None
 
 
 class Cache:
     @staticmethod
-    def _rds():
+    def _rds() -> redis.Redis:
         try:
             # Lazy import to avoid circular dependency during app startup
             from app.deps import rds as _rds  # type: ignore
@@ -49,7 +55,7 @@ class Cache:
             logger.warning("Cache.set_text failed for key=%s: %s", key, value, exc_info=True)
 
     @staticmethod
-    def get_json(key: str) -> object | None:
+    def get_json(key: str) -> JSONType | None:
         txt = Cache.get_text(key)
         if not txt:
             return None
@@ -60,7 +66,7 @@ class Cache:
             return None
 
     @staticmethod
-    def set_json(key: str, value: object, ttl: int) -> None:
+    def set_json(key: str, value: JSONType, ttl: int) -> None:
         try:
             Cache.set_text(key, json.dumps(value, separators=(",", ":")), ttl)
         except Exception:
@@ -74,7 +80,7 @@ class Cache:
             logger.warning("Cache.delete failed for key=%s", key, exc_info=True)
 
     @staticmethod
-    def remember_json(key: str, ttl: int, producer: Callable[[], object]) -> object | None:
+    def remember_json(key: str, ttl: int, producer: Callable[[], JSONType]) -> JSONType | None:
         cached = Cache.get_json(key)
         if cached is not None:
             return cached

@@ -118,7 +118,7 @@ class Settings(BaseSettings):
 
     @field_validator("auth_nonce_ttl", mode="before")
     @classmethod
-    def parse_auth_nonce_ttl(cls, v: object):
+    def parse_auth_nonce_ttl(cls, v: object) -> object:
         if isinstance(v, int):
             return timedelta(seconds=v)
         return v
@@ -160,7 +160,7 @@ class Settings(BaseSettings):
 
     def __init__(
         self,
-        jwt_secret: str = "dev_secret",
+        jwt_secret: str | None = None,
         jwt_algorithm: str = "HS256",
         jwt_access_ttl_minutes: int = 15,
         jwt_refresh_ttl_days: int = 7,
@@ -173,7 +173,7 @@ class Settings(BaseSettings):
         - остальные значения (из env/kwargs) попадут в super().__init__ как обычно.
         """
         # если кто-то передал явно в kwargs — не перезаписываем
-        values.setdefault("jwt_secret", jwt_secret)
+        values.setdefault("jwt_secret", jwt_secret or "dev_secret")
         values.setdefault("jwt_algorithm", jwt_algorithm)
         values.setdefault("jwt_access_ttl_minutes", jwt_access_ttl_minutes)
         values.setdefault("jwt_refresh_ttl_days", jwt_refresh_ttl_days)
