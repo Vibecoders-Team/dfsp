@@ -33,17 +33,16 @@ class StoreOut(BaseModel):
 
 @router.post("/store", response_model=StoreOut)
 async def store_file(
-    file: Annotated[UploadFile, File(...)],
-    id_hex: Annotated[str | None, Form(None)],
-    checksum: Annotated[str | None, Form(None)],
-    plain_size: Annotated[int | None, Form(None)],
-    orig_name: Annotated[str | None, Form(None)],
-    orig_mime: Annotated[str | None, Form(None)],
     chain: Annotated[Chain, Depends(get_chain)],
     ipfs: Annotated[IpfsClient, Depends(get_ipfs)],
-    # --- ИЗМЕНЕНИЯ ЗДЕСЬ (Зависимость) ---
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    file: Annotated[UploadFile, File(...)],
+    id_hex: Annotated[str | None, Form()] = None,
+    checksum: Annotated[str | None, Form()] = None,
+    plain_size: Annotated[int | None, Form()] = None,
+    orig_name: Annotated[str | None, Form()] = None,
+    orig_mime: Annotated[str | None, Form()] = None,
 ) -> StoreOut:
     MAX_BYTES = 200 * 1024 * 1024  # 200MB
     data = await file.read()

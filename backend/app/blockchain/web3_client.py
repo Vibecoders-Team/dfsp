@@ -10,7 +10,8 @@ from eth_abi.abi import encode as abi_encode
 from eth_typing import HexStr
 from eth_utils.address import to_checksum_address
 from web3 import HTTPProvider, Web3
-from web3.contract import Contract, Event
+from web3.contract import Contract
+from web3.contract.contract import ContractEvent
 from web3.types import TxParams
 
 from app.cache import Cache
@@ -344,7 +345,7 @@ class Chain:
     def history(self, item_id: bytes, owner: str | None = None) -> list[dict[str, Any]]:
         events: list[dict] = []
 
-        def _evt_logs(evt: Event, arg_filters: dict[str, object]) -> list[object]:
+        def _evt_logs(evt: ContractEvent, arg_filters: dict[str, object]) -> list[object]:
             try:
                 return list(
                     evt.get_logs(from_block=0, to_block="latest", argument_filters=arg_filters)

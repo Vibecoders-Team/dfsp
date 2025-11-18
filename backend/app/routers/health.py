@@ -111,10 +111,8 @@ def live() -> dict[str, str]:
 
 
 @router.get("/ready")
-def ready(db: Annotated[Session, Depends(get_db)], response: Response | None = None) -> dict[str, Any]:
+def ready(db: Annotated[Session, Depends(get_db)], response: Response) -> dict[str, Any]:
     # Provide Response via FastAPI injection if needed by declaring a parameter of type Response
-    if response is None:
-        response = Response()
     checks = get_health_checks(db)
     required = _parse_required(os.getenv("READINESS_REQUIRED"))  # default: ["db", "redis"]
     is_ready = all(_ok(checks.get(k)) for k in required)
