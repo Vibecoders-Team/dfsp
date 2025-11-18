@@ -105,9 +105,7 @@ def test_revoke_not_grantor_403(
     cap_id = _share_one(client, auth_headers, file_id, grantee_addr, "YQ==", pow_header_factory)
 
     # Другой пользователь пытается отозвать (PoW не нужен)
-    r = client.post(
-        f"/grants/{cap_id}/revoke", headers=grantee_headers
-    )  # Используем grantee_headers
+    r = client.post(f"/grants/{cap_id}/revoke", headers=grantee_headers)  # Используем grantee_headers
     assert r.status_code == 403
     assert "not_grantor" in r.text
 

@@ -44,9 +44,7 @@ def _validate_inputs(eth_address: str, nonce_hex: str, signature: str) -> None:
         isinstance(eth_address, str) and ADDR_RE.fullmatch(eth_address or "") is not None,
         "bad_eth_address",
     )
-    _require(
-        isinstance(nonce_hex, str) and NONCE_RE.fullmatch(nonce_hex or "") is not None, "bad_nonce"
-    )
+    _require(isinstance(nonce_hex, str) and NONCE_RE.fullmatch(nonce_hex or "") is not None, "bad_nonce")
     _require(
         isinstance(signature, str) and SIG_RE.fullmatch(signature or "") is not None,
         "bad_signature_format",

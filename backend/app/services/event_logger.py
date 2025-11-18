@@ -102,9 +102,7 @@ class EventLogger:
 
         return self._persist_event_isolated(event)
 
-    def log_file_registered(
-        self, file_id: bytes, owner_id: UUID, cid: str, checksum: bytes, size: int
-    ) -> Event:
+    def log_file_registered(self, file_id: bytes, owner_id: UUID, cid: str, checksum: bytes, size: int) -> Event:
         """Log file registration event."""
         payload = {
             "file_id": file_id.hex(),
@@ -159,9 +157,7 @@ class EventLogger:
             user_id=revoker_id,
         )
 
-    def log_grant_used(
-        self, cap_id: bytes, file_id: bytes, user_id: UUID, download_size: int
-    ) -> Event:
+    def log_grant_used(self, cap_id: bytes, file_id: bytes, user_id: UUID, download_size: int) -> Event:
         """Log grant usage (download) event."""
         payload = {
             "cap_id": cap_id.hex(),

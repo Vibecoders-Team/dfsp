@@ -6,9 +6,7 @@ import requests
 
 
 class IpfsClient:
-    def __init__(
-        self, api_url: str, gateway_url: str | None = None, public_gateway_url: str | None = None
-    ) -> None:
+    def __init__(self, api_url: str, gateway_url: str | None = None, public_gateway_url: str | None = None) -> None:
         self.api = api_url.rstrip("/")
         self.gateway_internal = (gateway_url or self.api).rstrip("/")
         self.gateway_public = (public_gateway_url or self.gateway_internal).rstrip("/")

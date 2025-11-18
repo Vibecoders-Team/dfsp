@@ -74,9 +74,7 @@ def submit(req: MetaTxSubmitIn, response: Response, db: Annotated[Session, Depen
     # опциональный DEV path: выполнить синхронно (без воркера)
     if os.getenv("RELAYER_SYNC_DEV", "0") == "1":
         try:
-            result = _submit_forward_task.apply(
-                args=[req.request_id, req.typed_data, req.signature]
-            ).get(timeout=60)
+            result = _submit_forward_task.apply(args=[req.request_id, req.typed_data, req.signature]).get(timeout=60)
             response.status_code = 200
             return {"status": "executed", "task_id": task_id, "result": result}
         except Exception as e:

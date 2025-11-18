@@ -150,20 +150,10 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain: Chain, db: Se
             used_events = ac.events.Used().process_receipt(receipt)
             log.info("_sync_grant_events: found %d Used events", len(used_events))
             for evt in used_events:
-                cap_id = (
-                    evt.args.capId
-                    if hasattr(evt.args, "capId")
-                    else evt.get("args", {}).get("capId")
-                )
-                used_count = (
-                    evt.args.used if hasattr(evt.args, "used") else evt.get("args", {}).get("used")
-                )
+                cap_id = evt.args.capId if hasattr(evt.args, "capId") else evt.get("args", {}).get("capId")
+                used_count = evt.args.used if hasattr(evt.args, "used") else evt.get("args", {}).get("used")
                 if cap_id and used_count is not None:
-                    cap_b = (
-                        bytes(cap_id)
-                        if isinstance(cap_id, (bytes, bytearray))
-                        else Web3.to_bytes(hexstr=cap_id)
-                    )
+                    cap_b = bytes(cap_id) if isinstance(cap_id, (bytes, bytearray)) else Web3.to_bytes(hexstr=cap_id)
                     grant = db.query(Grant).filter(Grant.cap_id == cap_b).first()
                     if grant:
                         grant.used = int(used_count)
@@ -177,17 +167,9 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain: Chain, db: Se
             revoked_events = ac.events.Revoked().process_receipt(receipt)
             log.info("_sync_grant_events: found %d Revoked events", len(revoked_events))
             for evt in revoked_events:
-                cap_id = (
-                    evt.args.capId
-                    if hasattr(evt.args, "capId")
-                    else evt.get("args", {}).get("capId")
-                )
+                cap_id = evt.args.capId if hasattr(evt.args, "capId") else evt.get("args", {}).get("capId")
                 if cap_id:
-                    cap_b = (
-                        bytes(cap_id)
-                        if isinstance(cap_id, (bytes, bytearray))
-                        else Web3.to_bytes(hexstr=cap_id)
-                    )
+                    cap_b = bytes(cap_id) if isinstance(cap_id, (bytes, bytearray)) else Web3.to_bytes(hexstr=cap_id)
                     grant = db.query(Grant).filter(Grant.cap_id == cap_b).first()
                     if grant:
                         grant.revoked_at = datetime.now(UTC)
@@ -202,25 +184,15 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain: Chain, db: Se
             granted_events = ac.events.Granted().process_receipt(receipt)
             log.info("_sync_grant_events: found %d Granted events", len(granted_events))
             for evt in granted_events:
-                cap_id = (
-                    evt.args.capId
-                    if hasattr(evt.args, "capId")
-                    else evt.get("args", {}).get("capId")
-                )
+                cap_id = evt.args.capId if hasattr(evt.args, "capId") else evt.get("args", {}).get("capId")
                 if cap_id:
-                    cap_b = (
-                        bytes(cap_id)
-                        if isinstance(cap_id, (bytes, bytearray))
-                        else Web3.to_bytes(hexstr=cap_id)
-                    )
+                    cap_b = bytes(cap_id) if isinstance(cap_id, (bytes, bytearray)) else Web3.to_bytes(hexstr=cap_id)
                     grant = db.query(Grant).filter(Grant.cap_id == cap_b).first()
                     if grant:
                         grant.status = "confirmed"
                         grant.confirmed_at = datetime.now(UTC)
                         grant.tx_hash = (
-                            receipt.get("transactionHash", b"").hex()
-                            if receipt.get("transactionHash")
-                            else None
+                            receipt.get("transactionHash", b"").hex() if receipt.get("transactionHash") else None
                         )
                         db.add(cast(Any, grant))
                         _invalidate_for_grant(grant)
@@ -318,11 +290,7 @@ def submit_forward(self: Task, request_id: str, typed_data: dict[str, Any], sign
             tx_hash = chain._send_tx(cast(dict[str, Any], built))
             log.info("submit_forward: sent tx_hash=%s", tx_hash)
             # Ensure tx_hash is 0x-prefixed hex and cast to HexStr for wait_for_transaction_receipt
-            tx_hash_hex = (
-                tx_hash
-                if isinstance(tx_hash, str) and tx_hash.startswith("0x")
-                else ("0x" + str(tx_hash))
-            )
+            tx_hash_hex = tx_hash if isinstance(tx_hash, str) and tx_hash.startswith("0x") else ("0x" + str(tx_hash))
             receipt = cast(
                 AttributeDict,
                 chain.w3.eth.wait_for_transaction_receipt(cast(HexStr, tx_hash_hex), timeout=120),
@@ -359,9 +327,7 @@ def submit_forward(self: Task, request_id: str, typed_data: dict[str, Any], sign
                     m = db.get(MetaTxRequest, uuid.UUID(request_id))
                     if m:
                         # receipt.get('transactionHash') may be bytes/HexBytes or hexstring
-                        txh_raw = receipt.get("transactionHash") or receipt.get(
-                            "transactionHash", b""
-                        )
+                        txh_raw = receipt.get("transactionHash") or receipt.get("transactionHash", b"")
                         try:
                             m.tx_hash = txh_raw.hex() if hasattr(txh_raw, "hex") else str(txh_raw)
                         except Exception:
@@ -384,9 +350,7 @@ def submit_forward(self: Task, request_id: str, typed_data: dict[str, Any], sign
                     grantor_addr = Web3.to_checksum_address(grantor_src)
                     _reconcile_pending_for_grantor(grantor_addr, chain, db)
                 else:
-                    log.debug(
-                        "submit_forward: no grantor address present in message, skipping reconciliation"
-                    )
+                    log.debug("submit_forward: no grantor address present in message, skipping reconciliation")
             except Exception as e:
                 log.debug("submit_forward: reconcile pending grants failed: %s", e, exc_info=True)
 
@@ -396,10 +360,7 @@ def submit_forward(self: Task, request_id: str, typed_data: dict[str, Any], sign
         except (ContractLogicError, TransactionNotFound, TimeExhausted) as e:
             # Common replace/nonce errors → retry with backoff and gas bump
             msg_str = str(e)
-            if any(
-                s in msg_str
-                for s in ("nonce too low", "replacement transaction underpriced", "underpriced")
-            ):
+            if any(s in msg_str for s in ("nonce too low", "replacement transaction underpriced", "underpriced")):
                 raise self.retry(exc=e) from e
             raise self.retry(exc=e) from e
         except Exception as e:
@@ -432,9 +393,7 @@ def enqueue_forward_request(
     q = queue or _decide_queue(typed_data)
     # record a best-effort queue metric
     _metrics_incr(f"enqueue_total:{q}")
-    async_result = cast(Any, submit_forward).apply_async(
-        args=[request_id, typed_data, signature], queue=q
-    )
+    async_result = cast(Any, submit_forward).apply_async(args=[request_id, typed_data, signature], queue=q)
     return async_result.id
 
 
@@ -479,9 +438,7 @@ def _reconcile_pending_for_grantor(grantor_addr: str, chain: Chain, db: Session 
             except Exception as e:
                 log.debug(
                     "_reconcile_pending_for_grantor: grantOf call failed for cap %s: %s",
-                    gr.cap_id.hex()
-                    if isinstance(gr.cap_id, (bytes, bytearray))
-                    else str(gr.cap_id),
+                    gr.cap_id.hex() if isinstance(gr.cap_id, (bytes, bytearray)) else str(gr.cap_id),
                     e,
                 )
         db.commit()

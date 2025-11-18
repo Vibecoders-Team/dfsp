@@ -130,9 +130,7 @@ class Settings(BaseSettings):
     # --- Квоты (вложенные, дефолты) ---
     quotas: Quotas = Field(default_factory=Quotas, alias="QUOTAS")
     # Плоские env-переменные для квот (удобные для DevOps)
-    quota_download_bytes_day_env: int | None = Field(
-        default=None, alias="QUOTA_DOWNLOAD_BYTES_PER_DAY"
-    )
+    quota_download_bytes_day_env: int | None = Field(default=None, alias="QUOTA_DOWNLOAD_BYTES_PER_DAY")
     quota_meta_tx_per_day_env: int | None = Field(default=None, alias="QUOTA_META_TX_PER_DAY")
 
     # --- Relayer/Celery очереди ---
@@ -141,9 +139,7 @@ class Settings(BaseSettings):
 
     # --- Proof-of-Work параметры ---
     pow_difficulty_base: int = Field(default=18, alias="POW_DIFFICULTY_BASE")
-    pow_challenge_ttl_seconds: int = Field(
-        default=300, alias="POW_CHALLENGE_TTL_SECONDS"
-    )  # 5 минут
+    pow_challenge_ttl_seconds: int = Field(default=300, alias="POW_CHALLENGE_TTL_SECONDS")  # 5 минут
     pow_enabled: bool = Field(default=True, alias="POW_ENABLED")  # Глобальный переключатель
 
     chain_rpc_url_raw: str | None = Field(default=None, alias="CHAIN_RPC_URL")
@@ -187,9 +183,7 @@ class Settings(BaseSettings):
         """Возвращает CHAIN_RPC_URL или бросает ошибку — явная и ранняя ошибка конфигурации."""
         val = self.chain_rpc_url_raw
         if not val:
-            raise RuntimeError(
-                "Missing required configuration: CHAIN_RPC_URL (set env CHAIN_RPC_URL)"
-            )
+            raise RuntimeError("Missing required configuration: CHAIN_RPC_URL (set env CHAIN_RPC_URL)")
         return val
 
     @property

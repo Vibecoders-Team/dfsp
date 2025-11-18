@@ -58,9 +58,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
                 }
                 # IMPORTANT: return a Response instead of raising to avoid TestClient bubbling exceptions
-                return JSONResponse(
-                    status_code=429, content={"detail": "rate_limited"}, headers=headers
-                )
+                return JSONResponse(status_code=429, content={"detail": "rate_limited"}, headers=headers)
         except Exception as e:
             # Fail-open if Redis is down; log for diagnostics
             logger.warning("RateLimitMiddleware failed to access Redis: %s", e, exc_info=True)

@@ -51,9 +51,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             dt = time.perf_counter() - t0
             # Metrics
             try:
-                api_requests_total.labels(
-                    method=method, endpoint=endpoint, status=str(status_code)
-                ).inc()
+                api_requests_total.labels(method=method, endpoint=endpoint, status=str(status_code)).inc()
                 api_request_duration_seconds.labels(endpoint=endpoint).observe(dt)
             except Exception as e:
                 logger.debug("observability: failed to update metrics: %s", e, exc_info=True)

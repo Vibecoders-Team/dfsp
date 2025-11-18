@@ -159,9 +159,7 @@ def get_download_info(
         revoked = on_revoked
         expired = now.timestamp() > on_expires_at if on_expires_at else False
         exhausted = on_used >= on_max if on_max else True
-        file_id_bytes = (
-            bytes(on_file_id) if isinstance(on_file_id, (bytes, bytearray)) else grant.file_id
-        )
+        file_id_bytes = bytes(on_file_id) if isinstance(on_file_id, (bytes, bytearray)) else grant.file_id
     except HTTPException:
         raise
     except Exception as e:
@@ -208,9 +206,7 @@ def get_download_info(
         ac = chain.get_access_control()
         to_addr = getattr(ac, "address", None) or Web3.to_checksum_address(ZERO_ADDR)
         call_data = chain.encode_use_once_call(cap_b)
-        typed = chain.build_forward_typed_data(
-            from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000
-        )
+        typed = chain.build_forward_typed_data(from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000)
     except Exception as e:
         logger.debug("get_download_info: building typedData failed for %s: %s", cap_id, e, exc_info=True)
 

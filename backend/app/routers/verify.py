@@ -32,9 +32,7 @@ def verify(
     chain: Annotated[Chain, Depends(get_chain)],
 ) -> VerifyOut:
     # Валидация формата file_id, чтобы вернуть 400 вместо 422
-    if not (
-        isinstance(file_id_hex, str) and file_id_hex.startswith("0x") and len(file_id_hex) == 66
-    ):
+    if not (isinstance(file_id_hex, str) and file_id_hex.startswith("0x") and len(file_id_hex) == 66):
         raise HTTPException(status_code=400, detail="bad_file_id")
 
     file_id_bytes = Web3.to_bytes(hexstr=cast(HexStr, file_id_hex))
@@ -62,11 +60,7 @@ def verify(
         if raw_onchain_meta and any(raw_onchain_meta.values()):
             checksum_hex = normalize_checksum(raw_onchain_meta.get("checksum"))
             if checksum_hex:
-                oc_name = (
-                    raw_onchain_meta.get("name")
-                    if isinstance(raw_onchain_meta.get("name"), str)
-                    else None
-                )
+                oc_name = raw_onchain_meta.get("name") if isinstance(raw_onchain_meta.get("name"), str) else None
                 onchain_data = FileMeta(
                     cid=raw_onchain_meta.get("cid", ""),
                     checksum=checksum_hex,

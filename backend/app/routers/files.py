@@ -82,11 +82,7 @@ def list_my_files(
     # Count total files and per-user count for diagnostics
     total_files = db.query(File).count()
     user_files_q = (
-        select(File)
-        .where(File.owner_id == user.id)
-        .order_by(File.created_at.desc())
-        .limit(limit)
-        .offset(offset)
+        select(File).where(File.owner_id == user.id).order_by(File.created_at.desc()).limit(limit).offset(offset)
     )
     files = db.scalars(user_files_q).all()
     per_user_count = len(files)
@@ -114,9 +110,7 @@ def list_my_files(
 
     # Log owner_ids of a few recent files for visibility
     try:
-        sample = db.execute(
-            select(File.owner_id, File.id).order_by(File.created_at.desc()).limit(5)
-        ).all()
+        sample = db.execute(select(File.owner_id, File.id).order_by(File.created_at.desc()).limit(5)).all()
         sample_str = ", ".join([f"(owner={row[0]}, id={row[1].hex()})" for row in sample])
     except Exception as e:
         logger.debug("list_my_files: failed to compose sample_str: %s", e, exc_info=True)
@@ -346,9 +340,7 @@ def share_file(
     cap_ids_bytes: list[bytes] = []
     cap_ids_hex: list[str] = []
     for idx, (grantee_addr, _) in enumerate(grantees):
-        cap_b = chain.predict_cap_id(
-            grantor_addr, grantee_addr, file_id_bytes, nonce=start_nonce, offset=idx
-        )
+        cap_b = chain.predict_cap_id(grantor_addr, grantee_addr, file_id_bytes, nonce=start_nonce, offset=idx)
         cap_ids_bytes.append(cap_b)
         cap_ids_hex.append("0x" + cap_b.hex())
     typed_list: list[dict] = []
@@ -356,9 +348,7 @@ def share_file(
     to_addr = getattr(ac, "address", grantor_addr)
     for (grantee_addr, _), _cap in zip(grantees, cap_ids_bytes, strict=False):
         call_data = chain.encode_grant_call(file_id_bytes, grantee_addr, ttl_sec, int(body.max_dl))
-        td = chain.build_forward_typed_data(
-            from_addr=grantor_addr, to_addr=to_addr, data=call_data, gas=180_000
-        )
+        td = chain.build_forward_typed_data(from_addr=grantor_addr, to_addr=to_addr, data=call_data, gas=180_000)
         typed_list.append(td)
 
     # Overwrite idempotency key with final data (no NX to update placeholder)
@@ -489,9 +479,7 @@ def list_file_grants(
                     used = on_used
                     max_dl = on_max
                     expires_at_iso = (
-                        datetime.fromtimestamp(on_expires_at, tz=UTC).isoformat()
-                        if on_expires_at
-                        else expires_at_iso
+                        datetime.fromtimestamp(on_expires_at, tz=UTC).isoformat() if on_expires_at else expires_at_iso
                     )
                     if on_revoked:
                         status = "revoked"

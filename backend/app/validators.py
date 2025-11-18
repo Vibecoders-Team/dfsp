@@ -73,6 +73,9 @@ def validate_rsa_spki_pem(pem: str) -> bool:
     except (ValueError, UnsupportedAlgorithm):
         return False
     except Exception:
-        logger.debug("validate_rsa_spki_pem unexpected failure for given pem (truncated): %s",
-                     (pem[:60] + "...") if isinstance(pem, str) else str(pem), exc_info=True)
+        logger.debug(
+            "validate_rsa_spki_pem unexpected failure for given pem (truncated): %s",
+            (pem[:60] + "...") if isinstance(pem, str) else str(pem),
+            exc_info=True,
+        )
         return False

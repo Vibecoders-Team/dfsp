@@ -72,9 +72,7 @@ def test_verify_full_storage_to_match_true(client: httpx.Client, auth_headers: d
     store_data = r_store.json()
     file_id_hex = store_data.get("id_hex")
 
-    assert file_id_hex is not None, (
-        "Response from /storage/store must contain file ID ('pk' or 'fileId')"
-    )
+    assert file_id_hex is not None, "Response from /storage/store must contain file ID ('pk' or 'fileId')"
     assert is_hex_bytes32(file_id_hex), f"File ID '{file_id_hex}' is not a valid hex32 string"
 
     # Шаг 2: Вызываем эндпоинт верификации с полученным ID
@@ -90,12 +88,8 @@ def test_verify_full_storage_to_match_true(client: httpx.Client, auth_headers: d
 
     # Главная проверка: обе части существуют и `match` равен `true`
     assert verify_data["onchain"] is not None, "On-chain data should not be null for a stored file"
-    assert verify_data["offchain"] is not None, (
-        "Off-chain data should not be null for a stored file"
-    )
-    assert verify_data["match"] is True, (
-        "On-chain and off-chain checksums should match for a fresh file"
-    )
+    assert verify_data["offchain"] is not None, "Off-chain data should not be null for a stored file"
+    assert verify_data["match"] is True, "On-chain and off-chain checksums should match for a fresh file"
 
     # Дополнительная проверка: чек-суммы действительно совпадают
     assert verify_data["onchain"]["checksum"] == verify_data["offchain"]["checksum"]

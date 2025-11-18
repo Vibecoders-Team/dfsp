@@ -37,12 +37,8 @@ class File(Base):
 
     checksum: Mapped[bytes] = mapped_column(sa.LargeBinary(32), nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    grants: Mapped[list[Grant]] = relationship(
-        "Grant", back_populates="file", cascade="all, delete-orphan"
-    )
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=func.now(), nullable=False)
+    grants: Mapped[list[Grant]] = relationship("Grant", back_populates="file", cascade="all, delete-orphan")
 
 
 class FileVersion(Base):
@@ -52,9 +48,7 @@ class FileVersion(Base):
         Index("ix_file_versions_file", "file_id"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     # FK → files.id (bytes32)
     file_id: Mapped[bytes] = mapped_column(
@@ -68,6 +62,4 @@ class FileVersion(Base):
     size: Mapped[int] = mapped_column(nullable=False)
     mime: Mapped[str | None] = mapped_column(nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=func.now(), nullable=False)

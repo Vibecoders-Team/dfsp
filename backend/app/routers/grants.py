@@ -97,9 +97,7 @@ def list_my_grants(
                     used = on_used
                     max_dl = on_max
                     expires_at_iso = (
-                        datetime.fromtimestamp(on_expires_at, tz=UTC).isoformat()
-                        if on_expires_at
-                        else expires_at_iso
+                        datetime.fromtimestamp(on_expires_at, tz=UTC).isoformat() if on_expires_at else expires_at_iso
                     )
                     if on_revoked:
                         status = "revoked"
@@ -182,9 +180,7 @@ def revoke_grant(
             file_id=grant.file_id,
             revoker_id=user.id,
         )
-        typed = chain.build_forward_typed_data(
-            from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000
-        )
+        typed = chain.build_forward_typed_data(from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000)
     except Exception as e:
         logger.warning(f"Failed to log grant_revoked event or build typed data: {e}")
         raise HTTPException(502, f"chain_unavailable: {e}") from e
@@ -239,9 +235,7 @@ def get_grant_status(
             used = on_used
             max_dl = on_max
             expires_at_iso = (
-                datetime.fromtimestamp(on_expires_at, tz=UTC).isoformat()
-                if on_expires_at
-                else expires_at_iso
+                datetime.fromtimestamp(on_expires_at, tz=UTC).isoformat() if on_expires_at else expires_at_iso
             )
             if on_revoked:
                 status = "revoked"

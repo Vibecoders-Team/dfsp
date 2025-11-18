@@ -55,21 +55,20 @@ export async function getPowToken(forceNew = true): Promise<PowToken> {
 
   // Promise.any is not available in older TS lib targets; implement a small helper
   function promiseAny<T>(ps: Promise<T>[]): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      let remaining = ps.length;
-      if (remaining === 0) {
-        reject(new Error('No promises'));
-        return;
-      }
-      let rejected = 0;
-      for (const p of ps) {
-        p.then((v) => resolve(v)).catch(() => {
-          rejected += 1;
-          if (rejected === ps.length) reject(new Error('All promises rejected'));
-        });
-      }
-    });
-  }
+  return new Promise<T>((resolve, reject) => {
+    if (ps.length === 0) {
+      reject(new Error('No promises'));
+      return;
+    }
+    let rejected = 0;
+    for (const p of ps) {
+      p.then((v) => resolve(v)).catch(() => {
+        rejected += 1;
+        if (rejected === ps.length) reject(new Error('All promises rejected'));
+      });
+    }
+  });
+}
 
   try {
     const winner = await promiseAny(promises);

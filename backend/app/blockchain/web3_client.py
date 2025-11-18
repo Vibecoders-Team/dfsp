@@ -83,9 +83,7 @@ class Chain:
                             tx = {
                                 "from": funder,
                                 "to": self._acct.address,
-                                "value": Web3.to_wei(
-                                    10, "ether"
-                                ),  # Увеличиваем до 10 ETH для покрытия высоких gas
+                                "value": Web3.to_wei(10, "ether"),  # Увеличиваем до 10 ETH для покрытия высоких gas
                                 "gas": 21_000,
                                 "chainId": self.chain_id,
                             }
@@ -132,9 +130,7 @@ class Chain:
                 tx["chainId"] = self.chain_id
             if "nonce" not in tx and tx.get("from"):
                 try:
-                    tx["nonce"] = self.w3.eth.get_transaction_count(
-                        Web3.to_checksum_address(tx["from"])
-                    )
+                    tx["nonce"] = self.w3.eth.get_transaction_count(Web3.to_checksum_address(tx["from"]))
                 except Exception as e:
                     log.debug("failed to read transaction nonce: %s", e, exc_info=True)
             if "gas" not in tx:
@@ -143,21 +139,14 @@ class Chain:
                     allowed = {
                         k: v
                         for k, v in tx.items()
-                        if v is not None
-                        and k in {"from", "to", "data", "value", "nonce", "chainId"}
+                        if v is not None and k in {"from", "to", "data", "value", "nonce", "chainId"}
                     }
                     # cast to object first to satisfy strict type-checkers
                     gas_est = self.w3.eth.estimate_gas(cast(TxParams, cast(object, allowed)))
-                    tx["gas"] = min(
-                        int(gas_est), 2_000_000
-                    )  # Ограничиваем gas, чтобы не превысить баланс
+                    tx["gas"] = min(int(gas_est), 2_000_000)  # Ограничиваем gas, чтобы не превысить баланс
                 except Exception:
                     tx["gas"] = 2_000_000
-            if (
-                ("gasPrice" not in tx)
-                and ("maxFeePerGas" not in tx)
-                and ("maxPriorityFeePerGas" not in tx)
-            ):
+            if ("gasPrice" not in tx) and ("maxFeePerGas" not in tx) and ("maxPriorityFeePerGas" not in tx):
                 try:
                     tx["gasPrice"] = int(self.w3.eth.gas_price)
                 except Exception as e:
@@ -233,16 +222,12 @@ class Chain:
 
     # ----------------- registry helpers -----------------
 
-    def register_or_update(
-        self, item_id: bytes, cid: str, checksum32: bytes, size: int, mime: str = ""
-    ) -> str:
+    def register_or_update(self, item_id: bytes, cid: str, checksum32: bytes, size: int, mime: str = "") -> str:
         def _arity(name: str) -> int:
             f = self._fn.get(name)
             return len(f["inputs"]) if f else -1
 
-        primary_name = (
-            "register" if "register" in self._fn else ("store" if "store" in self._fn else None)
-        )
+        primary_name = "register" if "register" in self._fn else ("store" if "store" in self._fn else None)
         if not primary_name:
             raise RuntimeError("Registry has no register/store")
         try:
@@ -305,11 +290,7 @@ class Chain:
             if isinstance(vals, dict):
                 return vals
             if isinstance(vals, (list, tuple)):
-                return {
-                    (c.get("name") or f"f{i}"): vals[i]
-                    for i, c in enumerate(comps)
-                    if i < len(vals)
-                }
+                return {(c.get("name") or f"f{i}"): vals[i] for i, c in enumerate(comps) if i < len(vals)}
             return {}
 
         out = to_dict(res)
@@ -347,21 +328,15 @@ class Chain:
 
         def _evt_logs(evt: ContractEvent, arg_filters: dict[str, object]) -> list[object]:
             try:
-                return list(
-                    evt.get_logs(from_block=0, to_block="latest", argument_filters=arg_filters)
-                )
+                return list(evt.get_logs(from_block=0, to_block="latest", argument_filters=arg_filters))
             except TypeError:
                 log.debug("evt.get_logs with from_block failed (TypeError), trying camelCase API")
             try:
-                return list(
-                    evt.get_logs(fromBlock=0, toBlock="latest", argument_filters=arg_filters)
-                )  # type: ignore
+                return list(evt.get_logs(fromBlock=0, toBlock="latest", argument_filters=arg_filters))  # type: ignore
             except Exception as e:
                 log.debug("evt.get_logs camelCase failed: %s", e, exc_info=True)
             try:
-                flt = evt.create_filter(
-                    from_block=0, to_block="latest", argument_filters=arg_filters
-                )
+                flt = evt.create_filter(from_block=0, to_block="latest", argument_filters=arg_filters)
                 return flt.get_all_entries()
             except TypeError:
                 pass
@@ -374,10 +349,7 @@ class Chain:
             evt = getattr(self.contract.events, evt_name)
             # Ensure filters are Any for type-checker compatibility
             arg_filters: dict[str, Any] = {"fileId": item_id}
-            if owner and any(
-                i.get("name") == "owner" and i.get("indexed")
-                for i in self._events[evt_name]["inputs"]
-            ):
+            if owner and any(i.get("name") == "owner" and i.get("indexed") for i in self._events[evt_name]["inputs"]):
                 arg_filters["owner"] = Web3.to_checksum_address(owner)
             logs = _evt_logs(evt, arg_filters)
             for lg in logs:
@@ -414,21 +386,15 @@ class Chain:
     def get_access_control(self) -> Contract:
         return self.get_contract("AccessControlDFSP")
 
-    def encode_register_call(
-        self, item_id: bytes, cid: str, checksum32: bytes, size: int, mime: str
-    ) -> str:
+    def encode_register_call(self, item_id: bytes, cid: str, checksum32: bytes, size: int, mime: str) -> str:
         try:
             fn = self.contract.get_function_by_name("register")
         except ValueError as e:
             raise RuntimeError("FileRegistry has no 'register'") from e
-        tx = fn(
-            item_id, cid, checksum32, int(size) & ((1 << 64) - 1), mime or ""
-        ).build_transaction(self._tx())
+        tx = fn(item_id, cid, checksum32, int(size) & ((1 << 64) - 1), mime or "").build_transaction(self._tx())
         return tx["data"]  # 0x...
 
-    def encode_grant_call(
-        self, file_id: bytes, grantee: str, ttl_sec: int, max_downloads: int
-    ) -> str:
+    def encode_grant_call(self, file_id: bytes, grantee: str, ttl_sec: int, max_downloads: int) -> str:
         """Build call data for AccessControlDFSP.grant."""
         ac = self.get_access_control()
         grantee = to_checksum_address(grantee)
@@ -438,15 +404,11 @@ class Chain:
         ).build_transaction(self._tx())
         return tx["data"]
 
-    def build_forward_typed_data(
-        self, from_addr: str, to_addr: str, data: bytes | str, gas: int = 120_000
-    ) -> dict:
+    def build_forward_typed_data(self, from_addr: str, to_addr: str, data: bytes | str, gas: int = 120_000) -> dict:
         fwd = self.get_forwarder()
         from_addr = to_checksum_address(from_addr)
         to_addr = to_checksum_address(to_addr)
-        verifying = (
-            fwd.address if hasattr(fwd, "address") else fwd.functions.eip712Domain().call()[3]
-        )
+        verifying = fwd.address if hasattr(fwd, "address") else fwd.functions.eip712Domain().call()[3]
 
         # getNonce is per-signer; leave uncached (it changes frequently on use)
         nonce = int(fwd.functions.getNonce(from_addr).call())
@@ -534,9 +496,7 @@ class Chain:
             fid = Web3.to_bytes(hexstr=cast(HexStr, file_id))
         else:
             raise ValueError("file_id must be bytes32 or 0x-hex32")
-        encoded = abi_encode(
-            ["address", "address", "bytes32", "uint256"], [grantor_cs, grantee_cs, fid, n]
-        )
+        encoded = abi_encode(["address", "address", "bytes32", "uint256"], [grantor_cs, grantee_cs, fid, n])
         return Web3.keccak(encoded)
 
     def verify_forward(self, typed: dict, signature: str) -> bool:

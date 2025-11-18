@@ -53,9 +53,7 @@ class Grant(Base):
     # зашифрованный ключ (encK), bytea
     enc_key: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Отношения для ORM
     file = relationship("File", back_populates="grants")

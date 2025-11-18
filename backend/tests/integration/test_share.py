@@ -67,9 +67,7 @@ def test_share_happy_and_duplicate(
     assert r2.json().get("status") == "duplicate"
 
 
-def test_share_bad_file_id_400(
-    client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]
-):
+def test_share_bad_file_id_400(client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]):
     headers = {**auth_headers, **pow_header_factory()}
     # --- ИСПРАВЛЕНИЕ: Передаем минимально валидный JSON, чтобы избежать ошибки 422 ---
     addr = "0x" + ("11" * 20)
@@ -118,9 +116,7 @@ def test_share_missing_encK_400(
     assert r.status_code == 400
 
 
-def test_share_unknown_grantee_400(
-    client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]
-):
+def test_share_unknown_grantee_400(client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]):
     file_id, _ = _create_file(client, auth_headers)
     unknown = "0x" + ("44" * 20)
     headers = {**auth_headers, **pow_header_factory()}

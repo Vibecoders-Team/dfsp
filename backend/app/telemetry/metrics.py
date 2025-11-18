@@ -20,12 +20,8 @@ from app.deps import get_db, rds
 logger = logging.getLogger(__name__)
 
 # In-process API metrics
-api_requests_total = Counter(
-    "api_requests_total", "Total API requests", ["method", "endpoint", "status"]
-)
-api_request_duration_seconds = Histogram(
-    "api_request_duration_seconds", "API request duration seconds", ["endpoint"]
-)
+api_requests_total = Counter("api_requests_total", "Total API requests", ["method", "endpoint", "status"])
+api_request_duration_seconds = Histogram("api_request_duration_seconds", "API request duration seconds", ["endpoint"])
 
 # Gauges that are set on scrape based on Redis/DB
 relayer_queue_length = Gauge("relayer_queue_length", "Relayer queue length", ["queue"])
@@ -39,9 +35,7 @@ meta_tx_confirmation_seconds_p95 = Gauge(
     "meta_tx_confirmation_seconds_p95", "Relayer confirmation p95 (derived from recent)"
 )
 pow_challenges_total = Gauge("pow_challenges_total", "PoW challenges issued total")
-pow_verifications_total = Gauge(
-    "pow_verifications_total", "PoW verifications total by status", ["status"]
-)
+pow_verifications_total = Gauge("pow_verifications_total", "PoW verifications total by status", ["status"])
 quota_exceeded_total = Gauge("quota_exceeded_total", "Quota exceeded total by type", ["type"])
 
 router = APIRouter()

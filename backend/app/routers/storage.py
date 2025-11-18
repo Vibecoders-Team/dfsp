@@ -108,11 +108,7 @@ async def store_file(
         base_seed = user.id.bytes + bytes(checksum32)
         attempt = 0
         while True:
-            candidate = (
-                Web3.keccak(base_seed + attempt.to_bytes(4, "big"))
-                if attempt
-                else Web3.keccak(base_seed)
-            )
+            candidate = Web3.keccak(base_seed + attempt.to_bytes(4, "big")) if attempt else Web3.keccak(base_seed)
             other = db.get(FileModel, candidate)
             if other is None or other.owner_id == user.id:
                 log.info(
@@ -143,9 +139,7 @@ async def store_file(
         log.debug("store_file: failed to emit debug info log", exc_info=True)
 
     try:
-        tx_hash = chain.register_or_update(
-            item_id, cid, checksum32=checksum32, size=size, mime=mime
-        )
+        tx_hash = chain.register_or_update(item_id, cid, checksum32=checksum32, size=size, mime=mime)
     except Exception as e:
         log.error(f"Chain transaction failed: {e}", exc_info=True)
         raise HTTPException(502, f"chain_error: {e}") from e
@@ -163,12 +157,7 @@ async def store_file(
             # Создаем новую версию
             from sqlalchemy import func, select
 
-            latest_version = (
-                db.scalar(
-                    select(func.max(FileVersion.version)).where(FileVersion.file_id == item_id)
-                )
-                or 0
-            )
+            latest_version = db.scalar(select(func.max(FileVersion.version)).where(FileVersion.file_id == item_id)) or 0
 
             new_version = FileVersion(
                 file_id=item_id,
@@ -205,15 +194,11 @@ async def store_file(
             db.add(first_version)
 
         db.commit()
-        log.info(
-            "File %s saved to database successfully (owner_id=%s)", item_id.hex(), str(user.id)
-        )
+        log.info("File %s saved to database successfully (owner_id=%s)", item_id.hex(), str(user.id))
 
     except Exception as e:
         db.rollback()
-        log.error(
-            f"DATABASE FAILED after successful chain transaction {tx_hash}: {e}", exc_info=True
-        )
+        log.error(f"DATABASE FAILED after successful chain transaction {tx_hash}: {e}", exc_info=True)
         # Сообщаем об ошибке, чтобы фронт не считал загрузку успешной
         raise HTTPException(500, "db_error") from e
 

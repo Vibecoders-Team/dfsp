@@ -105,9 +105,7 @@ class AnchoringService:
             Created Anchor instance
         """
         # Check if already anchored
-        existing = self.db.execute(
-            select(Anchor).where(Anchor.period_id == period_id)
-        ).scalar_one_or_none()
+        existing = self.db.execute(select(Anchor).where(Anchor.period_id == period_id)).scalar_one_or_none()
 
         if existing:
             log.warning(f"Period {period_id} already anchored: {existing.id}")
@@ -122,9 +120,7 @@ class AnchoringService:
             root = b"\x00" * 32
         else:
             root = self.compute_merkle_root(events)
-            log.info(
-                f"Computed Merkle root for period {period_id}: {root.hex()} ({len(events)} events)"
-            )
+            log.info(f"Computed Merkle root for period {period_id}: {root.hex()} ({len(events)} events)")
 
         # Create anchor record
         anchor = Anchor(
