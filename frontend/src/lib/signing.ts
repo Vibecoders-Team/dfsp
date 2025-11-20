@@ -1,5 +1,5 @@
 import type {ForwardTyped} from './api';
-import type {SignerAgent} from './agent/agent';
+import type {SignerAgent} from '@/lib/agent';
 import type {TypedDataDomain, TypedDataField} from 'ethers';
 
 interface MaybeChainAgent extends SignerAgent {

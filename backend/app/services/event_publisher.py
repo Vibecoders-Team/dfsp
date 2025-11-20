@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from app.deps import rds
 
@@ -40,10 +40,10 @@ class EventPublisher:
         self,
         event_type: str,
         *,
-        subject: Optional[Dict[str, Any]] = None,
-        payload: Optional[Dict[str, Any]] = None,
+        subject: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
         source: str = "api",
-        event_id: Optional[str] = None,
+        event_id: str | None = None,
         version: int = 1,
     ) -> str:
         eid = event_id or str(uuid.uuid4())
@@ -63,12 +63,12 @@ class EventPublisher:
             "version": version,
             "type": event_type,
             "source": source,
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "subject": subject or {},
             "data": payload or {},
         }
 
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         for _attempt in range(3):
             try:
                 rds.rpush(self.queue_key, json.dumps(envelope))

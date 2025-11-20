@@ -19,6 +19,7 @@ import { Progress } from '../ui/progress';
 import AgentSelector from '../AgentSelector';
 import { getErrorMessage } from '@/lib/errors';
 import { setSelectedAgentKind } from '@/lib/agent/manager';
+import type * as React from "react";
 
 type RegisterState = 'idle' | 'generating' | 'backup_required' | 'registering' | 'success' | 'error';
 

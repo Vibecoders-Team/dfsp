@@ -6,7 +6,7 @@ import { stripEip712Domain } from './agent';
 export class MetaMaskAgent implements SignerAgent {
   kind = 'metamask' as const;
   private provider?: BrowserProvider;
-  private expectedChainId: number | null = null;
+  private readonly expectedChainId: number | null;
 
   constructor() {
     const env: any = (import.meta as any).env ?? {};

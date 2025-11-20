@@ -6,6 +6,7 @@ import { Badge } from '../ui/badge';
 import { CheckCircle2, XCircle, AlertCircle, RefreshCw, Database, Server, Link as LinkIcon, Box } from 'lucide-react';
 
 type ServiceStatus = 'ok' | 'failed' | 'degraded';
+import type * as React from "react";
 
 interface ServiceCheck {
   name: string;

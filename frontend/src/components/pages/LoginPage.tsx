@@ -8,6 +8,7 @@ import { hasEOA, isEOAUnlocked } from '@/lib/keychain';
 import { getAgent, setSelectedAgentKind } from '@/lib/agent/manager';
 import { getErrorMessage } from '@/lib/errors';
 import AgentSelector from '../AgentSelector';
+import type * as React from "react";
 
 type LoginState = 'idle' | 'checking' | 'unlocking' | 'signing' | 'error' | 'success';
 

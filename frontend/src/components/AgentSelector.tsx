@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState } from 'react';
-import type { AgentKind } from '../lib/agent/agent';
+import type { AgentKind } from '@/lib/agent';
 import { getSelectedAgentKind, setSelectedAgentKind, getAgent } from '../lib/agent/manager';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';

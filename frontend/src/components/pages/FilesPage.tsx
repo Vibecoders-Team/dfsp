@@ -21,11 +21,11 @@ import {
 import { Skeleton } from '../ui/skeleton';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Upload, Search, Eye, Share2, CheckCircle2, AlertCircle, Download } from 'lucide-react';
-import { fetchMyFiles, type FileListItem } from '../../lib/api';
-import { getErrorMessage } from '../../lib/errors';
+import { fetchMyFiles, type FileListItem } from '@/lib/api.ts';
+import { getErrorMessage } from '@/lib/errors.ts';
 import { toast } from 'sonner';
-import { getFileKey } from '../../lib/fileKey';
-import { decryptStream } from '../../lib/cryptoClient';
+import { getFileKey } from '@/lib/fileKey.ts';
+import { decryptStream } from '@/lib/cryptoClient.ts';
 
 interface FileItem {
   id: string;

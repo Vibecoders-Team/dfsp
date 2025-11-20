@@ -44,9 +44,7 @@ class BotGrant(BaseModel):
     capId: str = Field(..., description="Capability ID гранта в hex-формате")
     fileName: str
     used: int
-    max_dl: int = Field(
-        ..., alias="max"
-    )  # используем max_dl из модели и отдаём как max
+    max_dl: int = Field(..., alias="max")  # используем max_dl из модели и отдаём как max
     expiresAt: datetime
     status: str  # "active", "expired", "revoked", "used_up"
 

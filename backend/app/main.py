@@ -33,9 +33,9 @@ from .routers.download import router as download_router
 from .routers.files import router as files_router
 from .routers.grants import router as grants_router
 from .routers.meta_tx import router as mtx_router
+from .routers.telegram import router as telegram_router
 from .routers.users import router as users_router
 from .routers.verify import router as verify_router
-from .routers.telegram import router as telegram_router
 
 # Initialize structured logging
 init_logging()

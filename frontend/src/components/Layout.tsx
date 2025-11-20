@@ -12,6 +12,7 @@ import {
 } from './ui/dropdown-menu';
 import AgentSelector from './AgentSelector';
 import KeyLockIndicator from './KeyLockIndicator';
+import type * as React from "react";
 
 interface LayoutProps {
   children: React.ReactNode;

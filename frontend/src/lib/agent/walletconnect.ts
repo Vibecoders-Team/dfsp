@@ -6,7 +6,7 @@ export class WalletConnectAgent implements SignerAgent {
   kind = 'walletconnect' as const;
   private provider?: BrowserProvider;
   private wc?: { enable?: () => Promise<void>; on?: (ev: string, cb: (...args: unknown[]) => void) => void; disconnect?: () => Promise<void>; modal?: { close?: () => void } };
-  private expectedChain: number | null = null;
+  private readonly expectedChain: number | null = null;
   private httpsRpc: string | null = null;
   private dynamicRpc: string | null = null;
   private lastError: string | null = null;

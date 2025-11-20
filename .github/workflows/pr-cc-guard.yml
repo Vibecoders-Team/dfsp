@@ -33,7 +33,6 @@ jobs:
             chore
             revert
           requireScope: false
-          allowBreakingChanges: true
           subjectPattern: ".+"
           subjectPatternError: "Use '<type>(<scope>): <summary>' — non-empty summary required."
         continue-on-error: true

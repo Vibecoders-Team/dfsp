@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from app.deps import get_db, rds
 from app.schemas.anchors import AnchorDetailResponse, AnchorResponse
 from app.services.anchoring import AnchoringService
-from app.tasks.anchor import anchor_period_task
 from app.services.event_publisher import EventPublisher  # NEW
+from app.tasks.anchor import anchor_period_task
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def _publish_anchor_ok(
         payload = {"source": source}
         event_id = f"anchor_ok:{period_id}:{tx_hash or 'no_tx'}"
         publisher.publish("anchor_ok", subject=subject, payload=payload, event_id=event_id)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.warning("Failed to publish anchor_ok: %s", e)
 
 

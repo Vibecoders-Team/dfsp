@@ -13,9 +13,7 @@ def link_user_to_chat(db: Session, wallet_address: str, chat_id: int) -> Telegra
     normalized_address = (wallet_address or "").lower()
 
     instance: TelegramLink | None = (
-        db.query(TelegramLink)
-        .filter_by(wallet_address=normalized_address, chat_id=chat_id)
-        .one_or_none()
+        db.query(TelegramLink).filter_by(wallet_address=normalized_address, chat_id=chat_id).one_or_none()
     )
 
     if instance:

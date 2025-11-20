@@ -24,8 +24,8 @@ import {
 } from '../ui/alert-dialog';
 import { ArrowLeft, Copy, Share2, CheckCircle2, XCircle, AlertCircle, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx, type ForwardTyped, fetchMyFiles } from '../../lib/api';
-import { getErrorMessage } from '../../lib/errors';
+import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx, type ForwardTyped, fetchMyFiles } from '@/lib/api.ts';
+import { getErrorMessage } from '@/lib/errors.ts';
 import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
 import { Alert, AlertDescription } from '../ui/alert';

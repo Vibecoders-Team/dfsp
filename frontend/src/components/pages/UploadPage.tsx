@@ -10,10 +10,11 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Progress } from '../ui/progress';
 import { Upload, File, X, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getErrorMessage } from '../../lib/errors';
-import { encryptFile, keccak } from '../../lib/cryptoClient';
-import { storeEncrypted } from '../../lib/api';
-import { getOrCreateFileKey, renameFileKey } from '../../lib/fileKey';
+import { getErrorMessage } from '@/lib/errors.ts';
+import { encryptFile, keccak } from '@/lib/cryptoClient.ts';
+import { storeEncrypted } from '@/lib/api.ts';
+import { getOrCreateFileKey, renameFileKey } from '@/lib/fileKey.ts';
+import type * as React from "react";
 
 type UploadState = 'empty' | 'encrypting' | 'uploading' | 'registering' | 'done' | 'error';
 

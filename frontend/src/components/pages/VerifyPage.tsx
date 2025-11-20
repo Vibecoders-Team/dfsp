@@ -6,9 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui
 import { Alert, AlertDescription } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { ArrowLeft, CheckCircle2, XCircle, AlertCircle, Upload } from 'lucide-react';
-import { fetchMeta } from '../../lib/api';
-import { getErrorMessage } from '../../lib/errors';
+import { fetchMeta } from '@/lib/api.ts';
+import { getErrorMessage } from '@/lib/errors.ts';
 import { keccak256 } from 'ethers';
+import type * as React from "react";
 
 type VerifyState = 'idle' | 'loading' | 'match' | 'mismatch' | 'not_found' | 'error';
 

@@ -19,8 +19,8 @@ import {
 } from '../ui/select';
 import { Badge } from '../ui/badge';
 import { Download, Share2, RefreshCw } from 'lucide-react';
-import { fetchMyGrants, type MyGrantItem } from '../../lib/api';
-import { getErrorMessage } from '../../lib/errors';
+import { fetchMyGrants, type MyGrantItem } from '@/lib/api.ts';
+import { getErrorMessage } from '@/lib/errors.ts';
 import { Alert, AlertDescription } from '../ui/alert';
 
 export default function GrantsPage() {

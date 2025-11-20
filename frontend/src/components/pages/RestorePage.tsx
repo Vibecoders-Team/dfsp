@@ -9,6 +9,7 @@ import { Upload, AlertCircle, CheckCircle2, Key } from 'lucide-react';
 import { useAuth } from '../useAuth';
 import { toast } from 'sonner';
 import { Link, useNavigate } from 'react-router-dom';
+import type * as React from "react";
 
 export default function RestorePage() {
   const { restoreAccount } = useAuth();

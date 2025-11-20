@@ -1,7 +1,7 @@
 import json
 
-from app.services.event_publisher import EventPublisher
 from app.deps import rds
+from app.services.event_publisher import EventPublisher
 
 
 def _clear_events():

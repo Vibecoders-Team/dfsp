@@ -1,12 +1,15 @@
-import pytest
-import httpx
 import time
+
+import httpx
+import pytest
+
 from ..signer import EIP712Signer
 
 # Применяем маркер ко всем тестам в этом файле
 pytestmark = pytest.mark.e2e
 
 VALID_TEST_RSA_PUBLIC_KEY = "test_rsa_key"
+
 
 def _register_and_get_token(client: httpx.Client, signer: EIP712Signer) -> str:
     """Вспомогательная функция для регистрации и получения access токена."""
@@ -66,9 +69,7 @@ def test_full_telegram_linking_flow(client: httpx.Client, test_signer: EIP712Sig
     assert response.json() == {"ok": True}
 
     # --- Этап 4 (Бонус): Проверяем, что токен одноразовый ---
-    response = client.post(
-        "/tg/link-complete", json={"link_token": link_token}, headers=auth_headers
-    )
+    response = client.post("/tg/link-complete", json={"link_token": link_token}, headers=auth_headers)
     assert response.status_code == 400
     assert "Invalid or expired link_token" in response.text
 
@@ -88,7 +89,7 @@ def test_link_complete_without_auth(client: httpx.Client):
     assert response.status_code == 401  # Ожидаем 401 Unauthorized
 
 
-@pytest.mark.parametrize('anyio_backend', ['asyncio'])
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
 @pytest.mark.anyio
 async def test_link_start_rate_limit(client: httpx.Client, anyio_backend):
     chat_id = 111222333
@@ -103,18 +104,16 @@ async def test_link_start_rate_limit(client: httpx.Client, anyio_backend):
     assert response.status_code == 429
     assert "Too many requests" in response.text
 
-    print(f"\nWaiting for {window + 2} seconds for rate limit window to pass...")
     time.sleep(window + 2)
 
     response = client.post("/tg/link-start", json={"chat_id": chat_id})
     assert response.status_code == 200
-    print("Request after waiting was successful.")
 
     # Следующий запрос после ожидания должен снова пройти
     response = client.post("/tg/link-start", json={"chat_id": chat_id})
     assert response.status_code == 200
-    print("Request after waiting was successful.")
-    
+
+
 def test_delete_link(client: httpx.Client, test_signer: EIP712Signer):
     """
     Проверяет флоу отзыва привязки:
@@ -132,9 +131,7 @@ def test_delete_link(client: httpx.Client, test_signer: EIP712Signer):
     link_token = response.json()["link_token"]
 
     # Завершаем привязку
-    response = client.post(
-        "/tg/link-complete", json={"link_token": link_token}, headers=auth_headers
-    )
+    response = client.post("/tg/link-complete", json={"link_token": link_token}, headers=auth_headers)
     assert response.status_code == 200, "Failed to create a link before testing deletion"
 
     # --- Этап 2: Отзываем привязку ---

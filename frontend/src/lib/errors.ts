@@ -7,7 +7,7 @@ export function getErrorMessage(e: unknown, fallback = "Request failed"): string
   if (isAxiosError(e)) {
     const data = e.response?.data as ApiErrorBody | undefined;
     let detail: unknown;
-    if (data && typeof data === 'object' && data !== null && 'detail' in data) {
+    if (data && typeof data === 'object' && 'detail' in data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       detail = (data as any).detail;
     }

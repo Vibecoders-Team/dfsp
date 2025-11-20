@@ -5,7 +5,7 @@ function u8(n:number){ const a=new Uint8Array(n); for(let i=0;i<n;i++) a[i]=i&0x
 
 class FakeFile implements File {
   readonly lastModified: number; readonly name: string; readonly size: number; readonly type: string; webkitRelativePath: string = '';
-  private buf: Uint8Array;
+  private readonly buf: Uint8Array;
   constructor(buf: Uint8Array, name='test.bin', type='application/octet-stream'){
     this.buf = buf; this.name=name; this.type=type; this.size=buf.length; this.lastModified=Date.now();
   }

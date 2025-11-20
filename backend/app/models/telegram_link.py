@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB, BIGINT
+from sqlalchemy.dialects.postgresql import BIGINT, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -20,9 +20,7 @@ class TelegramLink(Base):
     )
     revoked_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
 
-    flags: Mapped[dict] = mapped_column(
-        JSONB, server_default=sa.text("'{}'::jsonb"), nullable=False
-    )
+    flags: Mapped[dict] = mapped_column(JSONB, server_default=sa.text("'{}'::jsonb"), nullable=False)
 
     def __repr__(self) -> str:
         return f"<TelegramLink(chat_id={self.chat_id}, wallet_address='{self.wallet_address}')>"

@@ -10,8 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui
 import { Alert, AlertDescription } from '../ui/alert';
 import { Key, User, Download, Upload, AlertCircle, CheckCircle2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
-import { ensureRSA, createBackupBlob, createBackupBlobRSAOnly } from '../../lib/keychain';
-import { publishMyKeyCard } from '../../lib/publishMyKey';
+import { ensureRSA, createBackupBlob, createBackupBlobRSAOnly } from '@/lib/keychain.ts';
+import { publishMyKeyCard } from '@/lib/publishMyKey.ts';
 import { isEOAUnlocked } from '@/lib/keychain';
 
 function SettingsNav() {

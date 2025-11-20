@@ -1,11 +1,13 @@
 # backend/app/repos/grant_repo.py
 from __future__ import annotations
-from datetime import datetime
-from sqlalchemy.orm import Session, aliased
-from sqlalchemy import select
 
-from app.models.grants import Grant
+from datetime import datetime
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, aliased
+
 from app.models.files import File
+from app.models.grants import Grant
 from app.models.users import User  # Важно: импортируем модель User
 from app.schemas.bot import GrantDirection
 

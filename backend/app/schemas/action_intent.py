@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 
 class ActionIntentCreateIn(BaseModel):
     type: str = Field(..., min_length=1, max_length=128, description="Action type identifier")
-    params: Dict[str, Any] = Field(
+    params: dict[str, Any] = Field(
         default_factory=dict,
         description="Arbitrary JSON-serializable parameters for this intent",
     )
@@ -25,4 +25,4 @@ class ActionIntentConsumeIn(BaseModel):
 
 class ActionIntentConsumeOut(BaseModel):
     type: str
-    params: Dict[str, Any]
+    params: dict[str, Any]

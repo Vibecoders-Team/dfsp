@@ -1,12 +1,10 @@
-import time
 import secrets
+import time
 import uuid
-from typing import Callable
+from collections.abc import Callable
 
 import httpx
 import pytest
-
-from datetime import datetime, timedelta, timezone
 
 from ..signer import EIP712Signer
 
@@ -142,12 +140,8 @@ def setup_user_with_grants(
         }
 
         full_headers = {**grantor_auth, **pow_factory()}
-        prepare_grant_resp = client.post(
-            f"/files/{file_id_bytes}/share", json=share_body, headers=full_headers
-        )
-        assert prepare_grant_resp.status_code == 200, (
-            f"Grant prepare failed: {prepare_grant_resp.text}"
-        )
+        prepare_grant_resp = client.post(f"/files/{file_id_bytes}/share", json=share_body, headers=full_headers)
+        assert prepare_grant_resp.status_code == 200, f"Grant prepare failed: {prepare_grant_resp.text}"
 
         td_grant = prepare_grant_resp.json()["typedData"]
         sig_grant = grantor_signer.sign_generic_typed_data(td_grant)
