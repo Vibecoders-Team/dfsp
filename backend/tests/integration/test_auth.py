@@ -1,6 +1,7 @@
-import pytest
-import httpx
 import secrets
+
+import httpx
+import pytest
 
 from ..signer import EIP712Signer
 

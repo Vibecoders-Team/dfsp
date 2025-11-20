@@ -1,12 +1,13 @@
 """Tests for event logging and anchoring via HTTP API."""
+
 from __future__ import annotations
 
-import httpx
-import pytest
+from datetime import UTC, datetime
 
-from app.services.event_logger import EventLogger
+import httpx
+
 from app.services.anchoring import MerkleTree
-from datetime import datetime, timezone
+from app.services.event_logger import EventLogger
 
 
 class TestEventLogger:
@@ -15,7 +16,7 @@ class TestEventLogger:
     def test_compute_period_id(self):
         """Test period_id computation."""
         # Test with specific timestamp
-        ts = datetime(2025, 10, 30, 14, 30, 0, tzinfo=timezone.utc)
+        ts = datetime(2025, 10, 30, 14, 30, 0, tzinfo=UTC)
         period_id = EventLogger.compute_period_id(ts)
 
         # With 60-minute periods, should divide cleanly
@@ -65,6 +66,7 @@ class TestMerkleTree:
 
         # Root should be hash of concatenated leaves
         from eth_hash.auto import keccak
+
         expected_root = keccak(leaf1 + leaf2)
         assert tree.root == expected_root
 
@@ -100,10 +102,7 @@ class TestAnchoringAPI:
         # Use a high period_id that likely doesn't exist
         period_id = 999999
 
-        response = client.post(
-            f"/anchors/trigger/{period_id}",
-            headers=auth_headers
-        )
+        response = client.post(f"/anchors/trigger/{period_id}", headers=auth_headers)
 
         # Accept 500 if migrations haven't been run
         assert response.status_code in [200, 500]
@@ -140,4 +139,3 @@ class TestAnchoringAPI:
             data = r2.json()
             # Should indicate already anchored
             assert data["status"] == "already_anchored"
-

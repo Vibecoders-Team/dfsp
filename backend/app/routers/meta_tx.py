@@ -1,22 +1,23 @@
 from __future__ import annotations
 
+# NEW: optional sync execution in dev
+import os
+import uuid
+from typing import Annotated, Any
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, rds
-from ..relayer import enqueue_forward_request
-from ..schemas.auth import MetaTxSubmitIn
-
-# NEW: optional sync execution in dev
-import os
-from ..relayer import submit_forward as _submit_forward_task
 from ..models.meta_tx_requests import MetaTxRequest
-import uuid
+from ..relayer import enqueue_forward_request
+from ..relayer import submit_forward as _submit_forward_task
+from ..schemas.auth import MetaTxSubmitIn
 
 router = APIRouter(prefix="/meta-tx", tags=["meta-tx"])
 
 
-def _validate_typed_data(td: dict):
+def _validate_typed_data(td: dict) -> None:
     if not isinstance(td, dict):
         raise HTTPException(400, "typed_data_invalid")
     if not all(k in td for k in ("domain", "types", "primaryType", "message")):
@@ -26,7 +27,7 @@ def _validate_typed_data(td: dict):
 
 
 @router.post("/submit")
-def submit(req: MetaTxSubmitIn, response: Response, db: Session = Depends(get_db)):
+def submit(req: MetaTxSubmitIn, response: Response, db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
     """
     Принимаем подписанный ForwardRequest и кладем задачу в релейер.
     Гарантируем детерминированный JSON-ответ со статусом.
@@ -42,13 +43,17 @@ def submit(req: MetaTxSubmitIn, response: Response, db: Session = Depends(get_db
     try:
         rds.set(key, "queued", ex=3600)
     except Exception:
-        pass
+        # best-effort, log for diagnostics
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.debug("submit_meta_tx: failed to set redis key %s", key, exc_info=True)
 
     # upsert в БД запись MetaTxRequest (для внутренних дедупов и мониторинга)
     try:
         rid = uuid.UUID(str(req.request_id))
-    except Exception:
-        raise HTTPException(400, "bad_request_id")
+    except Exception as e:
+        raise HTTPException(400, "bad_request_id") from e
     try:
         m = db.get(MetaTxRequest, rid)
         if m is None:

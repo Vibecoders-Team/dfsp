@@ -1,26 +1,26 @@
 from __future__ import annotations
 
 import base64
+import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Optional, cast
+from datetime import UTC, datetime
+from typing import Annotated, Any, cast
 
 from eth_typing import HexStr
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from typing_extensions import Annotated
 from web3 import Web3
 
-from app.deps import get_db, get_chain
-from app.models import Grant, User, File
-from app.security import parse_token
+from app.blockchain.web3_client import Chain
+from app.cache import Cache
+from app.deps import get_chain, get_db
+from app.models import File, Grant, User
 
 # --- НОВЫЙ ИМПОРТ ---
-from app.quotas import protect_download, QuotaManager
+from app.quotas import QuotaManager, protect_download
+from app.security import parse_token
 from app.services.event_logger import EventLogger
-from app.cache import Cache
-import logging
 
 router = APIRouter(prefix="/download", tags=["download"])
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 ZERO_ADDR = "0x0000000000000000000000000000000000000000"
 
 
-def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_db)) -> User:
+def require_user(authorization: AuthorizationHeader, db: Annotated[Session, Depends(get_db)]) -> User:
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(401, "auth_required")
@@ -39,9 +39,9 @@ def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_d
         payload = parse_token(token)
         sub = getattr(payload, "sub", None) or payload.get("sub")
         user_id = cast("uuid.UUID", uuid.UUID(str(sub)))
-    except Exception:
-        raise HTTPException(401, "bad_token")
-    user_obj: Optional[User] = db.get(User, user_id)
+    except Exception as e:
+        raise HTTPException(401, "bad_token") from e
+    user_obj: User | None = db.get(User, user_id)
     if user_obj is None:
         raise HTTPException(401, "user_not_found")
     return user_obj
@@ -52,19 +52,19 @@ def get_download_info(
     cap_id: str,
     # Убираем user=Depends(require_user) и заменяем на зависимость-защитник.
     # Она внутри вызовет get_current_user, проверит PoW и вернет QuotaManager.
-    quota_manager: QuotaManager = Depends(protect_download),
-    db: Session = Depends(get_db),
-    chain=Depends(get_chain),
-):
+    quota_manager: Annotated[QuotaManager, Depends(protect_download)],
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
+) -> dict[str, Any]:
     user = quota_manager.user  # Получаем пользователя из менеджера
 
     if not (isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66):
         raise HTTPException(400, "bad_cap_id")
     try:
         cap_b = Web3.to_bytes(hexstr=cast(HexStr, cap_id))
-    except Exception:
-        raise HTTPException(400, "bad_cap_id")
-    grant: Optional[Grant] = db.scalar(select(Grant).where(Grant.cap_id == cap_b))
+    except Exception as e:
+        raise HTTPException(400, "bad_cap_id") from e
+    grant: Grant | None = db.scalar(select(Grant).where(Grant.cap_id == cap_b))
     if grant is None:
         raise HTTPException(404, "grant_not_found")
     if grant.grantee_id != user.id:
@@ -77,7 +77,7 @@ def get_download_info(
     # Quick positive cache to avoid chain calls
     cached = Cache.get_text(cache_key)
     if cached == "1":
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # DB-based checks only (fast path)
         revoked = grant.revoked_at is not None or (grant.status == "revoked")
         expired = now > grant.expires_at
@@ -90,17 +90,17 @@ def get_download_info(
             cid = ""
             try:
                 cid = chain.cid_of(file_id_bytes) or ""
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("get_download_info: chain.cid_of failed for %s: %s", file_hex, e, exc_info=True)
             if not cid:
-                f: Optional[File] = db.get(File, file_id_bytes)
+                f: File | None = db.get(File, file_id_bytes)
                 if f and f.cid:
                     cid = f.cid
             if not cid:
                 raise HTTPException(502, "registry_unavailable")
             quota_manager.consume_download_bytes(file_id_bytes)
             try:
-                file_obj: Optional[File] = db.get(File, file_id_bytes)
+                file_obj: File | None = db.get(File, file_id_bytes)
                 download_size = file_obj.size if file_obj else 0
                 event_logger = EventLogger(db)
                 event_logger.log_grant_used(
@@ -110,10 +110,18 @@ def get_download_info(
                     download_size=download_size,
                 )
             except Exception as e:
-                logger.warning(f"Failed to log grant_used event: {e}")
+                logger.warning("Failed to log grant_used event: %s", e, exc_info=True)
 
             enc_b64 = base64.b64encode(grant.enc_key).decode("ascii")
             out = {"encK": enc_b64, "ipfsPath": f"/ipfs/{cid}"}
+            # Добавим имя файла, если известно
+            try:
+                file_obj2: File | None = db.get(File, file_id_bytes)
+                if file_obj2 and file_obj2.name:
+                    out["fileName"] = str(file_obj2.name)
+            except Exception as e:
+                logger.debug("get_download_info: failed reading file name for %s: %s", file_hex, e, exc_info=True)
+            # typedData как было
             try:
                 ac = chain.get_access_control()
                 to_addr = getattr(ac, "address", None) or Web3.to_checksum_address(ZERO_ADDR)
@@ -122,15 +130,16 @@ def get_download_info(
                     from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000
                 )
                 import uuid as _uuid
+
                 req_name = f"useOnce:{cap_id}:{user.id}"
                 req_uuid = _uuid.uuid5(_uuid.NAMESPACE_URL, req_name)
                 out.update({"requestId": str(req_uuid), "typedData": typed})
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("get_download_info: failed to build typedData for %s: %s", cap_id, e, exc_info=True)
             return out
 
     # Full recompute path (or cache miss)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     revoked = False
     expired = False
     exhausted = False
@@ -150,12 +159,11 @@ def get_download_info(
         revoked = on_revoked
         expired = now.timestamp() > on_expires_at if on_expires_at else False
         exhausted = on_used >= on_max if on_max else True
-        file_id_bytes = (
-            bytes(on_file_id) if isinstance(on_file_id, (bytes, bytearray)) else grant.file_id
-        )
+        file_id_bytes = bytes(on_file_id) if isinstance(on_file_id, (bytes, bytearray)) else grant.file_id
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        logger.debug("get_download_info: on-chain grants lookup failed for %s: %s", cap_id, e, exc_info=True)
         revoked = grant.revoked_at is not None or (grant.status == "revoked")
         expired = now > grant.expires_at
         exhausted = int(grant.used or 0) >= int(grant.max_dl or 0)
@@ -177,10 +185,10 @@ def get_download_info(
     cid = ""
     try:
         cid = chain.cid_of(file_id_bytes) or ""
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("get_download_info: chain.cid_of failed for %s: %s", file_id_bytes, e, exc_info=True)
     if not cid:
-        f: Optional[File] = db.get(File, file_id_bytes)
+        f: File | None = db.get(File, file_id_bytes)
         if f and f.cid:
             cid = f.cid
     if not cid:
@@ -198,15 +206,13 @@ def get_download_info(
         ac = chain.get_access_control()
         to_addr = getattr(ac, "address", None) or Web3.to_checksum_address(ZERO_ADDR)
         call_data = chain.encode_use_once_call(cap_b)
-        typed = chain.build_forward_typed_data(
-            from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000
-        )
-    except Exception:
-        pass
+        typed = chain.build_forward_typed_data(from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000)
+    except Exception as e:
+        logger.debug("get_download_info: building typedData failed for %s: %s", cap_id, e, exc_info=True)
 
     # Log grant usage event
     try:
-        file_obj: Optional[File] = db.get(File, file_id_bytes)
+        file_obj: File | None = db.get(File, file_id_bytes)
         download_size = file_obj.size if file_obj else 0
         event_logger = EventLogger(db)
         event_logger.log_grant_used(
@@ -216,11 +222,16 @@ def get_download_info(
             download_size=download_size,
         )
     except Exception as e:
-        logger.warning(f"Failed to log grant_used event: {e}")
+        logger.warning("Failed to log grant_used event: %s", e, exc_info=True)
 
     enc_b64 = base64.b64encode(grant.enc_key).decode("ascii")
     out = {"encK": enc_b64, "ipfsPath": f"/ipfs/{cid}"}
+    try:
+        file_obj2: File | None = db.get(File, file_id_bytes)
+        if file_obj2 and file_obj2.name:
+            out["fileName"] = str(file_obj2.name)
+    except Exception as e:
+        logger.debug("get_download_info: failed reading file name for full path for %s: %s", file_hex, e, exc_info=True)
     if typed is not None:
         out.update({"requestId": str(req_uuid), "typedData": typed})
     return out
-

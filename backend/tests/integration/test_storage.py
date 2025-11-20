@@ -1,10 +1,8 @@
-import pytest
 import httpx
-from web3 import Web3
+import pytest
 
 # Предполагаем, что conftest.py находится в той же папке
 # и определяет фикстуры client, auth_headers, test_signer, random_id_hex
-from .conftest import is_hex_bytes32
 
 pytestmark = pytest.mark.e2e
 

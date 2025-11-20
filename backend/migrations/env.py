@@ -2,15 +2,15 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import sys
 import importlib
+import os
 import pkgutil
+import sys
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 # --- PYTHONPATH: проектный корень (/app) ---
 HERE = os.path.dirname(__file__)
@@ -20,14 +20,16 @@ if PROJECT_ROOT not in sys.path:
 
 # --- импорт Base и МОДЕЛЕЙ ---
 # ВАЖНО: чтобы автогенерация «увидела» таблицы, здесь нужно импортнуть модуль с моделями
-from app.db.base import Base            # your Declarative Base
 import app.models as models_pkg
+from app.db.base import Base  # your Declarative Base
+
 
 def import_submodules(package):
     for _finder, name, ispkg in pkgutil.walk_packages(package.__path__, package.__name__ + "."):
         importlib.import_module(name)
 
-import_submodules(models_pkg)     # просто импорт, чтобы таблицы зарегистрировались в metadata
+
+import_submodules(models_pkg)  # просто импорт, чтобы таблицы зарегистрировались в metadata
 
 # Alembic Config
 config = context.config

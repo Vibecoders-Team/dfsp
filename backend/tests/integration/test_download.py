@@ -1,7 +1,8 @@
 import secrets
-import pytest
+from collections.abc import Callable
+
 import httpx
-from typing import Optional, Tuple, Callable
+import pytest
 
 from .conftest import is_hex_bytes32
 
@@ -20,9 +21,9 @@ def _create_file(
     client: httpx.Client,
     headers: dict,
     *,
-    file_id: Optional[str] = None,
-    checksum: Optional[str] = None,
-) -> Tuple[str, str, str]:
+    file_id: str | None = None,
+    checksum: str | None = None,
+) -> tuple[str, str, str]:
     """Create a file record owned by the user behind headers. Returns (fileId, checksum, cid)."""
     fid = file_id or _hex32()
     chk = checksum or _hex32()
@@ -73,9 +74,7 @@ def _share_one(
 # --- ИСПРАВЛЕННЫЕ ТЕСТЫ ---
 
 
-def test_download_happy(
-    client: httpx.Client, auth_headers: dict, make_user, pow_header_factory: Callable[[], dict]
-):
+def test_download_happy(client: httpx.Client, auth_headers: dict, make_user, pow_header_factory: Callable[[], dict]):
     grantee_addr, grantee_headers = make_user()
     file_id, _chk, cid = _create_file(client, auth_headers)
     enc_b64 = "c2VjcmV0LWtleQ=="
@@ -107,18 +106,14 @@ def test_download_not_grantee_403(
     assert "not_grantee" in r.text
 
 
-def test_download_bad_cap_id_400(
-    client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]
-):
+def test_download_bad_cap_id_400(client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]):
     headers = {**auth_headers, **pow_header_factory()}
     r = client.get("/download/0x1234", headers=headers)
     assert r.status_code == 400
     assert "bad_cap_id" in r.text
 
 
-def test_download_grant_not_found_404(
-    client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]
-):
+def test_download_grant_not_found_404(client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]):
     headers = {**auth_headers, **pow_header_factory()}
     cap_id = _hex32()
     r = client.get(f"/download/{cap_id}", headers=headers)

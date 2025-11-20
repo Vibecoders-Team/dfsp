@@ -1,0 +1,3 @@
+# Only the repo lead can approve PRs to main/*.
+# Keep this as the last matching rule.
+* @galetaa

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import os
-from typing import Set
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
 from app.deps import rds
-from app.security import get_current_user
 from app.models import User
+from app.security import get_current_user
 from app.validators import validate_hex32
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -25,14 +25,14 @@ class DenylistIn(BaseModel):
         return v
 
 
-def _allowed_admins() -> Set[str]:
+def _allowed_admins() -> set[str]:
     raw = os.getenv("ADMIN_ADDRESSES", "")
     addrs = {a.strip().lower() for a in raw.split(",") if a.strip()}
     return addrs
 
 
 @router.post("/denylist")
-def add_to_denylist(body: DenylistIn, user: User = Depends(get_current_user)) -> dict:
+def add_to_denylist(body: DenylistIn, user: Annotated[User, Depends(get_current_user)]) -> dict:
     admins = _allowed_admins()
     if admins and user.eth_address.lower() not in admins:
         raise HTTPException(403, "forbidden")
@@ -40,5 +40,4 @@ def add_to_denylist(body: DenylistIn, user: User = Depends(get_current_user)) ->
         rds.sadd("denylist:checksum", body.checksum)
         return {"ok": True, "checksum": body.checksum}
     except Exception as e:
-        raise HTTPException(500, f"redis_error: {e}")
-
+        raise HTTPException(500, f"redis_error: {e}") from e

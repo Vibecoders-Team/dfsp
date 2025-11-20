@@ -1,9 +1,9 @@
 """Anchoring service for Merkle tree construction and on-chain anchoring."""
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import List
+from datetime import UTC, datetime
 
 from eth_hash.auto import keccak
 from sqlalchemy import select
@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 class MerkleTree:
     """Simple Merkle tree implementation for event anchoring."""
 
-    def __init__(self, leaves: List[bytes]) -> None:
+    def __init__(self, leaves: list[bytes]) -> None:
         """
         Initialize Merkle tree from leaf hashes.
 
@@ -34,13 +34,13 @@ class MerkleTree:
         self.leaves = leaves
         self.root = self._build_tree(leaves)
 
-    def _build_tree(self, nodes: List[bytes]) -> bytes:
+    def _build_tree(self, nodes: list[bytes]) -> bytes:
         """Recursively build Merkle tree and return root."""
         if len(nodes) == 1:
             return nodes[0]
 
         # Pair up nodes and hash them
-        next_level: List[bytes] = []
+        next_level: list[bytes] = []
         for i in range(0, len(nodes), 2):
             left = nodes[i]
             # If odd number of nodes, duplicate the last one
@@ -52,13 +52,13 @@ class MerkleTree:
         return self._build_tree(next_level)
 
     @classmethod
-    def from_events(cls, events: List[Event]) -> MerkleTree:
+    def from_events(cls, events: list[Event]) -> MerkleTree:
         """
         Build Merkle tree from events.
 
         Leaf = keccak256(event.id || event.type || event.payload_hash || event.ts)
         """
-        leaves: List[bytes] = []
+        leaves: list[bytes] = []
         for event in events:
             # Concatenate fields for leaf hash
             # id as 8-byte big-endian integer
@@ -82,17 +82,13 @@ class AnchoringService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def get_events_for_period(self, period_id: int) -> List[Event]:
+    def get_events_for_period(self, period_id: int) -> list[Event]:
         """Fetch all events for a given period."""
-        stmt = (
-            select(Event)
-            .where(Event.period_id == period_id)
-            .order_by(Event.id)
-        )
+        stmt = select(Event).where(Event.period_id == period_id).order_by(Event.id)
         result = self.db.execute(stmt)
         return list(result.scalars().all())
 
-    def compute_merkle_root(self, events: List[Event]) -> bytes:
+    def compute_merkle_root(self, events: list[Event]) -> bytes:
         """Compute Merkle root from events."""
         tree = MerkleTree.from_events(events)
         return tree.root
@@ -109,9 +105,7 @@ class AnchoringService:
             Created Anchor instance
         """
         # Check if already anchored
-        existing = self.db.execute(
-            select(Anchor).where(Anchor.period_id == period_id)
-        ).scalar_one_or_none()
+        existing = self.db.execute(select(Anchor).where(Anchor.period_id == period_id)).scalar_one_or_none()
 
         if existing:
             log.warning(f"Period {period_id} already anchored: {existing.id}")
@@ -126,16 +120,13 @@ class AnchoringService:
             root = b"\x00" * 32
         else:
             root = self.compute_merkle_root(events)
-            log.info(
-                f"Computed Merkle root for period {period_id}: "
-                f"{root.hex()} ({len(events)} events)"
-            )
+            log.info(f"Computed Merkle root for period {period_id}: {root.hex()} ({len(events)} events)")
 
         # Create anchor record
         anchor = Anchor(
             period_id=period_id,
             root=root,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
         self.db.add(anchor)
@@ -157,4 +148,3 @@ class AnchoringService:
         stmt = select(Anchor).where(Anchor.period_id == period_id)
         result = self.db.execute(stmt)
         return result.scalar_one_or_none()
-

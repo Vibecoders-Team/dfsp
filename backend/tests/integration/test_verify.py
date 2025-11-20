@@ -1,8 +1,14 @@
 # backend/tests/integration/test_files_meta_verify.py
+import logging
 import secrets
-import pytest
+
 import httpx
+import pytest
+
 from .conftest import is_hex_bytes32
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 pytestmark = pytest.mark.e2e
 
@@ -56,7 +62,7 @@ def test_verify_full_storage_to_match_true(client: httpx.Client, auth_headers: d
     """
     # Шаг 1: Готовим и загружаем файл через эндпоинт /storage/store.
     # Этот эндпоинт должен создавать запись и в БД, и в блокчейне.
-    file_content = f"Test file content {secrets.token_hex(8)}".encode("utf-8")
+    file_content = f"Test file content {secrets.token_hex(8)}".encode()
     files_payload = {"file": ("test_verify.txt", file_content, "text/plain")}
 
     # Отправляем запрос на загрузку
@@ -66,9 +72,7 @@ def test_verify_full_storage_to_match_true(client: httpx.Client, auth_headers: d
     store_data = r_store.json()
     file_id_hex = store_data.get("id_hex")
 
-    assert file_id_hex is not None, (
-        "Response from /storage/store must contain file ID ('pk' or 'fileId')"
-    )
+    assert file_id_hex is not None, "Response from /storage/store must contain file ID ('pk' or 'fileId')"
     assert is_hex_bytes32(file_id_hex), f"File ID '{file_id_hex}' is not a valid hex32 string"
 
     # Шаг 2: Вызываем эндпоинт верификации с полученным ID
@@ -84,15 +88,13 @@ def test_verify_full_storage_to_match_true(client: httpx.Client, auth_headers: d
 
     # Главная проверка: обе части существуют и `match` равен `true`
     assert verify_data["onchain"] is not None, "On-chain data should not be null for a stored file"
-    assert verify_data["offchain"] is not None, (
-        "Off-chain data should not be null for a stored file"
-    )
-    assert verify_data["match"] is True, (
-        "On-chain and off-chain checksums should match for a fresh file"
-    )
+    assert verify_data["offchain"] is not None, "Off-chain data should not be null for a stored file"
+    assert verify_data["match"] is True, "On-chain and off-chain checksums should match for a fresh file"
 
     # Дополнительная проверка: чек-суммы действительно совпадают
     assert verify_data["onchain"]["checksum"] == verify_data["offchain"]["checksum"]
-    print(
-        f"\nVerification successful for file {file_id_hex}. Checksum: {verify_data['onchain']['checksum']}"
+    logger.info(
+        "Verification successful for file %s. Checksum: %s",
+        file_id_hex,
+        verify_data["onchain"]["checksum"],
     )

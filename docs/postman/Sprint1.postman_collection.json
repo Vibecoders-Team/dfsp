@@ -1,521 +1,1490 @@
 {
-	"info": {
-		"_postman_id": "561b0836-1be1-4810-a365-f37f685fa218",
-		"name": "DFSP Backend — Sprint 1",
-		"description": "DFSP backend tests: Health + Auth PoP (EIP-712). Pre-request скрипты подписывают EIP-712 прямо в Postman.",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-		"_exporter_id": "23342115",
-		"_collection_link": "https://speeding-moon-921909.postman.co/workspace/Team-Workspace~d6c15df2-0448-48ab-84ca-911386f90cac/collection/23342115-561b0836-1be1-4810-a365-f37f685fa218?action=share&source=collection_link&creator=23342115"
-	},
-	"item": [
-		{
-			"name": "Health",
-			"item": [
-				{
-					"name": "Health: /healthz",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"type": "text/javascript",
-								"exec": [
-									"pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });",
-									"const j = pm.response.json();",
-									"pm.test(\"Body ok=true\", function () { pm.expect(j.ok).to.be.true; });"
-								]
-							}
-						}
-					],
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{API_BASE}}/healthz",
-							"host": [
-								"{{API_BASE}}"
-							],
-							"path": [
-								"healthz"
-							]
-						}
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "Auth",
-			"item": [
-				{
-					"name": "Auth: Challenge (register)",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('200 OK', ()=> pm.response.to.have.status(200));",
-									"const j = pm.response.json();",
-									"",
-									"pm.environment.set('CHALLENGE_ID', j.challenge_id);",
-									"pm.environment.set('NONCE', j.nonce);",
-									"",
-									"// Сразу положим каркас AUTH_TYPED_DATA (адрес подставится в pre-request)",
-									"const typed = {",
-									"  domain: { name: 'DFSP-Login', version: '1' },",
-									"  types: { LoginChallenge: [",
-									"    { name: 'address', type: 'address' },",
-									"    { name: 'nonce',   type: 'bytes32' }",
-									"  ]},",
-									"  primaryType: 'LoginChallenge',",
-									"  message: { address: pm.environment.get('ETH_ADDRESS') || '0x'+'0'.repeat(40), nonce: j.nonce }",
-									"};",
-									"pm.environment.set('AUTH_TYPED_DATA', JSON.stringify(typed));",
-									""
-								],
-								"type": "text/javascript",
-								"packages": {},
-								"requests": {}
-							}
-						},
-						{
-							"listen": "prerequest",
-							"script": {
-								"exec": [
-									""
-								],
-								"type": "text/javascript",
-								"packages": {},
-								"requests": {}
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{}"
-						},
-						"url": {
-							"raw": "{{API_BASE}}/auth/challenge",
-							"host": [
-								"{{API_BASE}}"
-							],
-							"path": [
-								"auth",
-								"challenge"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "Auth: Register",
-					"event": [
-						{
-							"listen": "prerequest",
-							"script": {
-								"exec": [
-									"// ---------- безопасные геттеры ----------",
-									"const getStr = (key, required=false) => {",
-									"  // тянем из всех скоупов (request/collection/env/globals)",
-									"  let v = pm.variables.get(key);",
-									"  if (v === null || v === undefined) v = '';",
-									"  else if (typeof v !== 'string') v = String(v);",
-									"  v = v.trim();",
-									"  // уберём случайные кавычки",
-									"  if ((v.startsWith('\"') && v.endsWith('\"')) || (v.startsWith(\"'\") && v.endsWith(\"'\"))) {",
-									"    v = v.slice(1, -1).trim();",
-									"  }",
-									"  if (required && !v) pm.expect.fail(`${key} is required (put it in Environment → Current Value)`);",
-									"  return v;",
-									"};",
-									"",
-									"const getJSON = (key, required=false) => {",
-									"  const raw = pm.variables.get(key);",
-									"  if (raw && typeof raw === 'object') return raw;",
-									"  const s = getStr(key, required);",
-									"  if (!s) return null;",
-									"  try { return JSON.parse(s); }",
-									"  catch (e) { pm.expect.fail(`${key} must be valid JSON: ${e}`); }",
-									"};",
-									"",
-									"const setStr = (k, v) => pm.environment.set(k, String(v ?? '').trim());",
-									"const HEX = (n) => new RegExp(`^0x[0-9a-fA-F]{${n}}$`);",
-									"const ENSURE = (cond, msg) => { if (!cond) pm.expect.fail(msg); };",
-									"",
-									"// ---------- берём/строим typed_data ----------",
-									"let typed = getJSON('AUTH_TYPED_DATA'); // можно заранее положить готовый JSON",
-									"if (!typed) {",
-									"  // если нет — соберём каркас из NONCE (domain фиксированный)",
-									"  const nonce = getStr('NONCE', true);",
-									"  ENSURE(HEX(64).test(nonce), 'NONCE invalid (need 0x + 64 hex)');",
-									"  const zero = '0x' + '0'.repeat(40);",
-									"  typed = {",
-									"    domain: { name: 'DFSP-Login', version: '1' },",
-									"    types: { LoginChallenge: [",
-									"      { name: 'address', type: 'address' },",
-									"      { name: 'nonce',   type: 'bytes32' }",
-									"    ]},",
-									"    primaryType: 'LoginChallenge',",
-									"    message: { address: zero, nonce }",
-									"  };",
-									"  setStr('AUTH_TYPED_DATA', JSON.stringify(typed));",
-									"}",
-									"",
-									"// ---------- адрес и подпись ----------",
-									"let addr = getStr('ETH_ADDRESS');                   // ты кладёшь из оффлайн-скрипта",
-									"if (!addr && typed?.message?.address) addr = String(typed.message.address).trim();",
-									"ENSURE(HEX(40).test(addr), 'ETH_ADDRESS invalid (need 0x + 40 hex)');",
-									"",
-									"const sig = getStr('AUTH_SIGNATURE', true);         // тоже из оффлайн-скрипта",
-									"ENSURE(HEX(130).test(sig), 'AUTH_SIGNATURE invalid (need 0x + 130 hex)');",
-									"",
-									"const challengeId = getStr('CHALLENGE_ID', true);",
-									"",
-									"// гарантируем правильный адрес в typed.message",
-									"typed.message = typed.message || {};",
-									"typed.message.address = addr;",
-									"",
-									"// ---------- собираем body ----------",
-									"const isRegister = pm.request.url.toString().endsWith('/auth/register');",
-									"",
-									"const rsaPublic = getStr('RSA_PUBLIC') || 'test';",
-									"const displayName = getStr('DISPLAY_NAME') || 'Postman Tester';",
-									"",
-									"const body = isRegister",
-									"  ? {",
-									"      rsa_public: rsaPublic,",
-									"      eth_address: addr,",
-									"      display_name: displayName,",
-									"      challenge_id: challengeId,",
-									"      signature: sig,",
-									"      typed_data: typed",
-									"    }",
-									"  : {",
-									"      eth_address: addr,",
-									"      challenge_id: challengeId,",
-									"      signature: sig,",
-									"      typed_data: typed",
-									"    };",
-									"",
-									"// заголовок и тело",
-									"pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });",
-									"pm.request.body.update(JSON.stringify(body));",
-									"",
-									"// на всякий — вернём адрес в окружение",
-									"setStr('ETH_ADDRESS', addr);",
-									""
-								],
-								"type": "text/javascript",
-								"packages": {},
-								"requests": {}
-							}
-						},
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('200 OK', ()=> pm.response.to.have.status(200));",
-									"const j = pm.response.json();",
-									"pm.test('Tokens present', ()=> { pm.expect(j).to.have.property('access'); pm.expect(j).to.have.property('refresh'); });",
-									"pm.environment.set('ACCESS_TOKEN', j.access);",
-									"pm.environment.set('REFRESH_TOKEN', j.refresh);",
-									""
-								],
-								"type": "text/javascript",
-								"packages": {},
-								"requests": {}
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{}"
-						},
-						"url": {
-							"raw": "{{API_BASE}}/auth/register",
-							"host": [
-								"{{API_BASE}}"
-							],
-							"path": [
-								"auth",
-								"register"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "Auth: Challenge (login)",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('200 OK', ()=> pm.response.to.have.status(200));",
-									"const j = pm.response.json();",
-									"",
-									"pm.environment.set('CHALLENGE_ID', j.challenge_id);",
-									"pm.environment.set('NONCE', j.nonce);",
-									"",
-									"// Сразу положим каркас AUTH_TYPED_DATA (адрес подставится в pre-request)",
-									"const typed = {",
-									"  domain: { name: 'DFSP-Login', version: '1' },",
-									"  types: { LoginChallenge: [",
-									"    { name: 'address', type: 'address' },",
-									"    { name: 'nonce',   type: 'bytes32' }",
-									"  ]},",
-									"  primaryType: 'LoginChallenge',",
-									"  message: { address: pm.environment.get('ETH_ADDRESS') || '0x'+'0'.repeat(40), nonce: j.nonce }",
-									"};",
-									"pm.environment.set('AUTH_TYPED_DATA', JSON.stringify(typed));",
-									""
-								],
-								"type": "text/javascript",
-								"packages": {},
-								"requests": {}
-							}
-						},
-						{
-							"listen": "prerequest",
-							"script": {
-								"packages": {},
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{}"
-						},
-						"url": {
-							"raw": "{{API_BASE}}/auth/challenge",
-							"host": [
-								"{{API_BASE}}"
-							],
-							"path": [
-								"auth",
-								"challenge"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "Auth: Login",
-					"event": [
-						{
-							"listen": "prerequest",
-							"script": {
-								"exec": [
-									"// ---------- безопасные геттеры ----------",
-									"const getStr = (key, required=false) => {",
-									"  // тянем из всех скоупов (request/collection/env/globals)",
-									"  let v = pm.variables.get(key);",
-									"  if (v === null || v === undefined) v = '';",
-									"  else if (typeof v !== 'string') v = String(v);",
-									"  v = v.trim();",
-									"  // уберём случайные кавычки",
-									"  if ((v.startsWith('\"') && v.endsWith('\"')) || (v.startsWith(\"'\") && v.endsWith(\"'\"))) {",
-									"    v = v.slice(1, -1).trim();",
-									"  }",
-									"  if (required && !v) pm.expect.fail(`${key} is required (put it in Environment → Current Value)`);",
-									"  return v;",
-									"};",
-									"",
-									"const getJSON = (key, required=false) => {",
-									"  const raw = pm.variables.get(key);",
-									"  if (raw && typeof raw === 'object') return raw;",
-									"  const s = getStr(key, required);",
-									"  if (!s) return null;",
-									"  try { return JSON.parse(s); }",
-									"  catch (e) { pm.expect.fail(`${key} must be valid JSON: ${e}`); }",
-									"};",
-									"",
-									"const setStr = (k, v) => pm.environment.set(k, String(v ?? '').trim());",
-									"const HEX = (n) => new RegExp(`^0x[0-9a-fA-F]{${n}}$`);",
-									"const ENSURE = (cond, msg) => { if (!cond) pm.expect.fail(msg); };",
-									"",
-									"// ---------- берём/строим typed_data ----------",
-									"let typed = getJSON('AUTH_TYPED_DATA'); // можно заранее положить готовый JSON",
-									"if (!typed) {",
-									"  // если нет — соберём каркас из NONCE (domain фиксированный)",
-									"  const nonce = getStr('NONCE', true);",
-									"  ENSURE(HEX(64).test(nonce), 'NONCE invalid (need 0x + 64 hex)');",
-									"  const zero = '0x' + '0'.repeat(40);",
-									"  typed = {",
-									"    domain: { name: 'DFSP-Login', version: '1' },",
-									"    types: { LoginChallenge: [",
-									"      { name: 'address', type: 'address' },",
-									"      { name: 'nonce',   type: 'bytes32' }",
-									"    ]},",
-									"    primaryType: 'LoginChallenge',",
-									"    message: { address: zero, nonce }",
-									"  };",
-									"  setStr('AUTH_TYPED_DATA', JSON.stringify(typed));",
-									"}",
-									"",
-									"// ---------- адрес и подпись ----------",
-									"let addr = getStr('ETH_ADDRESS');                   // ты кладёшь из оффлайн-скрипта",
-									"if (!addr && typed?.message?.address) addr = String(typed.message.address).trim();",
-									"ENSURE(HEX(40).test(addr), 'ETH_ADDRESS invalid (need 0x + 40 hex)');",
-									"",
-									"const sig = getStr('AUTH_SIGNATURE', true);         // тоже из оффлайн-скрипта",
-									"ENSURE(HEX(130).test(sig), 'AUTH_SIGNATURE invalid (need 0x + 130 hex)');",
-									"",
-									"const challengeId = getStr('CHALLENGE_ID', true);",
-									"",
-									"// гарантируем правильный адрес в typed.message",
-									"typed.message = typed.message || {};",
-									"typed.message.address = addr;",
-									"",
-									"// ---------- собираем body ----------",
-									"const isRegister = pm.request.url.toString().endsWith('/auth/register');",
-									"",
-									"const rsaPublic = getStr('RSA_PUBLIC') || 'test';",
-									"const displayName = getStr('DISPLAY_NAME') || 'Postman Tester';",
-									"",
-									"const body = isRegister",
-									"  ? {",
-									"      rsa_public: rsaPublic,",
-									"      eth_address: addr,",
-									"      display_name: displayName,",
-									"      challenge_id: challengeId,",
-									"      signature: sig,",
-									"      typed_data: typed",
-									"    }",
-									"  : {",
-									"      eth_address: addr,",
-									"      challenge_id: challengeId,",
-									"      signature: sig,",
-									"      typed_data: typed",
-									"    };",
-									"",
-									"// заголовок и тело",
-									"pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });",
-									"pm.request.body.update(JSON.stringify(body));",
-									"",
-									"// на всякий — вернём адрес в окружение",
-									"setStr('ETH_ADDRESS', addr);",
-									""
-								],
-								"type": "text/javascript",
-								"packages": {},
-								"requests": {}
-							}
-						},
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('200 OK', ()=> pm.response.to.have.status(200));",
-									"const j = pm.response.json();",
-									"pm.test('Tokens present', ()=> { pm.expect(j).to.have.property('access'); pm.expect(j).to.have.property('refresh'); });",
-									"pm.environment.set('ACCESS_TOKEN', j.access);",
-									"pm.environment.set('REFRESH_TOKEN', j.refresh);",
-									""
-								],
-								"type": "text/javascript",
-								"packages": {},
-								"requests": {}
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{}"
-						},
-						"url": {
-							"raw": "{{API_BASE}}/auth/login",
-							"host": [
-								"{{API_BASE}}"
-							],
-							"path": [
-								"auth",
-								"login"
-							]
-						}
-					},
-					"response": []
-				}
-			],
-			"description": "EIP-712 PoP: Challenge → Register → Challenge → Login"
-		}
-	],
-	"event": [
-		{
-			"listen": "prerequest",
-			"script": {
-				"type": "text/javascript",
-				"packages": {},
-				"requests": {},
-				"exec": [
-					""
-				]
-			}
-		},
-		{
-			"listen": "test",
-			"script": {
-				"type": "text/javascript",
-				"packages": {},
-				"requests": {},
-				"exec": [
-					""
-				]
-			}
-		}
-	],
-	"variable": [
-		{
-			"key": "API_BASE",
-			"value": "http://localhost:8000"
-		},
-		{
-			"key": "ETH_ADDRESS",
-			"value": ""
-		},
-		{
-			"key": "AUTH_SIGNATURE",
-			"value": ""
-		},
-		{
-			"key": "AUTH_TYPED_DATA",
-			"value": ""
-		},
-		{
-			"key": "CHALLENGE_ID",
-			"value": ""
-		}
-	]
+  "info": {
+    "_postman_id": "a80b7f75-21de-4d22-9543-6f2c2e4d4559",
+    "name": "DFSP Backend API",
+    "description": "DFSP backend Postman collection aligned with the current FastAPI routers.\nIncludes auth (EIP-712), PoW helper, file metadata, grants, downloads, anchoring, and meta-tx submission.\nUse the environment template in docs/postman to configure host, keys, and tokens.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "System: /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/health",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('Checks present', function () { pm.expect(body).to.have.property('checks'); });",
+                  "pm.environment.set('HEALTH_STATUS', body.status || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "System: /live",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/live",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "live"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "System: /ready",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/ready",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "ready"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chain: Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/chain/info",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "chain",
+                "info"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const data = pm.response.json();",
+                  "pm.test('chain_id present', function () { pm.expect(data).to.have.property('chain_id'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "PoW",
+      "item": [
+        {
+          "name": "PoW: Challenge",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/pow/challenge",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "pow",
+                "challenge"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const CryptoJS = require('crypto-js');",
+                  "const body = pm.response.json();",
+                  "const challenge = String(body.challenge || '');",
+                  "const difficulty = Number(body.difficulty || 0);",
+                  "pm.environment.set('POW_CHALLENGE', challenge);",
+                  "pm.environment.set('POW_DIFFICULTY', String(difficulty));",
+                  "pm.environment.unset('POW_TOKEN');",
+                  "",
+                  "const ttl = Number(body.ttl || 0);",
+                  "const nibbles = Math.ceil(difficulty / 4);",
+                  "const prefix = '0'.repeat(Math.max(1, nibbles));",
+                  "const maxTries = Number(pm.environment.get('POW_MAX_TRIES') || '0') || 2000000;",
+                  "let start = Number(pm.environment.get('POW_NONCE_START') || '0') || 0;",
+                  "let solvedToken = null;",
+                  "for (let i = 0; i < maxTries; i += 1) {",
+                  "  const nonce = (start + i).toString(16);",
+                  "  const digest = CryptoJS.SHA256(challenge + nonce).toString();",
+                  "  if (digest.startsWith(prefix)) {",
+                  "    solvedToken = `${challenge}.${nonce}`;",
+                  "    pm.environment.set('POW_TOKEN', solvedToken);",
+                  "    pm.environment.set('POW_NONCE_START', String(start + i + 1));",
+                  "    console.log(`Found PoW nonce after ${i + 1} iterations; token set`);",
+                  "    break;",
+                  "  }",
+                  "}",
+                  "if (!solvedToken) {",
+                  "  console.warn('Unable to auto-solve PoW within POW_MAX_TRIES; solve manually and set POW_TOKEN');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Auth: Challenge (register)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/auth/challenge",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "auth",
+                "challenge"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.environment.set('CHALLENGE_ID', body.challenge_id);",
+                  "pm.environment.set('NONCE', body.nonce);",
+                  "const typed = { domain: { name: 'DFSP-Login', version: '1' }, types: { LoginChallenge: [ { name: 'address', type: 'address' }, { name: 'nonce', type: 'bytes32' } ] }, primaryType: 'LoginChallenge', message: { address: pm.environment.get('ETH_ADDRESS') || '0x' + '0'.repeat(40), nonce: body.nonce } };",
+                  "pm.environment.set('AUTH_TYPED_DATA', JSON.stringify(typed));",
+                  "pm.environment.unset('AUTH_SIGNATURE');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Auth: Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/auth/register",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Ensure challenge, typedData, and signature are available before hitting /auth/register or /auth/login",
+                  "const getStr = (key, required = false) => {",
+                  "  let v = pm.variables.get(key);",
+                  "  if (v === null || v === undefined) v = '';",
+                  "  else if (typeof v !== 'string') v = String(v);",
+                  "  v = v.trim();",
+                  "  if ((v.startsWith('\"') && v.endsWith('\"')) || (v.startsWith(\"'\") && v.endsWith(\"'\"))) {",
+                  "    v = v.slice(1, -1).trim();",
+                  "  }",
+                  "  if (required && !v) {",
+                  "    pm.expect.fail(`${key} is required (set it in the environment)`);",
+                  "  }",
+                  "  return v;",
+                  "};",
+                  "const getJSON = (key) => {",
+                  "  const raw = pm.variables.get(key);",
+                  "  if (raw && typeof raw === 'object') return raw;",
+                  "  const s = getStr(key);",
+                  "  if (!s) return null;",
+                  "  try { return JSON.parse(s); }",
+                  "  catch (err) { pm.expect.fail(`${key} must be valid JSON: ${err}`); }",
+                  "};",
+                  "const setStr = (k, v) => pm.environment.set(k, String(v ?? '').trim());",
+                  "const HEX = (n) => new RegExp(`^0x[0-9a-fA-F]{${n}}$`);",
+                  "const ENSURE = (cond, msg) => { if (!cond) pm.expect.fail(msg); };",
+                  "",
+                  "let typed = getJSON('AUTH_TYPED_DATA');",
+                  "if (!typed) {",
+                  "  const nonce = getStr('NONCE', true);",
+                  "  ENSURE(HEX(64).test(nonce), 'NONCE invalid (expect 0x + 64 hex chars)');",
+                  "  typed = {",
+                  "    domain: { name: 'DFSP-Login', version: '1' },",
+                  "    types: { LoginChallenge: [",
+                  "      { name: 'address', type: 'address' },",
+                  "      { name: 'nonce', type: 'bytes32' },",
+                  "    ]},",
+                  "    primaryType: 'LoginChallenge',",
+                  "    message: { address: '0x' + '0'.repeat(40), nonce },",
+                  "  };",
+                  "  setStr('AUTH_TYPED_DATA', JSON.stringify(typed));",
+                  "}",
+                  "",
+                  "let addr = getStr('ETH_ADDRESS');",
+                  "if (!addr && typed?.message?.address) addr = String(typed.message.address).trim();",
+                  "ENSURE(HEX(40).test(addr), 'ETH_ADDRESS invalid (0x + 40 hex)');",
+                  "",
+                  "const sig = getStr('AUTH_SIGNATURE', true);",
+                  "ENSURE(HEX(130).test(sig), 'AUTH_SIGNATURE invalid (0x + 130 hex)');",
+                  "const challengeId = getStr('CHALLENGE_ID', true);",
+                  "",
+                  "typed.message = typed.message || {};",
+                  "typed.message.address = addr;",
+                  "",
+                  "const isRegister = /\\/auth\\/register$/.test(pm.request.url.toString());",
+                  "let body;",
+                  "if (isRegister) {",
+                  "  const rsaPublic = getStr('RSA_PUBLIC', true);",
+                  "  const displayName = getStr('DISPLAY_NAME') || 'Postman Tester';",
+                  "  body = {",
+                  "    rsa_public: rsaPublic,",
+                  "    eth_address: addr,",
+                  "    display_name: displayName,",
+                  "    challenge_id: challengeId,",
+                  "    signature: sig,",
+                  "    typed_data: typed,",
+                  "  };",
+                  "} else {",
+                  "  body = {",
+                  "    eth_address: addr,",
+                  "    challenge_id: challengeId,",
+                  "    signature: sig,",
+                  "    typed_data: typed,",
+                  "  };",
+                  "}",
+                  "",
+                  "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));",
+                  "setStr('ETH_ADDRESS', addr);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.environment.set('ACCESS_TOKEN', body.access || '');",
+                  "pm.environment.set('REFRESH_TOKEN', body.refresh || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Auth: Challenge (login)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/auth/challenge",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "auth",
+                "challenge"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.environment.set('CHALLENGE_ID', body.challenge_id);",
+                  "pm.environment.set('NONCE', body.nonce);",
+                  "const typed = { domain: { name: 'DFSP-Login', version: '1' }, types: { LoginChallenge: [ { name: 'address', type: 'address' }, { name: 'nonce', type: 'bytes32' } ] }, primaryType: 'LoginChallenge', message: { address: pm.environment.get('ETH_ADDRESS') || '0x' + '0'.repeat(40), nonce: body.nonce } };",
+                  "pm.environment.set('AUTH_TYPED_DATA', JSON.stringify(typed));",
+                  "pm.environment.unset('AUTH_SIGNATURE');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Auth: Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/auth/login",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Ensure challenge, typedData, and signature are available before hitting /auth/register or /auth/login",
+                  "const getStr = (key, required = false) => {",
+                  "  let v = pm.variables.get(key);",
+                  "  if (v === null || v === undefined) v = '';",
+                  "  else if (typeof v !== 'string') v = String(v);",
+                  "  v = v.trim();",
+                  "  if ((v.startsWith('\"') && v.endsWith('\"')) || (v.startsWith(\"'\") && v.endsWith(\"'\"))) {",
+                  "    v = v.slice(1, -1).trim();",
+                  "  }",
+                  "  if (required && !v) {",
+                  "    pm.expect.fail(`${key} is required (set it in the environment)`);",
+                  "  }",
+                  "  return v;",
+                  "};",
+                  "const getJSON = (key) => {",
+                  "  const raw = pm.variables.get(key);",
+                  "  if (raw && typeof raw === 'object') return raw;",
+                  "  const s = getStr(key);",
+                  "  if (!s) return null;",
+                  "  try { return JSON.parse(s); }",
+                  "  catch (err) { pm.expect.fail(`${key} must be valid JSON: ${err}`); }",
+                  "};",
+                  "const setStr = (k, v) => pm.environment.set(k, String(v ?? '').trim());",
+                  "const HEX = (n) => new RegExp(`^0x[0-9a-fA-F]{${n}}$`);",
+                  "const ENSURE = (cond, msg) => { if (!cond) pm.expect.fail(msg); };",
+                  "",
+                  "let typed = getJSON('AUTH_TYPED_DATA');",
+                  "if (!typed) {",
+                  "  const nonce = getStr('NONCE', true);",
+                  "  ENSURE(HEX(64).test(nonce), 'NONCE invalid (expect 0x + 64 hex chars)');",
+                  "  typed = {",
+                  "    domain: { name: 'DFSP-Login', version: '1' },",
+                  "    types: { LoginChallenge: [",
+                  "      { name: 'address', type: 'address' },",
+                  "      { name: 'nonce', type: 'bytes32' },",
+                  "    ]},",
+                  "    primaryType: 'LoginChallenge',",
+                  "    message: { address: '0x' + '0'.repeat(40), nonce },",
+                  "  };",
+                  "  setStr('AUTH_TYPED_DATA', JSON.stringify(typed));",
+                  "}",
+                  "",
+                  "let addr = getStr('ETH_ADDRESS');",
+                  "if (!addr && typed?.message?.address) addr = String(typed.message.address).trim();",
+                  "ENSURE(HEX(40).test(addr), 'ETH_ADDRESS invalid (0x + 40 hex)');",
+                  "",
+                  "const sig = getStr('AUTH_SIGNATURE', true);",
+                  "ENSURE(HEX(130).test(sig), 'AUTH_SIGNATURE invalid (0x + 130 hex)');",
+                  "const challengeId = getStr('CHALLENGE_ID', true);",
+                  "",
+                  "typed.message = typed.message || {};",
+                  "typed.message.address = addr;",
+                  "",
+                  "const isRegister = /\\/auth\\/register$/.test(pm.request.url.toString());",
+                  "let body;",
+                  "if (isRegister) {",
+                  "  const rsaPublic = getStr('RSA_PUBLIC', true);",
+                  "  const displayName = getStr('DISPLAY_NAME') || 'Postman Tester';",
+                  "  body = {",
+                  "    rsa_public: rsaPublic,",
+                  "    eth_address: addr,",
+                  "    display_name: displayName,",
+                  "    challenge_id: challengeId,",
+                  "    signature: sig,",
+                  "    typed_data: typed,",
+                  "  };",
+                  "} else {",
+                  "  body = {",
+                  "    eth_address: addr,",
+                  "    challenge_id: challengeId,",
+                  "    signature: sig,",
+                  "    typed_data: typed,",
+                  "  };",
+                  "}",
+                  "",
+                  "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));",
+                  "setStr('ETH_ADDRESS', addr);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.environment.set('ACCESS_TOKEN', body.access || '');",
+                  "pm.environment.set('REFRESH_TOKEN', body.refresh || '');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Users: Get RSA key",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_LOOKUP_ADDRESS}}/pubkey",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_LOOKUP_ADDRESS}}",
+                "pubkey"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('rsa_public present', function () { pm.expect(body).to.have.property('rsa_public'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Files",
+      "item": [
+        {
+          "name": "Files: List my files",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/files",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "files"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const arr = pm.response.json();",
+                  "pm.test('Response is array', function () { pm.expect(Array.isArray(arr)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Files: Create metadata",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/files",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "files"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileId\": \"{{FILE_ID}}\",\n  \"name\": \"{{FILE_NAME}}\",\n  \"size\": {{FILE_SIZE}},\n  \"mime\": \"{{FILE_MIME}}\",\n  \"cid\": \"{{FILE_CID}}\",\n  \"checksum\": \"{{FILE_CHECKSUM}}\"\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.environment.set('MTX_TYPED_DATA', JSON.stringify(body.typedData || {}));",
+                  "pm.environment.unset('MTX_SIGNATURE');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Files: Share file",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "X-PoW-Token",
+                "value": "{{POW_TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/files/{{FILE_ID}}/share",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "files",
+                "{{FILE_ID}}",
+                "share"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"users\": [\n    \"{{GRANTEE_ADDRESS}}\"\n  ],\n  \"ttl_days\": 7,\n  \"max_dl\": 3,\n  \"encK_map\": {\n    \"{{GRANTEE_ADDRESS}}\": \"{{ENC_KEY_B64}}\"\n  },\n  \"request_id\": \"{{SHARE_REQUEST_ID}}\"\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "if (Array.isArray(body.items) && body.items.length) { pm.environment.set('CAP_ID', body.items[0].capId); }",
+                  "if (Array.isArray(body.typedDataList) && body.typedDataList.length) { pm.environment.set('MTX_TYPED_DATA', JSON.stringify(body.typedDataList[0])); pm.environment.set('METATX_REQUEST_ID', `${pm.environment.get('SHARE_REQUEST_ID') || 'share'}-0`); pm.environment.unset('MTX_SIGNATURE'); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Files: List grants for file",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/files/{{FILE_ID}}/grants",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "files",
+                "{{FILE_ID}}",
+                "grants"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('items array present', function () { pm.expect(Array.isArray(body.items)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Storage",
+      "item": [
+        {
+          "name": "Storage: Upload to IPFS",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/storage/store",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "storage",
+                "store"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "{{STORAGE_FILE_PATH}}"
+                },
+                {
+                  "key": "id_hex",
+                  "value": "{{FILE_ID}}",
+                  "type": "text"
+                },
+                {
+                  "key": "checksum",
+                  "value": "{{FILE_CHECKSUM}}",
+                  "type": "text"
+                },
+                {
+                  "key": "plain_size",
+                  "value": "{{FILE_SIZE}}",
+                  "type": "text"
+                },
+                {
+                  "key": "orig_name",
+                  "value": "{{FILE_NAME}}",
+                  "type": "text"
+                },
+                {
+                  "key": "orig_mime",
+                  "value": "{{FILE_MIME}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.environment.set('FILE_ID', body.id_hex || pm.environment.get('FILE_ID'));",
+                  "pm.environment.set('FILE_CID', body.cid || pm.environment.get('FILE_CID'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Storage: Resolve CID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/storage/cid/{{FILE_ID}}",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "storage",
+                "cid",
+                "{{FILE_ID}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('cid present', function () { pm.expect(body).to.have.property('cid'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Storage: Meta",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/storage/meta/{{FILE_ID}}",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "storage",
+                "meta",
+                "{{FILE_ID}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('checksum present', function () { pm.expect(body).to.have.property('checksum'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Storage: Versions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/storage/versions/{{FILE_ID}}",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "storage",
+                "versions",
+                "{{FILE_ID}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('versions array', function () { pm.expect(Array.isArray(body.versions)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Storage: History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/storage/history/{{FILE_ID}}",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "storage",
+                "history",
+                "{{FILE_ID}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('items array', function () { pm.expect(Array.isArray(body.items)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Grants",
+      "item": [
+        {
+          "name": "Grants: Received",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/grants",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "grants"
+              ],
+              "query": [
+                {
+                  "key": "role",
+                  "value": "received"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('items array', function () { pm.expect(Array.isArray(body.items)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grants: Granted",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/grants",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "grants"
+              ],
+              "query": [
+                {
+                  "key": "role",
+                  "value": "granted"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('items array', function () { pm.expect(Array.isArray(body.items)).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grants: Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/grants/{{CAP_ID}}",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "grants",
+                "{{CAP_ID}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.environment.set('GRANT_STATUS', body.status || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grants: Revoke",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/grants/{{CAP_ID}}/revoke",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "grants",
+                "{{CAP_ID}}",
+                "revoke"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "if (body.typedData) { pm.environment.set('MTX_TYPED_DATA', JSON.stringify(body.typedData)); pm.environment.set('METATX_REQUEST_ID', body.requestId || pm.environment.get('METATX_REQUEST_ID') || ''); pm.environment.unset('MTX_SIGNATURE'); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Download",
+      "item": [
+        {
+          "name": "Download: Get enc key + CID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "X-PoW-Token",
+                "value": "{{POW_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/download/{{CAP_ID}}",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "download",
+                "{{CAP_ID}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('encK present', function () { pm.expect(body).to.have.property('encK'); });",
+                  "if (body.requestId) { pm.environment.set('METATX_REQUEST_ID', body.requestId); }",
+                  "if (body.typedData) { pm.environment.set('MTX_TYPED_DATA', JSON.stringify(body.typedData)); pm.environment.unset('MTX_SIGNATURE'); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Meta Tx",
+      "item": [
+        {
+          "name": "Meta-tx: Submit ForwardRequest",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/meta-tx/submit",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "meta-tx",
+                "submit"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const getEnv = (key, required = false) => {",
+                  "  let v = pm.environment.get(key);",
+                  "  if (typeof v === 'string') v = v.trim();",
+                  "  if (required && !v) pm.expect.fail(`${key} is required (set it in the environment)`);",
+                  "  return v;",
+                  "};",
+                  "let typed = pm.environment.get('MTX_TYPED_DATA');",
+                  "if (typed && typeof typed === 'string') {",
+                  "  try { typed = typed ? JSON.parse(typed) : null; }",
+                  "  catch (err) { pm.expect.fail(`MTX_TYPED_DATA must be valid JSON: ${err}`); }",
+                  "}",
+                  "if (!typed || typeof typed !== 'object') {",
+                  "  pm.expect.fail('MTX_TYPED_DATA is empty \u2014 capture typedData from /files or /grants responses');",
+                  "}",
+                  "let signature = getEnv('MTX_SIGNATURE', true);",
+                  "if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) {",
+                  "  pm.expect.fail('MTX_SIGNATURE must be a 65-byte hex string (0x + 130 hex chars)');",
+                  "}",
+                  "let requestId = getEnv('METATX_REQUEST_ID');",
+                  "if (!requestId) {",
+                  "  const uuidv4 = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {",
+                  "    const r = Math.random() * 16 | 0;",
+                  "    const v = c === 'x' ? r : ((r & 0x3) | 0x8);",
+                  "    return v.toString(16);",
+                  "  });",
+                  "  requestId = uuidv4();",
+                  "  pm.environment.set('METATX_REQUEST_ID', requestId);",
+                  "}",
+                  "const payload = {",
+                  "  request_id: requestId,",
+                  "  typed_data: typed,",
+                  "  signature,",
+                  "};",
+                  "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });",
+                  "pm.request.body.update(JSON.stringify(payload, null, 2));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Accepted (200 or 202)', function () { pm.expect([200, 202]).to.include(pm.response.code); });",
+                  "const body = pm.response.json();",
+                  "pm.environment.set('LAST_META_TX_STATUS', body.status || '');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Verify",
+      "item": [
+        {
+          "name": "Verify: On-chain vs DB",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/verify/{{FILE_ID}}",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "verify",
+                "{{FILE_ID}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('match flag present', function () { pm.expect(body).to.have.property('match'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Anchors",
+      "item": [
+        {
+          "name": "Anchors: Latest",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/anchors/latest",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "anchors",
+                "latest"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('period_id present', function () { pm.expect(body).to.have.property('period_id'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Anchors: By period",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/anchors/{{ANCHOR_PERIOD_ID}}",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "anchors",
+                "{{ANCHOR_PERIOD_ID}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('event_count present', function () { pm.expect(body).to.have.property('event_count'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Anchors: Trigger manual run",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/anchors/trigger/{{ANCHOR_PERIOD_ID}}",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "anchors",
+                "trigger",
+                "{{ANCHOR_PERIOD_ID}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.environment.set('ANCHOR_LAST_TRIGGER', body.status || '');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Admin: Add checksum to denylist",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ACCESS_TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/denylist",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "denylist"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"checksum\": \"{{DENYLIST_CHECKSUM}}\"\n}\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('ok flag present', function () { pm.expect(body).to.have.property('ok'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [],
+  "variable": [
+    {
+      "key": "API_BASE",
+      "value": "http://localhost:8000"
+    }
+  ]
 }

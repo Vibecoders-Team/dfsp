@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Annotated
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -16,14 +17,14 @@ bearer = HTTPBearer(auto_error=True)
 
 
 def get_current_user(
-        creds: HTTPAuthorizationCredentials = Depends(bearer),
-        db: Session = Depends(get_db),
+    creds: Annotated[HTTPAuthorizationCredentials, Depends(bearer)],
+    db: Annotated[Session, Depends(get_db)],
 ) -> User:
     token = creds.credentials
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-    except Exception:
-        raise HTTPException(status_code=401, detail="invalid_token")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="invalid_token") from e
 
     uid = payload.get("sub") or payload.get("uid") or payload.get("id")
     if not uid:
@@ -37,8 +38,12 @@ def get_current_user(
 
 
 def make_token(sub: str, ttl_min: int) -> str:
-    now = datetime.now(timezone.utc)
-    payload = {"sub": sub, "iat": int(now.timestamp()), "exp": int((now + timedelta(minutes=ttl_min)).timestamp())}
+    now = datetime.now(UTC)
+    payload = {
+        "sub": sub,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=ttl_min)).timestamp()),
+    }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 

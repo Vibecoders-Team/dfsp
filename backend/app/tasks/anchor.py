@@ -1,8 +1,9 @@
 """Celery tasks for anchoring events."""
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from celery import Task
 
@@ -20,7 +21,7 @@ class DatabaseTask(Task):
 
     _db = None
 
-    def after_return(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+    def after_return(self, *args: object, **kwargs: object) -> None:  # type: ignore[no-untyped-def]
         if self._db is not None:
             self._db.close()
 
@@ -50,7 +51,7 @@ def anchor_period_task(self: DatabaseTask, period_id: int | None = None) -> dict
         # Determine which period to anchor
         if period_id is None:
             # Anchor previous period (current period - 1)
-            current_period = EventLogger.compute_period_id(datetime.now(timezone.utc))
+            current_period = EventLogger.compute_period_id(datetime.now(UTC))
             period_id = current_period - 1
 
         log.info(f"Starting anchoring for period {period_id}")
@@ -112,4 +113,3 @@ celery.conf.beat_schedule = {
         "options": {"queue": "anchor"},
     },
 }
-

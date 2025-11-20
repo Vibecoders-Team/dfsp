@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-
 client = TestClient(app)
 
 
@@ -23,4 +22,3 @@ def test_metrics_endpoint_and_request_counters():
     assert "# HELP api_requests_total" in body
     assert "# TYPE api_requests_total counter" in body
     assert "api_requests_total" in body
-

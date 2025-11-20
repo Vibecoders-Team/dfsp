@@ -1,0 +1,81 @@
+version: 2
+updates:
+  # GitHub Actions → main (один PR на все экшены)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "chore"]
+    target-branch: "main"
+    groups:
+      all-actions:
+        patterns: ["*"]
+
+  # GitHub Actions → backend/main
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "chore", "area:backend"]
+    target-branch: "backend/main"
+    groups:
+      all-actions:
+        patterns: ["*"]
+
+  # GitHub Actions → frontend/main
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "chore", "area:web"]
+    target-branch: "frontend/main"
+    groups:
+      all-actions:
+        patterns: ["*"]
+
+  # GitHub Actions → blockchain/main
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "chore", "area:contracts"]
+    target-branch: "blockchain/main"
+    groups:
+      all-actions:
+        patterns: ["*"]
+
+  # frontend deps (npm) → frontend/main (как у тебя)
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "area:web"]
+    target-branch: "frontend/main"
+    groups:
+      minor-patch: { update-types: ["minor", "patch"] }
+      dev-deps: { dependency-type: "development" }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # contracts deps (npm) → blockchain/main
+  - package-ecosystem: "npm"
+    directory: "/contracts"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "area:contracts"]
+    target-branch: "blockchain/main"
+    groups:
+      minor-patch: { update-types: ["minor", "patch"] }
+      dev-deps: { dependency-type: "development" }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # backend deps (pip) → backend/main
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "area:api"]
+    target-branch: "backend/main"
+
+  # infra deps (docker) → main
+  - package-ecosystem: "docker"
+    directory: "/infra"
+    schedule: { interval: "weekly" }
+    labels: ["dependencies", "area:infra"]
+    target-branch: "main"

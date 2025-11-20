@@ -1,5 +1,5 @@
-import pytest
 import httpx
+import pytest
 
 # Предполагаем, что DEV_CHAIN_ID будет импортирован из conftest
 # Если нет, можно определить его здесь: DEV_CHAIN_ID = 31337
@@ -18,9 +18,7 @@ def test_health_ok_minimal(client: httpx.Client):
     # ОБРАТИТЕ ВНИМАНИЕ: httpx.Client уже настроен на base_url,
     # поэтому мы указываем относительный путь
     response = client.get("/health")
-    assert response.status_code == 200, (
-        f"Expected 200, got {response.status_code}. Body: {response.text}"
-    )
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}. Body: {response.text}"
 
     data = response.json()
     assert data.get("status") in ("healthy", "degraded"), "API status should be 'healthy' or 'degraded'"

@@ -1,4 +1,5 @@
 """API router for anchoring endpoints."""
+
 from __future__ import annotations
 
 import logging
@@ -8,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.orm import Session
 
 from app.deps import get_db, rds
-from app.schemas.anchors import AnchorResponse, AnchorDetailResponse
+from app.schemas.anchors import AnchorDetailResponse, AnchorResponse
 from app.services.anchoring import AnchoringService
 from app.tasks.anchor import anchor_period_task
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, cast
 import logging
+from typing import Annotated, cast
 
 from eth_typing import HexStr
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,15 +10,15 @@ from sqlalchemy.orm import Session
 from web3 import Web3
 
 from app.blockchain.web3_client import Chain
-from app.deps import get_db, get_chain
+from app.deps import get_chain, get_db
 from app.models import File
-from app.schemas.verify import VerifyOut, FileMeta
+from app.schemas.verify import FileMeta, VerifyOut
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/verify", tags=["verify"])
 
 
-def normalize_checksum(value: Any) -> str | None:
+def normalize_checksum(value: object) -> str | None:
     """Приводит чек-сумму в байтах к hex-строке '0x...'."""
     if isinstance(value, (bytes, bytearray)):
         return "0x" + value.hex()
@@ -28,13 +28,11 @@ def normalize_checksum(value: Any) -> str | None:
 @router.get("/{file_id_hex}", response_model=VerifyOut)
 def verify(
     file_id_hex: str,
-    db: Session = Depends(get_db),
-    chain: Chain = Depends(get_chain),
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
 ) -> VerifyOut:
     # Валидация формата file_id, чтобы вернуть 400 вместо 422
-    if not (
-        isinstance(file_id_hex, str) and file_id_hex.startswith("0x") and len(file_id_hex) == 66
-    ):
+    if not (isinstance(file_id_hex, str) and file_id_hex.startswith("0x") and len(file_id_hex) == 66):
         raise HTTPException(status_code=400, detail="bad_file_id")
 
     file_id_bytes = Web3.to_bytes(hexstr=cast(HexStr, file_id_hex))
@@ -48,6 +46,7 @@ def verify(
             checksum=normalize_checksum(db_file.checksum) or "0x",
             size=db_file.size,
             mime=db_file.mime,
+            name=db_file.name,
         )
 
     # 2. Получаем данные из блокчейна (on-chain)
@@ -61,11 +60,13 @@ def verify(
         if raw_onchain_meta and any(raw_onchain_meta.values()):
             checksum_hex = normalize_checksum(raw_onchain_meta.get("checksum"))
             if checksum_hex:
+                oc_name = raw_onchain_meta.get("name") if isinstance(raw_onchain_meta.get("name"), str) else None
                 onchain_data = FileMeta(
                     cid=raw_onchain_meta.get("cid", ""),
                     checksum=checksum_hex,
                     size=int(raw_onchain_meta.get("size", 0)),
                     mime=raw_onchain_meta.get("mime", None),
+                    name=oc_name,
                 )
     except Exception as e:
         # Логируем ошибку, но не прерываем выполнение, чтобы можно было сравнить с пустыми данными

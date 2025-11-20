@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import logging
 import time
-from typing import Callable, Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response, JSONResponse
+from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
 
 from app.deps import rds
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -16,7 +21,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     Default policy: 100 req/min per IP if request has no Authorization header.
     """
 
-    def __init__(self, app, limit_per_minute: int = 100):  # type: ignore[no-untyped-def]
+    def __init__(self, app: ASGIApp, limit_per_minute: int = 100) -> None:  # type: ignore[no-untyped-def]
         super().__init__(app)
         self.limit = int(limit_per_minute)
         self._exempt_prefixes = ("/auth/",)
@@ -37,11 +42,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         window = now // 60  # minute window
         key = f"rl:ip:{ip}:{window}"
         try:
-            cur = int(rds.incr(key))
+            cur_raw = rds.incr(key)
+            cur = int(cur_raw)  # type: ignore[arg-type]
             if cur == 1:
                 rds.expire(key, 65)
             if cur > self.limit:
-                ttl = int(rds.ttl(key) or 60)
+                ttl_raw = rds.ttl(key)
+                ttl = int(ttl_raw or 60)  # type: ignore[arg-type]
                 headers = {
                     "Retry-After": str(ttl if ttl > 0 else 60),
                     # Baseline security headers (normally set by SecurityHeadersMiddleware)
@@ -52,15 +59,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 }
                 # IMPORTANT: return a Response instead of raising to avoid TestClient bubbling exceptions
                 return JSONResponse(status_code=429, content={"detail": "rate_limited"}, headers=headers)
-        except Exception:
-            # Fail-open if Redis is down
-            pass
+        except Exception as e:
+            # Fail-open if Redis is down; log for diagnostics
+            logger.warning("RateLimitMiddleware failed to access Redis: %s", e, exc_info=True)
         return await call_next(request)
 
 
 # Endpoint-specific limiter (dependency)
 
-def rate_limit(name: str, limit: int, window_seconds: int, require_json_keys: Iterable[str] | None = None) -> Callable[..., None]:
+
+def rate_limit(
+    name: str, limit: int, window_seconds: int, require_json_keys: Iterable[str] | None = None
+) -> Callable[..., Any]:
     """Factory: returns a dependency that rate-limits by client IP per endpoint name.
 
     If require_json_keys is provided, and the request JSON body contains ALL these keys (non-empty),
@@ -75,29 +85,34 @@ def rate_limit(name: str, limit: int, window_seconds: int, require_json_keys: It
             try:
                 if request.headers.get("content-type", "").startswith("application/json"):
                     body = await request.json()
-                    if isinstance(body, dict) and all(k in body and body[k] not in (None, "") for k in require_json_keys):
+                    if isinstance(body, dict) and all(
+                        k in body and body[k] not in (None, "") for k in require_json_keys
+                    ):
                         return None
-            except Exception:
-                # On parse errors, proceed with limiting as usual
-                pass
+            except Exception as e:
+                # On parse errors, proceed with limiting as usual; log at debug
+                logger.debug("rate_limit: failed to parse JSON body: %s", e, exc_info=True)
 
         ip = (request.client.host if request.client else "unknown") or "unknown"
         now = int(time.time())
         window = now // max(1, int(window_seconds))
         key = f"rl:endpoint:{name}:{ip}:{window}"
         try:
-            cur = int(rds.incr(key))
+            cur_raw = rds.incr(key)
+            cur = int(cur_raw)  # type: ignore[arg-type]
             if cur == 1:
                 rds.expire(key, int(window_seconds) + 5)
             if cur > int(limit):
-                ttl = int(rds.ttl(key) or int(window_seconds))
+                ttl_raw = rds.ttl(key)
+                ttl = int(ttl_raw or int(window_seconds))  # type: ignore[arg-type]
                 headers = {"Retry-After": str(ttl if ttl > 0 else window_seconds)}
                 # Raise here is fine (inside endpoint dependency)
                 raise HTTPException(status_code=429, detail="rate_limited", headers=headers)
         except HTTPException:
             raise
-        except Exception:
-            # Fail-open
+        except Exception as e:
+            # Fail-open, log for diagnostics
+            logger.warning("rate_limit dependency failed: %s", e, exc_info=True)
             return None
         return None
 

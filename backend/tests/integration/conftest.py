@@ -1,12 +1,12 @@
 # backend/tests/integration/conftest.py
-import os
-import time
-import secrets
-from typing import Callable
 import hashlib
+import os
+import secrets
+import time
+from collections.abc import Callable
 
-import pytest
 import httpx
+import pytest
 from dotenv import load_dotenv
 
 # Импортируем наш класс-подписчик из корня папки tests
@@ -121,8 +121,10 @@ def auth_headers(client: httpx.Client, test_signer: EIP712Signer) -> dict:
 @pytest.fixture
 def make_user(client: httpx.Client) -> Callable[[], tuple[str, dict]]:
     """Factory to register a fresh user and return (address, auth_headers)."""
+
     def _create() -> tuple[str, dict]:
         import secrets as _secrets
+
         signer = EIP712Signer("0x" + _secrets.token_hex(32))
         r1 = client.post("/auth/challenge", json={})
         assert r1.status_code == 200, r1.text
@@ -166,6 +168,7 @@ def wait_until_ok(
         time.sleep(interval)
     pytest.fail(f"Timeout: {description}")
 
+
 def is_hex_bytes32(s: str) -> bool:
     """
     Проверяет, является ли строка 32-байтной hex-строкой с префиксом 0x.
@@ -175,9 +178,10 @@ def is_hex_bytes32(s: str) -> bool:
     # 0x + 32 байта * 2 символа/байт = 66 символов
     return len(s) == 66 and all(c in "0123456789abcdefABCDEF" for c in s[2:])
 
+
 def _solve_pow(challenge: str, difficulty: int) -> str:
     """Решает PoW-задачу и возвращает nonce в виде строки."""
-    prefix = '0' * ((difficulty + 3) // 4)
+    prefix = "0" * ((difficulty + 3) // 4)
     nonce = 0
     while True:
         h = hashlib.sha256(f"{challenge}{nonce}".encode()).hexdigest()
@@ -185,12 +189,14 @@ def _solve_pow(challenge: str, difficulty: int) -> str:
             return str(nonce)
         nonce += 1
 
+
 @pytest.fixture
 def pow_header_factory(client: httpx.Client) -> Callable[[], dict]:
     """
     Фикстура, которая возвращает ФАБРИКУ (функцию) для генерации PoW-заголовков.
     Эту фабрику можно вызывать много раз внутри одного теста.
     """
+
     def _generate() -> dict:
         # 1. Получаем челлендж
         r = client.post("/pow/challenge")

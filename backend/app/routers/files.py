@@ -1,28 +1,28 @@
 from __future__ import annotations
 
+import base64
+import logging
 import uuid
-from typing import Any, Optional, cast, Union, List
-from typing_extensions import Annotated
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Any, cast
 
+from eth_typing import HexStr
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from web3 import Web3
-from eth_typing import HexStr
 
-from app.deps import get_db, get_chain, rds
-from app.models import File, FileVersion, User, Grant
-from app.schemas.auth import FileCreateIn, TypedDataOut
-from app.schemas.grants import ShareIn, ShareOut, ShareItemOut, DuplicateOut
-from app.security import parse_token
-from app.quotas import protect_meta_tx
-
-import base64
-from datetime import datetime, timedelta, timezone
-from app.repos.user_repo import get_by_eth_address
-from sqlalchemy.exc import IntegrityError
-import logging
+from app.blockchain.web3_client import Chain
 from app.config import settings
+from app.deps import get_chain, get_db, rds
+from app.models import File, FileVersion, Grant, User
+from app.quotas import protect_meta_tx
+from app.repos.user_repo import get_by_eth_address
+from app.schemas.auth import FileCreateIn, TypedDataOut
+from app.schemas.grants import DuplicateOut, ShareIn, ShareItemOut, ShareOut
+from app.security import parse_token
 from app.services.event_logger import EventLogger
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -32,7 +32,7 @@ AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 
 
 # ---- auth helper: достаём текущего пользователя из Bearer-токена ----
-def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_db)) -> User:
+def require_user(authorization: AuthorizationHeader, db: Annotated[Session, Depends(get_db)]) -> User:
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(401, "auth_required")
@@ -40,17 +40,15 @@ def require_user(authorization: AuthorizationHeader, db: Session = Depends(get_d
         payload = parse_token(token)
         sub = getattr(payload, "sub", None) or payload.get("sub")
         user_id = uuid.UUID(str(sub))
-    except Exception:
-        raise HTTPException(401, "bad_token")
-    user_obj: Optional[User] = db.get(User, user_id)
+    except Exception as e:
+        raise HTTPException(401, "bad_token") from e
+    user_obj: User | None = db.get(User, user_id)
     if user_obj is None:
         raise HTTPException(401, "user_not_found")
     return user_obj
 
 
 # ---- NEW: Schema for file list response ----
-from pydantic import BaseModel
-
 class FileListItem(BaseModel):
     id: str  # hex string
     name: str
@@ -65,13 +63,13 @@ class FileListItem(BaseModel):
 
 
 # ---- GET /files - List all files for current user ----
-@router.get("", response_model=List[FileListItem])
+@router.get("", response_model=list[FileListItem])
 def list_my_files(
-    user: User = Depends(require_user),
-    db: Session = Depends(get_db),
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-):
+) -> list[FileListItem]:
     """
     Возвращает список всех файлов текущего пользователя
     """
@@ -84,11 +82,7 @@ def list_my_files(
     # Count total files and per-user count for diagnostics
     total_files = db.query(File).count()
     user_files_q = (
-        select(File)
-        .where(File.owner_id == user.id)
-        .order_by(File.created_at.desc())
-        .limit(limit)
-        .offset(offset)
+        select(File).where(File.owner_id == user.id).order_by(File.created_at.desc()).limit(limit).offset(offset)
     )
     files = db.scalars(user_files_q).all()
     per_user_count = len(files)
@@ -106,7 +100,8 @@ def list_my_files(
             if fb_files:
                 logger.warning(
                     "list_my_files: fallback by eth_address found %d items for user=%s",
-                    len(fb_files), str(user.id)
+                    len(fb_files),
+                    str(user.id),
                 )
                 files = fb_files
                 per_user_count = len(files)
@@ -117,47 +112,54 @@ def list_my_files(
     try:
         sample = db.execute(select(File.owner_id, File.id).order_by(File.created_at.desc()).limit(5)).all()
         sample_str = ", ".join([f"(owner={row[0]}, id={row[1].hex()})" for row in sample])
-    except Exception:
+    except Exception as e:
+        logger.debug("list_my_files: failed to compose sample_str: %s", e, exc_info=True)
         sample_str = "<n/a>"
 
     try:
         logger.info(
             "list_my_files: dsn=%s user=%s total_files=%d per_user=%d recent=%s",
-            dsn, str(user.id), total_files, per_user_count, sample_str
+            dsn,
+            str(user.id),
+            total_files,
+            per_user_count,
+            sample_str,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("list_my_files: failed to emit info log: %s", e, exc_info=True)
 
     result = []
     for f in files:
-        result.append(FileListItem(
-            id="0x" + f.id.hex(),
-            name=f.name or "Unnamed",
-            size=f.size,
-            mime=f.mime or "application/octet-stream",
-            cid=f.cid or "",
-            checksum="0x" + f.checksum.hex(),
-            created_at=f.created_at.isoformat() if f.created_at else "",
-        ))
+        result.append(
+            FileListItem(
+                id="0x" + f.id.hex(),
+                name=f.name or "Unnamed",
+                size=f.size,
+                mime=f.mime or "application/octet-stream",
+                cid=f.cid or "",
+                checksum="0x" + f.checksum.hex(),
+                created_at=f.created_at.isoformat() if f.created_at else "",
+            )
+        )
 
     return result
 
 
 @router.post("", response_model=TypedDataOut)
 def create_file(
-        meta: FileCreateIn,
-        user: User = Depends(require_user),
-        db: Session = Depends(get_db),
-):
+    meta: FileCreateIn,
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
     # Schema validation already enforces fileId/checksum hex32, size<=200MB, mime whitelist, sanitized name
     try:
         fid = Web3.to_bytes(hexstr=cast(HexStr, meta.fileId))
-    except Exception:
-        raise HTTPException(400, "bad_file_id")
+    except Exception as e:
+        raise HTTPException(400, "bad_file_id") from e
     try:
         checksum = Web3.to_bytes(hexstr=cast(HexStr, meta.checksum))
-    except Exception:
-        raise HTTPException(400, "bad_checksum")
+    except Exception as e:
+        raise HTTPException(400, "bad_checksum") from e
 
     # Denylist by checksum: Redis set + global DB uniqueness emulation
     try:
@@ -166,7 +168,7 @@ def create_file(
     except HTTPException:
         raise
     except Exception:
-        pass
+        logger.debug("create_file: denylist check failed for checksum=%s", meta.checksum, exc_info=True)
 
     exists = db.scalar(select(File.id).where(File.id == fid))
     if exists:
@@ -215,7 +217,6 @@ def create_file(
 
     # Try to build typed data via chain, fallback to placeholders if chain is unavailable
     fwd = None
-    fwd_addr: Optional[str] = None
     chain_id_val: int = 31337
     verifying_contract = "0x0000000000000000000000000000000000000000"
     nonce_val: int = 0
@@ -263,7 +264,9 @@ def create_file(
         "primaryType": "ForwardRequest",
         "message": {
             "from": Web3.to_checksum_address(user.eth_address),
-            "to": Web3.to_checksum_address(verifying_contract) if verifying_contract != "0x0000000000000000000000000000000000000000" else Web3.to_checksum_address("0x0000000000000000000000000000000000000000"),
+            "to": Web3.to_checksum_address(verifying_contract)
+            if verifying_contract != "0x0000000000000000000000000000000000000000"
+            else Web3.to_checksum_address("0x0000000000000000000000000000000000000000"),
             "value": 0,
             "gas": 200_000,
             "nonce": nonce_val,
@@ -273,24 +276,25 @@ def create_file(
     return {"typedData": typed_data}
 
 
-@router.post("/{id}/share", response_model=Union[ShareOut, DuplicateOut])
+@router.post("/{id}/share", response_model=ShareOut | DuplicateOut)
 def share_file(
     id: str,
     body: ShareIn,
-    # Заменяем `Depends(require_user)` на нашу новую зависимость-защитник
-    user: User = Depends(protect_meta_tx),
-    db: Session = Depends(get_db),
-    chain=Depends(get_chain),
-):
+    # dependencies as Annotated to avoid calling Depends() at import time (B008)
+    user: Annotated[User, Depends(protect_meta_tx)],
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
+) -> ShareOut | DuplicateOut:
     if not (isinstance(id, str) and id.startswith("0x") and len(id) == 66):
         raise HTTPException(400, "bad_file_id")
     file_id_bytes = Web3.to_bytes(hexstr=cast(HexStr, id))
-    file_row: Optional[File] = db.get(File, file_id_bytes)
+    file_row: File | None = db.get(File, file_id_bytes)
     if file_row is None:
         raise HTTPException(404, "file_not_found")
     if file_row.owner_id != user.id:
         raise HTTPException(403, "not_owner")
     import json as _json
+
     key = f"share:req:{body.request_id}"
 
     # Reserve idempotency key early to avoid races. If present, return duplicate.
@@ -332,7 +336,7 @@ def share_file(
     try:
         start_nonce = int(chain.read_grant_nonce_cached(grantor_addr))
     except Exception as e:
-        raise HTTPException(502, f"chain_unavailable: {e}")
+        raise HTTPException(502, f"chain_unavailable: {e}") from e
     cap_ids_bytes: list[bytes] = []
     cap_ids_hex: list[str] = []
     for idx, (grantee_addr, _) in enumerate(grantees):
@@ -342,28 +346,32 @@ def share_file(
     typed_list: list[dict] = []
     ttl_sec = int(body.ttl_days) * 86400
     to_addr = getattr(ac, "address", grantor_addr)
-    for (grantee_addr, _), _cap in zip(grantees, cap_ids_bytes):
+    for (grantee_addr, _), _cap in zip(grantees, cap_ids_bytes, strict=False):
         call_data = chain.encode_grant_call(file_id_bytes, grantee_addr, ttl_sec, int(body.max_dl))
         td = chain.build_forward_typed_data(from_addr=grantor_addr, to_addr=to_addr, data=call_data, gas=180_000)
         typed_list.append(td)
 
     # Overwrite idempotency key with final data (no NX to update placeholder)
     try:
-        rds.set(key, _json.dumps({"grantor": grantor_addr, "fileId": id, "capIds": cap_ids_hex}), ex=3600)
-    except Exception:
-        pass
+        rds.set(
+            key,
+            _json.dumps({"grantor": grantor_addr, "fileId": id, "capIds": cap_ids_hex}),
+            ex=3600,
+        )
+    except Exception as e:
+        logger.debug("share_file: failed to set idempotency key %s: %s", key, e, exc_info=True)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = now + timedelta(days=int(body.ttl_days))
-    for (grantee_addr, grantee_user), cap_b in zip(grantees, cap_ids_bytes):
+    for (grantee_addr, grantee_user), cap_b in zip(grantees, cap_ids_bytes, strict=False):
         exists = db.query(Grant).filter(Grant.cap_id == cap_b).one_or_none()
         if exists is not None:
             continue
         enc_b64 = enc_map[grantee_addr.lower()]
         try:
             enc_bytes = base64.b64decode(enc_b64)
-        except Exception:
-            raise HTTPException(400, f"bad_encK_for_{grantee_addr}")
+        except Exception as e:
+            raise HTTPException(400, f"bad_encK_for_{grantee_addr}") from e
         grant = Grant(
             cap_id=cap_b,
             file_id=file_id_bytes,
@@ -389,7 +397,7 @@ def share_file(
     # Log grant_created events for all new grants
     try:
         event_logger = EventLogger(db)
-        for (grantee_addr, grantee_user), cap_b in zip(grantees, cap_ids_bytes):
+        for (_grantee_addr, grantee_user), cap_b in zip(grantees, cap_ids_bytes, strict=False):
             event_logger.log_grant_created(
                 cap_id=cap_b,
                 file_id=file_id_bytes,
@@ -401,27 +409,30 @@ def share_file(
     except Exception as e:
         logger.warning(f"Failed to log grant_created events: {e}")
 
-    items = [ShareItemOut(grantee=addr_lower_to_input[ga.lower()], capId=ch, status="queued") for (ga, _), ch in zip(grantees, cap_ids_hex)]
+    items = [
+        ShareItemOut(grantee=addr_lower_to_input[ga.lower()], capId=ch, status="queued")
+        for (ga, _), ch in zip(grantees, cap_ids_hex, strict=False)
+    ]
     return ShareOut(items=items, typedDataList=typed_list)
 
 
 @router.get("/{id}/grants")
 def list_file_grants(
     id: str,
-    user: User = Depends(require_user),
-    db: Session = Depends(get_db),
-    chain=Depends(get_chain),
-):
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
+) -> dict[str, Any]:
     # Validate file id (0x + 64)
     if not (isinstance(id, str) and id.startswith("0x") and len(id) == 66):
         raise HTTPException(400, "bad_file_id")
     try:
         file_id_bytes = Web3.to_bytes(hexstr=cast(HexStr, id))
-    except Exception:
-        raise HTTPException(400, "bad_file_id")
+    except Exception as e:
+        raise HTTPException(400, "bad_file_id") from e
 
     # Ensure file exists and belongs to current user
-    file_row: Optional[File] = db.get(File, file_id_bytes)
+    file_row: File | None = db.get(File, file_id_bytes)
     if file_row is None:
         raise HTTPException(404, "file_not_found")
     if file_row.owner_id != user.id:
@@ -435,15 +446,17 @@ def list_file_grants(
         .order_by(Grant.created_at.desc())
     ).all()
 
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
+    from datetime import datetime
+
+    now = datetime.now(UTC)
 
     # Try to use on-chain info when possible
     items = []
     ac = None
     try:
         ac = chain.get_access_control()
-    except Exception:
+    except Exception as e:
+        logger.debug("list_file_grants: failed to get access control: %s", e, exc_info=True)
         ac = None
 
     for g, grantee_addr in rows:
@@ -465,7 +478,9 @@ def list_file_grants(
                 else:
                     used = on_used
                     max_dl = on_max
-                    expires_at_iso = datetime.fromtimestamp(on_expires_at, tz=timezone.utc).isoformat() if on_expires_at else expires_at_iso
+                    expires_at_iso = (
+                        datetime.fromtimestamp(on_expires_at, tz=UTC).isoformat() if on_expires_at else expires_at_iso
+                    )
                     if on_revoked:
                         status = "revoked"
                     elif now.timestamp() > on_expires_at and on_expires_at:
@@ -474,9 +489,9 @@ def list_file_grants(
                         status = "exhausted"
                     else:
                         status = "confirmed"
-            except Exception:
-                # fallback below
-                pass
+            except Exception as e:
+                # fallback below; log for diagnostics
+                logger.debug("list_file_grants: on-chain grants read failed for cap %s: %s", cap_hex, e, exc_info=True)
         if ac is None:
             if g.revoked_at is not None:
                 status = "revoked"
@@ -485,13 +500,15 @@ def list_file_grants(
             elif int(g.used or 0) >= int(g.max_dl or 0):
                 status = "exhausted"
 
-        items.append({
-            "grantee": grantee_addr,
-            "capId": cap_hex,
-            "maxDownloads": max_dl,
-            "usedDownloads": used,
-            "expiresAt": expires_at_iso,
-            "status": status,
-        })
+        items.append(
+            {
+                "grantee": grantee_addr,
+                "capId": cap_hex,
+                "maxDownloads": max_dl,
+                "usedDownloads": used,
+                "expiresAt": expires_at_iso,
+                "status": status,
+            }
+        )
 
     return {"items": items}

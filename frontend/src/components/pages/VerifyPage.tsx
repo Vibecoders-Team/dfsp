@@ -66,6 +66,7 @@ export default function VerifyPage() {
         fileId,
         cid: meta.cid || undefined,
         checksum: meta.checksum || undefined,
+        name: meta.name || undefined,
         size: meta.size || undefined,
         createdAt: meta.createdAt || undefined,
         mime: meta.mime || undefined,
@@ -126,11 +127,6 @@ export default function VerifyPage() {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
   };
 
-  const truncate = (str: string, length: number) => {
-    if (str.length <= length) return str;
-    return str.slice(0, length / 2) + '...' + str.slice(-length / 2);
-  };
-
   return (
     <Layout>
       <div className="max-w-3xl mx-auto space-y-6">
@@ -171,6 +167,12 @@ export default function VerifyPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
+                {onChainData.name && (
+                  <div>
+                    <div className="text-sm text-gray-500 mb-1">File Name</div>
+                    <div>{onChainData.name}</div>
+                  </div>
+                )}
                 <div>
                   <div className="text-sm text-gray-500 mb-1">CID</div>
                   <code className="text-sm bg-gray-100 px-2 py-1 rounded block">

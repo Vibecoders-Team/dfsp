@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import structlog
 
@@ -39,7 +40,7 @@ def init_logging() -> None:
     )
 
 
-def _rename_level_to_lower(logger: Any, method_name: str, event_dict: Mapping[str, Any]):
+def _rename_level_to_lower(logger: object, method_name: str, event_dict: Mapping[str, Any]) -> Mapping[str, Any]:
     # stdlib level is added as 'level', ensure lower-case
     level = event_dict.get("level") or event_dict.get("levelname")
     if level:
@@ -53,7 +54,7 @@ def _rename_level_to_lower(logger: Any, method_name: str, event_dict: Mapping[st
 UNWANTED_KEYS = {"client", "client_ip", "headers", "request_headers", "client_addr"}
 
 
-def _drop_unwanted_keys(logger: Any, method_name: str, event_dict: Mapping[str, Any]):
+def _drop_unwanted_keys(logger: object, method_name: str, event_dict: Mapping[str, Any]) -> Mapping[str, Any]:
     if not UNWANTED_KEYS.intersection(event_dict.keys()):
         return event_dict
     clean = {k: v for k, v in event_dict.items() if k not in UNWANTED_KEYS}

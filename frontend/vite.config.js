@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+const OUT_DIR = process.env.VITE_OUT_DIR || 'build';
 export default defineConfig({
     server: {
         port: 5173,
@@ -17,6 +18,6 @@ export default defineConfig({
     },
     build: {
         target: 'esnext',
-        outDir: 'build',
+        outDir: OUT_DIR,
     },
 });

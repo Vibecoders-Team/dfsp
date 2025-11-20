@@ -1,11 +1,9 @@
-from .users import User
+from .anchors import Anchor
+from .asset import Asset
+from .events import Event
 from .files import File, FileVersion
 from .grants import Grant
-from .events import Event
-from .anchors import Anchor
 from .meta_tx_requests import MetaTxRequest
-from .asset import Asset
+from .users import User
 
-__all__ = [
-    "User", "File", "FileVersion", "Grant", "Event", "Anchor", "MetaTxRequest", "Asset"
-]
+__all__ = ["Anchor", "Asset", "Event", "File", "FileVersion", "Grant", "MetaTxRequest", "User"]

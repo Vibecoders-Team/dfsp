@@ -13,9 +13,7 @@ class EIP712Signer:
     """
 
     def __init__(self, private_key: str):
-        if not (
-                isinstance(private_key, str) and private_key.startswith("0x") and len(private_key) == 66
-        ):
+        if not (isinstance(private_key, str) and private_key.startswith("0x") and len(private_key) == 66):
             raise ValueError("Private key must be a 0x-prefixed 66-char hex string")
         self.account = Account.from_key(private_key)
 

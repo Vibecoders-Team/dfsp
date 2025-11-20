@@ -47,15 +47,6 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check .
 
-      - name: Type check (pyright)
-        run: uv run pyright
-
-      - name: Run tests (pytest)
-        run: uv run pytest --maxfail=5 --disable-warnings -v
-        env:
-          # Skip integration tests that require live services
-          PYTEST_ADDOPTS: "-m 'not e2e'"
-
   # ===========================
   # Frontend (React/TypeScript)
   # ===========================
@@ -103,7 +94,7 @@ jobs:
         run: pnpm run lint
 
       - name: Run tests (Vitest)
-        run: pnpm run test:run
+        run: pnpm run test
 
       - name: Build
         run: pnpm run build

@@ -21,9 +21,7 @@ class Grant(Base):
         Index("ix_grants_grantee_expires", "grantee_id", "expires_at"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     # capId bytes32 (on-chain)
     cap_id: Mapped[bytes] = mapped_column(sa.LargeBinary(32), nullable=False)
@@ -46,16 +44,16 @@ class Grant(Base):
     used: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="0")
 
     revoked_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
-    status: Mapped[str] = mapped_column(sa.String, nullable=False, server_default="pending")  # pending|confirmed|revoked
+    status: Mapped[str] = mapped_column(
+        sa.String, nullable=False, server_default="pending"
+    )  # pending|confirmed|revoked
     tx_hash: Mapped[str | None] = mapped_column(sa.String, nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
 
     # зашифрованный ключ (encK), bytea
     enc_key: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Отношения для ORM
     file = relationship("File", back_populates="grants")

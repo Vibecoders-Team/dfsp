@@ -1,31 +1,35 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 from datetime import date, timedelta
-from typing import Any
+from typing import Annotated
 
 import redis
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, Header, HTTPException
 
+from app.blockchain.web3_client import Chain
 from app.config import Settings
-from app.deps import get_chain, get_settings, get_redis
+from app.deps import get_chain, get_redis, get_settings
 from app.models import User
 from app.security import get_current_user
-from app.blockchain.web3_client import Chain
+
+logger = logging.getLogger(__name__)
 
 
 # --- Метрики ---
-def _count_rejection(reason: str, redis_client: redis.Redis):
+def _count_rejection(reason: str, redis_client: redis.Redis) -> None:
     redis_client.incr(f"metrics:pow_quota_rejections:{reason}")
 
 
-def _as_int(val: Any) -> int:
+def _as_int(val: object) -> int:
     try:
         if val is None:
             return 0
         if isinstance(val, (bytes, bytearray)):
-            val = val.decode("utf-8", errors="ignore")
+            v = val.decode("utf-8", errors="ignore")
+            return int(v)
         return int(val)  # type: ignore[arg-type]
     except Exception:
         return 0
@@ -36,14 +40,14 @@ def _as_int(val: Any) -> int:
 
 class QuotaManager:
     # ... (ЭТОТ КЛАСС ОСТАЕТСЯ БЕЗ ИЗМЕНЕНИЙ)
-    def __init__(self, user: User, redis_client: redis.Redis, settings: Settings, chain: Chain):
+    def __init__(self, user: User, redis_client: redis.Redis, settings: Settings, chain: Chain) -> None:
         self.user = user
         self.rds = redis_client
         self.settings = settings
         self.chain = chain
         self._today = date.today().isoformat()
 
-    def consume_meta_tx(self):
+    def consume_meta_tx(self) -> None:
         quota_limit = int(self.settings.quotas_effective.meta_tx_per_day)
         key = f"quota:tx:{self.user.id}:{self._today}"
         current_usage = _as_int(self.rds.get(key))
@@ -55,7 +59,7 @@ class QuotaManager:
         pipe.expire(key, timedelta(hours=24, minutes=5))
         pipe.execute()
 
-    def consume_download_bytes(self, file_id: bytes):
+    def consume_download_bytes(self, file_id: bytes) -> None:
         quota_limit = int(self.settings.quotas_effective.download_bytes_day)
         key = f"quota:dl_bytes:{self.user.id}:{self._today}"
         try:
@@ -77,12 +81,10 @@ class QuotaManager:
 
 class PoWValidator:
     """
-    Сервис для PoW. Теперь это ОБЫЧНЫЙ класс без __call__.
+    Сервис для PoW. Экземпляр создаётся через фабрику `get_pow_validator`.
     """
 
-    def __init__(
-        self, redis_client: redis.Redis = Depends(get_redis), settings: Settings = Depends(get_settings)
-    ):
+    def __init__(self, redis_client: redis.Redis, settings: Settings) -> None:
         self.rds = redis_client
         self.settings = settings
         self.difficulty = int(settings.pow_difficulty_base)
@@ -101,11 +103,11 @@ class PoWValidator:
         # Метрика: количество выданных PoW-челленджей
         try:
             self.rds.incr("metrics:pow_challenges_total")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to increment pow_challenges_total: %s", e, exc_info=True)
         return {"challenge": challenge, "difficulty": self.difficulty, "ttl": ttl}
 
-    def verify_token(self, pow_token: str | None):
+    def verify_token(self, pow_token: str | None) -> None:
         """
         Проверяет PoW токен. Эту логику мы вынесли из __call__.
         При успешной верификации инкрементируем счётчик успешных проверок.
@@ -136,17 +138,25 @@ class PoWValidator:
         # Успешная проверка
         try:
             self.rds.incr("metrics:pow_verifications_total:ok")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to increment pow_verifications_total: %s", e, exc_info=True)
 
 
 # --- Новая функция-зависимость для проверки ---
 
 
+def get_pow_validator(
+    redis_client: Annotated[redis.Redis, Depends(get_redis)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PoWValidator:
+    """FastAPI dependency factory that constructs PoWValidator."""
+    return PoWValidator(redis_client, settings)
+
+
 def validate_pow_token(
-    pow_validator: PoWValidator = Depends(PoWValidator),
+    pow_validator: Annotated[PoWValidator, Depends(get_pow_validator)],
     pow_token: str | None = Header(None, alias="X-PoW-Token"),
-):
+) -> None:
     """
     Эта зависимость теперь отвечает ТОЛЬКО за проверку токена.
     """
@@ -157,11 +167,11 @@ def validate_pow_token(
 
 
 def protect_meta_tx(
-    user: User = Depends(get_current_user),
-    _: None = Depends(validate_pow_token),  # ИСПОЛЬЗУЕМ НОВУЮ ЗАВИСИМОСТЬ
-    redis_client: redis.Redis = Depends(get_redis),
-    settings: Settings = Depends(get_settings),
-    chain: Chain = Depends(get_chain),
+    user: Annotated[User, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_pow_token)],  # ИСПОЛЬЗУЕМ НОВУЮ ЗАВИСИМОСТЬ
+    redis_client: Annotated[redis.Redis, Depends(get_redis)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    chain: Annotated[Chain, Depends(get_chain)],
 ) -> User:
     manager = QuotaManager(user, redis_client, settings, chain)
     manager.consume_meta_tx()
@@ -169,10 +179,10 @@ def protect_meta_tx(
 
 
 def protect_download(
-    user: User = Depends(get_current_user),
-    _: None = Depends(validate_pow_token),  # ИСПОЛЬЗУЕМ НОВУЮ ЗАВИСИМОСТЬ
-    redis_client: redis.Redis = Depends(get_redis),
-    settings: Settings = Depends(get_settings),
-    chain: Chain = Depends(get_chain),
+    user: Annotated[User, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_pow_token)],  # ИСПОЛЬЗУЕМ НОВУЮ ЗАВИСИМОСТЬ
+    redis_client: Annotated[redis.Redis, Depends(get_redis)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    chain: Annotated[Chain, Depends(get_chain)],
 ) -> QuotaManager:
     return QuotaManager(user, redis_client, settings, chain)

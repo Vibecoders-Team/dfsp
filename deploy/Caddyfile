@@ -1,0 +1,104 @@
+# Caddy HTTPS reverse proxy for dfsp.app
+# Assumes DNS A record for dfsp.app, rpc.dfsp.app, ipfs.dfsp.app point to this server.
+# Provides automatic Let's Encrypt certificates.
+
+{
+    email admin@dfsp.app
+}
+
+(dfsp_common_headers) {
+    header {
+               Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+               X-Frame-Options "DENY"
+               X-Content-Type-Options "nosniff"
+               Referrer-Policy "no-referrer"
+               # Content Security Policy tuned for the frontend and related services
+               Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://*.walletconnect.com; font-src 'self' data: https://*.walletconnect.com; connect-src 'self' https://ipfs.dfsp.app https://rpc.dfsp.app https://ipfs.dev.dfsp.app https://rpc.dev.dfsp.app https://dev.dfsp.app https://*.walletconnect.com wss://*.walletconnect.com; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://*.walletconnect.com; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests"
+           }
+}
+
+dfsp.app {
+    import dfsp_common_headers
+
+    route {
+        # API proxy must match first
+        handle_path /api/* {
+            reverse_proxy api:8000
+        }
+
+        # Static frontend with SPA fallback
+        handle {
+            root * /usr/share/caddy/html
+            try_files {path} /index.html
+            file_server
+        }
+    }
+}
+
+# www redirect to apex
+www.dfsp.app {
+    redir * https://dfsp.app{uri}
+}
+
+# Public HTTPS RPC endpoint (JSON-RPC over HTTP)
+rpc.dfsp.app {
+    import dfsp_common_headers
+    reverse_proxy chain:8545
+}
+
+# Public IPFS gateway
+ipfs.dfsp.app {
+    import dfsp_common_headers
+    reverse_proxy ipfs:8080
+}
+
+# Public Blockscout explorer
+explorer.dfsp.app {
+    import dfsp_common_headers
+    reverse_proxy explorer-web:3000
+}
+
+:80 {
+    respond /health "ok" 200
+}
+
+registry.dfsp.app {
+    reverse_proxy registry:5000
+}
+
+# --- Dev stack routed via the same Caddy instance ---
+
+dev.dfsp.app {
+    import dfsp_common_headers
+
+    route {
+        handle_path /api/* {
+            reverse_proxy dfsp-api-dev:8000
+        }
+
+        handle {
+            root * /usr/share/caddy/html-dev
+            try_files {path} /index.html
+            file_server
+        }
+    }
+}
+
+www.dev.dfsp.app {
+    redir * https://dev.dfsp.app{uri}
+}
+
+rpc.dev.dfsp.app {
+    import dfsp_common_headers
+    reverse_proxy dfsp-anvil-dev:8545
+}
+
+ipfs.dev.dfsp.app {
+    import dfsp_common_headers
+    reverse_proxy dfsp-ipfs-dev:8080
+}
+
+explorer.dev.dfsp.app {
+    import dfsp_common_headers
+    reverse_proxy blockscout-web-dev:3000
+}

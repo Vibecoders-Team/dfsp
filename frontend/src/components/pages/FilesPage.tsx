@@ -24,6 +24,8 @@ import { Upload, Search, Eye, Share2, CheckCircle2, AlertCircle, Download } from
 import { fetchMyFiles, type FileListItem } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { toast } from 'sonner';
+import { getFileKey } from '../../lib/fileKey';
+import { decryptStream } from '../../lib/cryptoClient';
 
 interface FileItem {
   id: string;
@@ -143,14 +145,27 @@ export default function FilesPage() {
 
   const handleDownloadOwn = async (file: FileItem) => {
     try {
-      // Предполагаем публичный IPFS шлюз из переменных окружения
       const gw = (import.meta as unknown as { env?: { VITE_IPFS_PUBLIC_GATEWAY?: string } }).env?.VITE_IPFS_PUBLIC_GATEWAY ?? 'http://localhost:8080';
       const path = file.cid ? `/ipfs/${file.cid}` : '';
       if (!path) throw new Error('CID missing');
       const url = gw.replace(/\/+$/, '') + path;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
-      const blob = await res.blob();
+
+      // Попробуем расшифровать, если есть K_file
+      const k = getFileKey(file.id);
+      let blob: Blob;
+      if (k) {
+        try {
+          blob = await decryptStream(res, k);
+        } catch (e) {
+          console.warn('Owner decrypt failed, fallback to raw:', e);
+          blob = await res.blob();
+        }
+      } else {
+        blob = await res.blob();
+      }
+
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = file.name || file.id;

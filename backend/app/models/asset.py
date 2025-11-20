@@ -3,11 +3,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Integer, ForeignKey, DateTime, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .users import User
 
 from app.db.base import Base
+
+from .users import User
 
 
 class Asset(Base):
@@ -33,11 +34,8 @@ class Asset(Base):
 
     # владелец в нашей системе (по JWT), может быть null
     user_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True, index=True
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    user: Mapped["User"] = relationship("User", backref="assets")
+    user: Mapped[User] = relationship("User", backref="assets")
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

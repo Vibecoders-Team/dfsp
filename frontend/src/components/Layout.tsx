@@ -15,15 +15,33 @@ import KeyLockIndicator from './KeyLockIndicator';
 
 interface LayoutProps {
   children: React.ReactNode;
+  publicDoc?: boolean; // новый флаг для публичных документов (Terms / Privacy)
 }
 
-export default function Layout({ children }: LayoutProps) {
+export default function Layout({ children, publicDoc }: LayoutProps) {
   const { user, logout } = useAuth();
   const location = useLocation();
 
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(path + '/');
   };
+
+  if (publicDoc) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white border-b border-gray-200">
+          <div className="max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-end">
+            <Link to="/register">
+              <Button variant="outline" size="sm">Back to register</Button>
+            </Link>
+          </div>
+        </header>
+        <main className="max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {children}
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -35,7 +53,7 @@ export default function Layout({ children }: LayoutProps) {
                 <Key className="h-6 w-6 text-blue-600" />
                 <span className="text-xl">DFSP</span>
               </Link>
-              
+
               <nav className="flex gap-1">
                 <Link to="/files">
                   <Button

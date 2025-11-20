@@ -14,6 +14,7 @@ import { getOptionalPowHeader } from '@/lib/pow';
 import { isAxiosError } from 'axios';
 import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
+import { decryptStream } from '@/lib/cryptoClient';
 
 const IPFS_GATEWAY = ((import.meta as unknown as { env?: { VITE_IPFS_PUBLIC_GATEWAY?: string } }).env?.VITE_IPFS_PUBLIC_GATEWAY) ?? 'http://localhost:8080';
 
@@ -102,10 +103,10 @@ export default function DownloadPage() {
       setPowProgress(100);
 
       setPhase('fetch');
-      let encK: string; let ipfsPath: string; let requestId: string | undefined; let typedData: ForwardTyped | undefined;
+      let encK: string; let ipfsPath: string; let requestId: string | undefined; let typedData: ForwardTyped | undefined; let fileName: string | undefined;
       try {
         const res = await fetchDownload(capId, powHeader);
-        encK = res.encK; ipfsPath = res.ipfsPath; requestId = res.requestId; typedData = res.typedData as unknown as ForwardTyped | undefined;
+        encK = res.encK; ipfsPath = res.ipfsPath; requestId = res.requestId; typedData = res.typedData as unknown as ForwardTyped | undefined; fileName = res.fileName;
       } catch (e) {
         if (isAxiosError(e) && e.response?.status === 429) {
           const detail = e.response?.data && (e.response.data as { detail?: string }).detail;
@@ -155,45 +156,42 @@ export default function DownloadPage() {
       }
 
       setPhase('decrypt');
-      // decrypt symmetric key with RSA private key (placeholder for future use)
+      // decrypt symmetric key with RSA private key
       const { privateKey } = await ensureRSA();
       const encBytes = b64ToU8(encK).buffer as ArrayBuffer;
+      let K_file: Uint8Array | null = null;
       try {
-        await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privateKey as CryptoKey, encBytes);
-      } catch {
-        // ignore
+        const plain = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privateKey as CryptoKey, encBytes);
+        K_file = new Uint8Array(plain);
+      } catch (e) {
+        console.warn('Failed to decrypt encK, will download encrypted blob:', e);
       }
 
       setPhase('download');
-      // download via IPFS gateway
       const base = IPFS_GATEWAY.replace(/\/+$/, '');
       const path = ipfsPath.startsWith('/') ? ipfsPath : `/${ipfsPath}`;
       const url = `${base}${path}`;
       const resp = await fetch(url);
       if (!resp.ok || !resp.body) throw new Error(`Download failed: ${resp.status} ${resp.statusText}`);
 
-      const total = Number(resp.headers.get('Content-Length') ?? 0);
-      const reader = resp.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let received = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          // TODO: decrypt chunk with K_file_buf when encryption is added
-          chunks.push(value);
-          received += value.length;
-          if (total > 0) setProgress(Math.round((received / total) * 100));
+      let blob: Blob;
+      if (K_file) {
+        try {
+          blob = await decryptStream(resp.clone(), K_file, (done, total) => {
+            if (total > 0) setProgress(Math.round((done/total)*100));
+          });
+        } catch (e) {
+          console.warn('Decrypt stream failed, fallback to raw blob:', e);
+          blob = await resp.blob();
         }
+      } else {
+        blob = await resp.blob();
       }
 
       setPhase('saving');
-      const parts: BlobPart[] = chunks.map((c) => c.buffer);
-      const blob = new Blob(parts);
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = capId;
+      a.download = fileName || 'downloaded-file';
       a.click();
       URL.revokeObjectURL(a.href);
 

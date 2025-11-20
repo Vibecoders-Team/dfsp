@@ -1,20 +1,14 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from sqlalchemy.orm import Session
 
 from app.models import User
 from app.schemas.auth import RegisterIn
 
 
-def get_by_eth_address(db: Session, eth_address: str) -> Optional[User]:
+def get_by_eth_address(db: Session, eth_address: str) -> User | None:
     """Найти пользователя по EVM-адресу (нормализуем к lower())."""
-    return (
-        db.query(User)
-        .filter(User.eth_address == (eth_address or "").lower())
-        .one_or_none()
-    )
+    return db.query(User).filter(User.eth_address == (eth_address or "").lower()).one_or_none()
 
 
 def create(db: Session, payload: RegisterIn) -> User:

@@ -217,7 +217,7 @@ export default function RegisterPage() {
                 disabled={isLoading}
               />
               <Label htmlFor="terms" className="cursor-pointer leading-relaxed">
-                I accept the <a href="/terms" className="text-blue-600 hover:underline" target="_blank" rel="noreferrer">Terms of Service</a> and Privacy Policy
+                I accept the <a href="/terms" className="text-blue-600 hover:underline" target="_blank" rel="noreferrer">Terms of Service</a> and <a href="/privacy" className="text-blue-600 hover:underline" target="_blank" rel="noreferrer">Privacy Policy</a>
               </Label>
             </div>
 

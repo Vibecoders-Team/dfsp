@@ -1,7 +1,8 @@
 import secrets
-import pytest
+from collections.abc import Callable
+
 import httpx
-from typing import Optional, Tuple, Callable
+import pytest
 
 from .conftest import is_hex_bytes32
 
@@ -20,9 +21,9 @@ def _create_file(
     client: httpx.Client,
     headers: dict,
     *,
-    file_id: Optional[str] = None,
-    checksum: Optional[str] = None,
-) -> Tuple[str, str, str]:
+    file_id: str | None = None,
+    checksum: str | None = None,
+) -> tuple[str, str, str]:
     """Create a file record owned by the user behind headers. Returns (fileId, checksum, cid)."""
     fid = file_id or _hex32()
     chk = checksum or _hex32()
@@ -104,9 +105,7 @@ def test_revoke_not_grantor_403(
     cap_id = _share_one(client, auth_headers, file_id, grantee_addr, "YQ==", pow_header_factory)
 
     # Другой пользователь пытается отозвать (PoW не нужен)
-    r = client.post(
-        f"/grants/{cap_id}/revoke", headers=grantee_headers
-    )  # Используем grantee_headers
+    r = client.post(f"/grants/{cap_id}/revoke", headers=grantee_headers)  # Используем grantee_headers
     assert r.status_code == 403
     assert "not_grantor" in r.text
 

@@ -222,10 +222,10 @@ export default function SharePage() {
           }
           await Promise.all(
             tdl.map(async (td: ForwardTyped) => {
-              const agentNow = await getAgent();
-              // Enforce chain for ForwardRequest (external wallets)
-              if (agentNow.kind !== 'local' && (td as any).domain?.chainId && 'getChainId' in agentNow && typeof agentNow.getChainId === 'function') {
-                const desired = Number((td as any).domain.chainId);
+               const agentNow = await getAgent();
+               // Enforce chain for ForwardRequest (external wallets)
+              if (agentNow.kind !== 'local' && td.domain?.chainId && 'getChainId' in agentNow && typeof agentNow.getChainId === 'function') {
+                const desired = Number(td.domain.chainId);
                 const current = await agentNow.getChainId();
                 if (current !== desired) {
                   if ('switchChain' in agentNow && typeof agentNow.switchChain === 'function') {

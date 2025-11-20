@@ -17,8 +17,7 @@ WORKDIR /app
 
 # сначала — файлы зависимостей (кэш слоёв)
 COPY pyproject.toml ./
-# если есть lock — добавьте строку ниже (и в репозиторий):
-# COPY uv.lock ./
+COPY uv.lock ./
 
 # создаём и синхронизируем окружение
 # --all-extras подтянет [project.optional-dependencies].dev когда понадобятся
@@ -29,6 +28,7 @@ ENV PATH="/app/.venv/bin:${PATH}"
 
 # затем — код проекта (в dev будет перекрыт volume-монтом)
 COPY app/ app/
+COPY tests/ tests/
 COPY migrations/ migrations/
 COPY alembic.ini .
 COPY docker/ docker/

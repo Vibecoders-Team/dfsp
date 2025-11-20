@@ -1,13 +1,16 @@
+from __future__ import annotations
+
+import logging
 import secrets
-import pytest
+from collections.abc import Callable
+
 import httpx
-
-from typing import Optional, Tuple, Callable
-from web3 import Web3
-
-from .conftest import is_hex_bytes32
+import pytest
 
 pytestmark = pytest.mark.e2e
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def _hex32() -> str:
@@ -22,9 +25,9 @@ def _create_file(
     client: httpx.Client,
     headers: dict,
     *,
-    file_id: Optional[str] = None,
-    checksum: Optional[str] = None,
-) -> Tuple[str, str]:
+    file_id: str | None = None,
+    checksum: str | None = None,
+) -> tuple[str, str]:
     fid = file_id or _hex32()
     chk = checksum or _hex32()
     payload = {
@@ -64,9 +67,7 @@ def test_share_happy_and_duplicate(
     assert r2.json().get("status") == "duplicate"
 
 
-def test_share_bad_file_id_400(
-    client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]
-):
+def test_share_bad_file_id_400(client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]):
     headers = {**auth_headers, **pow_header_factory()}
     # --- ИСПРАВЛЕНИЕ: Передаем минимально валидный JSON, чтобы избежать ошибки 422 ---
     addr = "0x" + ("11" * 20)
@@ -77,7 +78,7 @@ def test_share_bad_file_id_400(
         "encK_map": {addr: "a"},
         "request_id": "r1",
     }
-    r = client.post(f"/files/0x1234/share", json=body, headers=headers)
+    r = client.post("/files/0x1234/share", json=body, headers=headers)
     assert r.status_code == 400
 
 
@@ -115,9 +116,7 @@ def test_share_missing_encK_400(
     assert r.status_code == 400
 
 
-def test_share_unknown_grantee_400(
-    client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]
-):
+def test_share_unknown_grantee_400(client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]):
     file_id, _ = _create_file(client, auth_headers)
     unknown = "0x" + ("44" * 20)
     headers = {**auth_headers, **pow_header_factory()}
@@ -182,7 +181,7 @@ def test_share_meta_tx_quota(
         if r.status_code == 429:
             assert "meta_tx_quota_exceeded" in r.text
             quota_exceeded = True
-            print(f"\nQuota exceeded on request #{i + 1}, which is expected.")
+            logger.info("Quota exceeded on request #%d, which is expected.", i + 1)
             break  # Выходим из цикла, как только получили нужную ошибку
 
     # Финальная проверка: убеждаемся, что мы действительно поймали ошибку превышения квоты

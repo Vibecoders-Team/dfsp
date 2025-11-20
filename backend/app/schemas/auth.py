@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import json
+from typing import Any
+
 from pydantic import BaseModel, field_validator
 
 from app.validators import (
+    MAX_FILE_SIZE_BYTES,
+    sanitize_filename,
+    validate_eth_address,
     validate_hex32,
     validate_mime,
-    sanitize_filename,
-    MAX_FILE_SIZE_BYTES,
-    validate_eth_address,
     validate_rsa_spki_pem,
 )
 
@@ -91,15 +94,11 @@ class VerifyOut(BaseModel):
     match: bool
 
 
-import json
-from typing import Dict, Any
-
-
 class TypedData(BaseModel):
-    domain: Dict[str, Any]
-    types: Dict[str, Any]
+    domain: dict[str, Any]
+    types: dict[str, Any]
     primaryType: str
-    message: Dict[str, Any]
+    message: dict[str, Any]
 
 
 class RegisterIn(BaseModel):
@@ -126,7 +125,7 @@ class RegisterIn(BaseModel):
         return v
 
     @field_validator("typed_data", mode="before")
-    def parse_typed_data(cls, v):
+    def parse_typed_data(cls, v: object) -> object:
         # Принимаем как raw JSON-объект или как строку (Postman/axios особенности)
         if isinstance(v, TypedData):
             return v
@@ -159,7 +158,7 @@ class LoginIn(BaseModel):
         return v
 
     @field_validator("typed_data", mode="before")
-    def parse_typed_data(cls, v):
+    def parse_typed_data(cls, v: object) -> object:
         # Подобная логика как в RegisterIn
         if isinstance(v, TypedData):
             return v

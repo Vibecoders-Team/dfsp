@@ -5,7 +5,7 @@ import logging
 import re
 import secrets
 from os import getenv
-from typing import Any, Dict, cast
+from typing import Annotated, Any, cast
 
 from eth_account import Account
 from eth_account.messages import encode_typed_data
@@ -16,16 +16,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.deps import get_db, rds
-from app.models import User
-from app.schemas.auth import ChallengeOut, RegisterIn, LoginIn, Tokens
-from app.security import make_token
 from app.middleware.rate_limit import rate_limit
+from app.models import User
+from app.schemas.auth import ChallengeOut, LoginIn, RegisterIn, Tokens
+from app.security import make_token
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-LOGIN_DOMAIN: Dict[str, str] = {"name": "DFSP-Login", "version": "1"}
+LOGIN_DOMAIN: dict[str, str] = {"name": "DFSP-Login", "version": "1"}
 EXPECTED_CHAIN_ID = int(getenv("CHAIN_ID", "0") or 0) or None
 
 # --- Валидаторы ---
@@ -40,9 +40,15 @@ def _require(cond: bool, msg: str) -> None:
 
 
 def _validate_inputs(eth_address: str, nonce_hex: str, signature: str) -> None:
-    _require(isinstance(eth_address, str) and ADDR_RE.fullmatch(eth_address or "") is not None, "bad_eth_address")
+    _require(
+        isinstance(eth_address, str) and ADDR_RE.fullmatch(eth_address or "") is not None,
+        "bad_eth_address",
+    )
     _require(isinstance(nonce_hex, str) and NONCE_RE.fullmatch(nonce_hex or "") is not None, "bad_nonce")
-    _require(isinstance(signature, str) and SIG_RE.fullmatch(signature or "") is not None, "bad_signature_format")
+    _require(
+        isinstance(signature, str) and SIG_RE.fullmatch(signature or "") is not None,
+        "bad_signature_format",
+    )
 
 
 def _left_pad32(b: bytes) -> bytes:
@@ -67,15 +73,15 @@ def _eip712_digest_login(eth_address: str, nonce_hex: str) -> bytes:
     return keccak(b"\x19\x01" + domain_sep + struct_hash)
 
 
-def _verify_login_signature(typed_data: Dict[str, Any], signature: str) -> str:
+def _verify_login_signature(typed_data: dict[str, Any], signature: str) -> str:
     try:
         msg = encode_typed_data(full_message=typed_data)
     except Exception as e:
-        raise HTTPException(400, f"typed_data_invalid: {e}")
+        raise HTTPException(400, f"typed_data_invalid: {e}") from e
     try:
         return Account.recover_message(msg, signature=signature)
     except Exception as e:
-        raise HTTPException(401, f"bad_signature: {e}")
+        raise HTTPException(401, f"bad_signature: {e}") from e
 
 
 def _recover_login_with_nonce(eth_address: str, nonce_hex: str, signature: str) -> str:
@@ -89,11 +95,11 @@ def _recover_login_with_nonce(eth_address: str, nonce_hex: str, signature: str) 
         sig = Signature(sig_bytes)
         pub = sig.recover_public_key_from_msg_hash(digest)
         return pub.to_checksum_address()
-    except Exception:
-        raise HTTPException(401, "bad_signature")
+    except Exception as e:
+        raise HTTPException(401, "bad_signature") from e
 
 
-def build_login_typed_data(nonce_hex: str, eth_address: str) -> Dict[str, Any]:
+def build_login_typed_data(nonce_hex: str, eth_address: str) -> dict[str, Any]:
     # каноническая форма, которой сервер будет подписывать/проверять
     return {
         "domain": LOGIN_DOMAIN,
@@ -108,7 +114,7 @@ def build_login_typed_data(nonce_hex: str, eth_address: str) -> Dict[str, Any]:
     }
 
 
-def validate_login_typed_data(td: Dict[str, Any], nonce_hex: str, eth_address: str) -> None:
+def validate_login_typed_data(td: dict[str, Any], nonce_hex: str, eth_address: str) -> None:
     """Гибкая проверка структуры typed_data: допускает domain.chainId (опционально)."""
     _require(isinstance(td, dict), "typed_data_invalid")
     domain = td.get("domain")
@@ -144,10 +150,27 @@ def challenge() -> ChallengeOut:
     return ChallengeOut(challenge_id=challenge_id, nonce=nonce, exp_sec=exp_sec)
 
 
-@router.post("/register", response_model=Tokens, dependencies=[Depends(rate_limit(
-    "auth_register", 3, 3600, require_json_keys=("eth_address", "challenge_id", "signature", "typed_data", "rsa_public")
-))])
-def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Tokens:
+@router.post(
+    "/register",
+    response_model=Tokens,
+    dependencies=[
+        Depends(
+            rate_limit(
+                "auth_register",
+                3,
+                3600,
+                require_json_keys=(
+                    "eth_address",
+                    "challenge_id",
+                    "signature",
+                    "typed_data",
+                    "rsa_public",
+                ),
+            )
+        )
+    ],
+)
+def register(payload: RegisterIn, db: Annotated[Session, Depends(get_db)]) -> Tokens:
     key = f"auth:chal:{payload.challenge_id}"
     raw = rds.get(key)
     if not raw:
@@ -163,10 +186,10 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Tokens:
     data = json.loads(raw_str)
 
     # нормализуем typed_data к dict[str, Any]
-    td: Dict[str, Any] = (
+    td: dict[str, Any] = (
         payload.typed_data.model_dump()
         if hasattr(payload.typed_data, "model_dump")
-        else cast(Dict[str, Any], payload.typed_data)
+        else cast(dict[str, Any], payload.typed_data)
     )
     validate_login_typed_data(td, data["nonce"], payload.eth_address)
 
@@ -189,17 +212,28 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Tokens:
     try:
         rds.delete(key)
     except Exception:
-        pass
+        logger.debug("register: failed to delete challenge key %s from redis", key, exc_info=True)
 
     access = make_token(str(user.id), 30)
     refresh = make_token(str(user.id), 24 * 60)
     return Tokens(access=access, refresh=refresh)
 
 
-@router.post("/login", response_model=Tokens, dependencies=[Depends(rate_limit(
-    "auth_login", 10, 3600, require_json_keys=("eth_address", "challenge_id", "signature", "typed_data")
-))])
-def login(payload: LoginIn, db: Session = Depends(get_db)) -> Tokens:
+@router.post(
+    "/login",
+    response_model=Tokens,
+    dependencies=[
+        Depends(
+            rate_limit(
+                "auth_login",
+                10,
+                3600,
+                require_json_keys=("eth_address", "challenge_id", "signature", "typed_data"),
+            )
+        )
+    ],
+)
+def login(payload: LoginIn, db: Annotated[Session, Depends(get_db)]) -> Tokens:
     key = f"auth:chal:{payload.challenge_id}"
     raw = rds.get(key)
     if not raw:
@@ -213,10 +247,10 @@ def login(payload: LoginIn, db: Session = Depends(get_db)) -> Tokens:
         raw_str = cast(str, raw)
     data = json.loads(raw_str)
 
-    td: Dict[str, Any] = (
+    td: dict[str, Any] = (
         payload.typed_data.model_dump()
         if hasattr(payload.typed_data, "model_dump")
-        else cast(Dict[str, Any], payload.typed_data)
+        else cast(dict[str, Any], payload.typed_data)
     )
     validate_login_typed_data(td, data["nonce"], payload.eth_address)
 
@@ -232,7 +266,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)) -> Tokens:
     try:
         rds.delete(key)
     except Exception:
-        pass
+        logger.debug("login: failed to delete challenge key %s from redis", key, exc_info=True)
 
     access = make_token(str(user.id), 30)
     refresh = make_token(str(user.id), 24 * 60)

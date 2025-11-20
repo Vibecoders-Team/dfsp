@@ -5,7 +5,6 @@ from .security_headers import SecurityHeadersMiddleware
 __all__ = [
     "ObservabilityMiddleware",
     "RateLimitMiddleware",
-    "rate_limit",
     "SecurityHeadersMiddleware",
+    "rate_limit",
 ]
-
