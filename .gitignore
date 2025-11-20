@@ -13,6 +13,7 @@ version-info.json
 config-local.yml
 node_modules
 build
+build-dev
 dist
 *.egg-info/
 __pycache__
@@ -21,16 +22,13 @@ __pycache__
 pytest-report
 .ipynb_checkpoints
 recordings
-deploy/.env.prod
-.env.local
+.env*
 
 *.log
 *.zip
 src/settings.json
 .aider*
 dummy.py
-
-frontend/node_modules/
 
 contracts/artifacts/
 contracts/artifacts-abi/
