@@ -1,0 +1,80 @@
+[project]
+name = "dfsp-telegram-bot"
+version = "0.1.0"
+description = "DFSP Telegram bot service"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "aiogram>=3.5.0,<4.0.0",
+  "pydantic>=2.8.0,<3.0.0",
+  "pydantic-settings>=2.3.0,<3.0.0",
+  "httpx>=0.28.0",
+  "prometheus-client>=0.20.0,<0.21.0",
+  "aiohttp>=3.10.0,<4.0.0",
+  "redis>=5.0.0,<6.0.0",
+]
+
+[dependency-groups]  # для uv: uv sync --group dev
+dev = [
+  "pytest>=8.4.2",
+  "pytest-asyncio>=0.23.0",
+  "pytest-cov>=4.1.0",
+  "ruff>=0.6.0",
+  "pyright>=1.1.380",
+  "eth-account>=0.11.0",  # для EIP712Signer в тестах
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = [
+    ".venv/*",
+    "build/*",
+]
+
+[tool.ruff.lint]
+select = ["E","F","W","I","UP","B","ANN","C4","T20","Q","S","RUF"]
+# ANN101 and ANN102 were removed in newer ruff releases; ignoring them has no effect
+# Keep S101 ignored (project preference)
+ignore = ["S101", "RUF002", "RUF003", "RUF059", "RUF046"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "S", "E402"]
+"app/handlers/**" = ["RUF001"]
+"app/middlewares/**" = ["ANN401"]
+"app/services/**" = ["ANN401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"
+multiline-quotes = "double"
+docstring-quotes = "double"
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+reportMissingTypeStubs = "warning"
+reportUnknownVariableType = "warning"
+reportUnknownParameterType = "warning"
+reportUnknownMemberType = "warning"
+exclude = ["build", "**/__pycache__"]
+venvPath = "."
+venv = ".venv"
+
+[[tool.pyright.executionEnvironments]]
+root = "."
+pythonVersion = "3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv]
+index-url = "https://pypi.org/simple"
+managed = true
