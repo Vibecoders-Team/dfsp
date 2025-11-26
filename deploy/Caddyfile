@@ -17,6 +17,13 @@
            }
 }
 
+(dfsp_explorer_csp) {
+    header {
+               -Content-Security-Policy
+               Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://*.walletconnect.com; font-src 'self' data: https://*.walletconnect.com https://fonts.gstatic.com; connect-src 'self' https://ipfs.dfsp.app https://rpc.dfsp.app https://ipfs.dev.dfsp.app https://rpc.dev.dfsp.app https://dev.dfsp.app https://*.walletconnect.com wss://*.walletconnect.com; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://*.walletconnect.com; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests"
+           }
+}
+
 dfsp.app {
     import dfsp_common_headers
 
@@ -43,19 +50,55 @@ www.dfsp.app {
 # Public HTTPS RPC endpoint (JSON-RPC over HTTP)
 rpc.dfsp.app {
     import dfsp_common_headers
-    reverse_proxy chain:8545
+
+    route {
+        @root {
+            path /
+        }
+        handle @root {
+            respond "RPC endpoint (JSON-RPC over HTTP). Use POST to call methods (e.g. eth_blockNumber). WebSocket RPC, if enabled, usually on a different port." 200
+        }
+        handle {
+            reverse_proxy chain:8545
+        }
+    }
 }
 
 # Public IPFS gateway
 ipfs.dfsp.app {
     import dfsp_common_headers
-    reverse_proxy ipfs:8080
+
+    route {
+        @root {
+            path /
+        }
+        handle @root {
+            respond "IPFS gateway. Request /ipfs/<hash> or /ipns/<name> or use the IPFS API (e.g. /api/v0/cat?arg=<hash>)." 200
+        }
+        handle {
+            reverse_proxy ipfs:8080
+        }
+    }
 }
 
 # Public Blockscout explorer
 explorer.dfsp.app {
     import dfsp_common_headers
-    reverse_proxy explorer-web:3000
+    import dfsp_explorer_csp
+    route {
+        # Blockscout backend (API + websocket)
+        handle /api/* {
+            reverse_proxy explorer-indexer:4000
+        }
+        handle /socket/* {
+            reverse_proxy explorer-indexer:4000
+        }
+
+        # Blockscout frontend
+        handle {
+            reverse_proxy explorer-web:3000
+        }
+    }
 }
 
 :80 {
@@ -100,5 +143,16 @@ ipfs.dev.dfsp.app {
 
 explorer.dev.dfsp.app {
     import dfsp_common_headers
-    reverse_proxy blockscout-web-dev:3000
+    import dfsp_explorer_csp
+    route {
+        handle /api/* {
+            reverse_proxy blockscout-indexer-dev:4000
+        }
+        handle /socket/* {
+            reverse_proxy blockscout-indexer-dev:4000
+        }
+        handle {
+            reverse_proxy blockscout-web-dev:3000
+        }
+    }
 }
