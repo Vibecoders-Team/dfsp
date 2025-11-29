@@ -6,8 +6,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from web3 import Web3
 
 from app.blockchain.web3_client import Chain
 from app.deps import get_chain, get_db
@@ -138,6 +140,105 @@ def _datetime_to_cursor(dt: datetime | None) -> str | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return str(dt.timestamp())
+
+
+# =========================
+# Models for links
+# =========================
+
+
+class BotLinkItem(BaseModel):
+    address: str
+    is_active: bool
+
+
+class BotLinksResponse(BaseModel):
+    links: list[BotLinkItem]
+
+
+class BotLinkCreateIn(BaseModel):
+    address: str
+    make_active: bool | None = False
+
+
+class BotLinkSwitchIn(BaseModel):
+    address: str
+
+
+# =========================
+# /bot/links CRUD
+# =========================
+
+
+def _links_response(db: Session, chat_id: int) -> BotLinksResponse:
+    links = telegram_repo.list_links_by_chat(db, chat_id)
+    items = [BotLinkItem(address=link.wallet_address.lower(), is_active=bool(link.is_active)) for link in links or []]
+    return BotLinksResponse(links=items)
+
+
+@router.get("/links", response_model=BotLinksResponse)
+def bot_list_links(
+    db: DbSessionDep,
+    x_tg_chat_id: str = Header(..., alias="X-TG-Chat-Id"),
+) -> BotLinksResponse:
+    chat_id = _parse_chat_id(x_tg_chat_id)
+    return _links_response(db, chat_id)
+
+
+@router.post("/links", response_model=BotLinksResponse, status_code=201)
+def bot_add_link(
+    body: BotLinkCreateIn,
+    db: DbSessionDep,
+    x_tg_chat_id: str = Header(..., alias="X-TG-Chat-Id"),
+) -> BotLinksResponse:
+    chat_id = _parse_chat_id(x_tg_chat_id)
+    try:
+        addr = Web3.to_checksum_address(body.address)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="bad_address") from exc
+
+    user = get_by_eth_address(db, addr)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+
+    telegram_repo.upsert_link(db, chat_id, addr, bool(body.make_active))
+    return _links_response(db, chat_id)
+
+
+@router.post("/links/switch", response_model=BotLinksResponse)
+def bot_switch_active_link(
+    body: BotLinkSwitchIn,
+    db: DbSessionDep,
+    x_tg_chat_id: str = Header(..., alias="X-TG-Chat-Id"),
+) -> BotLinksResponse:
+    chat_id = _parse_chat_id(x_tg_chat_id)
+    try:
+        addr = Web3.to_checksum_address(body.address)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="bad_address") from exc
+
+    try:
+        telegram_repo.set_active_link(db, chat_id, addr)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="link_not_found") from None
+
+    return _links_response(db, chat_id)
+
+
+@router.delete("/links/{address}", response_model=BotLinksResponse)
+def bot_delete_link(
+    address: str,
+    db: DbSessionDep,
+    x_tg_chat_id: str = Header(..., alias="X-TG-Chat-Id"),
+) -> BotLinksResponse:
+    chat_id = _parse_chat_id(x_tg_chat_id)
+    try:
+        addr = Web3.to_checksum_address(address)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="bad_address") from exc
+
+    telegram_repo.revoke_link(db, chat_id, addr)
+    return _links_response(db, chat_id)
 
 
 # =========================

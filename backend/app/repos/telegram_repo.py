@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select
+import logging
+from datetime import UTC, datetime
+
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.telegram_link import TelegramLink
 from app.models.users import User
+
+logger = logging.getLogger(__name__)
 
 
 def link_user_to_chat(db: Session, wallet_address: str, chat_id: int) -> TelegramLink:
@@ -19,13 +24,20 @@ def link_user_to_chat(db: Session, wallet_address: str, chat_id: int) -> Telegra
 
     if instance:
         instance.revoked_at = None
+        instance.is_active = True
     else:
         instance = TelegramLink(
             wallet_address=normalized_address,
             chat_id=chat_id,
             revoked_at=None,
+            is_active=True,
         )
         db.add(instance)
+
+    # Ensure only one active per chat
+    db.query(TelegramLink).filter(
+        TelegramLink.chat_id == chat_id, TelegramLink.wallet_address != normalized_address
+    ).update({"is_active": False})
 
     db.commit()
     db.refresh(instance)
@@ -65,6 +77,7 @@ def get_active_chat_ids_for_addresses(db: Session, addresses: list[str]) -> dict
         .filter(
             TelegramLink.wallet_address.in_(normalized),
             TelegramLink.revoked_at.is_(None),
+            TelegramLink.is_active.is_(True),
         )
         .order_by(TelegramLink.wallet_address, TelegramLink.created_at.desc())
         .all()
@@ -90,14 +103,117 @@ def get_wallet_by_chat_id(db: Session, chat_id: int) -> str | None:
     для *активной* привязки (revoked_at IS NULL),
     либо None, если привязки нет.
     """
-    wallet = db.execute(
-        select(TelegramLink.wallet_address)
-        .where(
+    wallet = (
+        db.query(TelegramLink.wallet_address)
+        .filter(
+            TelegramLink.chat_id == chat_id,
+            TelegramLink.revoked_at.is_(None),
+        )
+        .order_by(TelegramLink.is_active.desc(), TelegramLink.created_at.desc())
+        .limit(1)
+        .scalar()
+    )
+
+    return wallet
+
+
+def list_links_by_chat(db: Session, chat_id: int) -> list[TelegramLink]:
+    return (
+        db.query(TelegramLink)
+        .filter(TelegramLink.chat_id == chat_id, TelegramLink.revoked_at.is_(None))
+        .order_by(TelegramLink.created_at.desc())
+        .all()
+    )
+
+
+def upsert_link(db: Session, chat_id: int, wallet_address: str, make_active: bool) -> TelegramLink:
+    normalized = (wallet_address or "").lower()
+    link = (
+        db.query(TelegramLink)
+        .filter(TelegramLink.chat_id == chat_id, TelegramLink.wallet_address == normalized)
+        .one_or_none()
+    )
+    has_active = (
+        db.query(TelegramLink)
+        .filter(
+            TelegramLink.chat_id == chat_id,
+            TelegramLink.revoked_at.is_(None),
+            TelegramLink.is_active.is_(True),
+        )
+        .count()
+        > 0
+    )
+
+    if link:
+        link.revoked_at = None
+        if make_active or not has_active:
+            link.is_active = True
+    else:
+        link = TelegramLink(
+            chat_id=chat_id,
+            wallet_address=normalized,
+            revoked_at=None,
+            is_active=make_active or not has_active,
+        )
+        db.add(link)
+
+    if make_active or not has_active:
+        db.query(TelegramLink).filter(
+            TelegramLink.chat_id == chat_id,
+            TelegramLink.wallet_address != normalized,
+        ).update({"is_active": False})
+
+    db.commit()
+    db.refresh(link)
+    return link
+
+
+def set_active_link(db: Session, chat_id: int, wallet_address: str) -> TelegramLink:
+    normalized = (wallet_address or "").lower()
+    link = (
+        db.query(TelegramLink)
+        .filter(
+            TelegramLink.chat_id == chat_id,
+            TelegramLink.wallet_address == normalized,
+            TelegramLink.revoked_at.is_(None),
+        )
+        .one_or_none()
+    )
+    if link is None:
+        raise LookupError("link_not_found")
+
+    db.query(TelegramLink).filter(TelegramLink.chat_id == chat_id).update({"is_active": False})
+    link.is_active = True
+    db.commit()
+    db.refresh(link)
+    return link
+
+
+def revoke_link(db: Session, chat_id: int, wallet_address: str) -> None:
+    normalized = (wallet_address or "").lower()
+    link = (
+        db.query(TelegramLink)
+        .filter(TelegramLink.chat_id == chat_id, TelegramLink.wallet_address == normalized)
+        .one_or_none()
+    )
+    if link is None:
+        return
+    link.revoked_at = datetime.now(UTC)
+    link.is_active = False
+    db.add(link)
+    db.commit()
+
+    remaining = (
+        db.query(TelegramLink)
+        .filter(
             TelegramLink.chat_id == chat_id,
             TelegramLink.revoked_at.is_(None),
         )
         .order_by(TelegramLink.created_at.desc())
-        .limit(1)
-    ).scalar_one_or_none()
-
-    return wallet
+        .all()
+    )
+    if remaining:
+        for idx, item in enumerate(remaining):
+            item.is_active = idx == 0
+            db.add(item)
+        db.commit()
