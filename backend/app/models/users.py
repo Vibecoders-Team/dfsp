@@ -22,6 +22,7 @@ class User(Base):
 
     rsa_public: Mapped[str] = mapped_column(nullable=False)
     display_name: Mapped[str | None] = mapped_column(nullable=True)
+    ton_pubkey: Mapped[bytes | None] = mapped_column(sa.LargeBinary(), unique=True)
 
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import re
 import secrets
+import uuid as uuidlib
 from os import getenv
 from typing import Annotated, Any, cast
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 from eth_keys.datatypes import Signature
@@ -27,6 +31,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 LOGIN_DOMAIN: dict[str, str] = {"name": "DFSP-Login", "version": "1"}
 EXPECTED_CHAIN_ID = int(getenv("CHAIN_ID", "0") or 0) or None
+TON_CHALLENGE_TTL = 300
 
 # --- Валидаторы ---
 ADDR_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
@@ -148,6 +153,100 @@ def challenge() -> ChallengeOut:
     # setex(key, seconds, value)
     rds.setex(f"auth:chal:{challenge_id}", exp_sec, json.dumps({"nonce": nonce}))
     return ChallengeOut(challenge_id=challenge_id, nonce=nonce, exp_sec=exp_sec)
+
+
+# ---------- TON Auth ----------
+
+
+def _b64decode(s: str) -> bytes:
+    try:
+        return base64.b64decode(s, validate=True)
+    except Exception as e:
+        raise HTTPException(400, "bad_base64") from e
+
+
+def _derive_eth_from_ton_pub(pubkey: bytes) -> str:
+    # derive pseudo-EVM address from pubkey hash (keccak) to satisfy schema uniqueness
+    digest = keccak(pubkey)
+    return "0x" + digest[-20:].hex()
+
+
+@router.post("/ton/challenge", response_model=ChallengeOut)
+def ton_challenge(body: dict) -> ChallengeOut:
+    pubkey_b64 = body.get("pubkey")
+    if not isinstance(pubkey_b64, str):
+        raise HTTPException(400, "pubkey_required")
+    pubkey = _b64decode(pubkey_b64)
+    if len(pubkey) != 32:
+        raise HTTPException(400, "bad_pubkey")
+
+    challenge_id = str(uuidlib.uuid4())
+    nonce = base64.b64encode(secrets.token_bytes(32)).decode()
+    rds.setex(
+        f"auth:ton:chal:{challenge_id}",
+        TON_CHALLENGE_TTL,
+        json.dumps({"nonce": nonce, "pubkey": pubkey_b64}),
+    )
+    return ChallengeOut(challenge_id=challenge_id, nonce=nonce, exp_sec=TON_CHALLENGE_TTL)
+
+
+@router.post("/ton/login", response_model=Tokens)
+def ton_login(body: dict, db: Annotated[Session, Depends(get_db)]) -> Tokens:
+    challenge_id = body.get("challenge_id")
+    signature_b64 = body.get("signature")
+    if not isinstance(challenge_id, str) or not isinstance(signature_b64, str):
+        raise HTTPException(400, "bad_request")
+    key = f"auth:ton:chal:{challenge_id}"
+    raw = rds.get(key)
+    if not raw:
+        raise HTTPException(410, "challenge_expired")
+    try:
+        data = json.loads(raw if isinstance(raw, str) else raw.decode())
+        nonce_b64 = data["nonce"]
+        pubkey_b64 = data["pubkey"]
+    except Exception as e:
+        raise HTTPException(400, "challenge_invalid") from e
+
+    nonce = _b64decode(nonce_b64)
+    pubkey = _b64decode(pubkey_b64)
+    signature = _b64decode(signature_b64)
+
+    try:
+        Ed25519PublicKey.from_public_bytes(pubkey).verify(signature, nonce)
+    except InvalidSignature as e:
+        raise HTTPException(401, "bad_signature") from e
+    except Exception as e:
+        raise HTTPException(400, f"verify_error:{e}") from e
+
+    # consume challenge
+    try:
+        rds.delete(key)
+    except Exception:
+        logger.debug("ton_login: failed to delete challenge key %s", key, exc_info=True)
+
+    # find or create user bound to this TON pubkey
+    user = db.query(User).filter(User.ton_pubkey == pubkey).one_or_none()
+    if user is None:
+        user = db.query(User).filter(User.eth_address == _derive_eth_from_ton_pub(pubkey)).one_or_none()
+    if user is None:
+        user = User(
+            eth_address=_derive_eth_from_ton_pub(pubkey),
+            rsa_public=pubkey_b64,
+            ton_pubkey=pubkey,
+            display_name="TON user",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    else:
+        if user.ton_pubkey is None:
+            user.ton_pubkey = pubkey
+            db.add(user)
+            db.commit()
+
+    access = make_token(str(user.id), 30)
+    refresh = make_token(str(user.id), 24 * 60)
+    return Tokens(access=access, refresh=refresh)
 
 
 @router.post(
