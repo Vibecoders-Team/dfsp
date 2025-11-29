@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.telegram_link import TelegramLink
+from app.models.users import User
 
 
 def link_user_to_chat(db: Session, wallet_address: str, chat_id: int) -> TelegramLink:
@@ -47,6 +48,40 @@ def revoke_links_by_address(db: Session, wallet_address: str) -> int:
     db.commit()
 
     return updated_rows
+
+
+def get_active_chat_ids_for_addresses(db: Session, addresses: list[str]) -> dict[str, int]:
+    """
+    Возвращает mapping address(lower) -> chat_id для активных привязок.
+    Берём последний по created_at для каждого адреса.
+    """
+    if not addresses:
+        return {}
+    normalized = [addr.lower() for addr in addresses if addr]
+    if not normalized:
+        return {}
+    rows = (
+        db.query(TelegramLink.wallet_address, TelegramLink.chat_id, TelegramLink.created_at)
+        .filter(
+            TelegramLink.wallet_address.in_(normalized),
+            TelegramLink.revoked_at.is_(None),
+        )
+        .order_by(TelegramLink.wallet_address, TelegramLink.created_at.desc())
+        .all()
+    )
+    out: dict[str, int] = {}
+    for addr, chat_id, _created_at in rows:
+        if addr and addr.lower() not in out:
+            out[addr.lower()] = int(chat_id)
+    return out
+
+
+def get_active_chat_id_for_user(db: Session, user: User) -> int | None:
+    """Возвращает chat_id по eth_address пользователя, если есть активная привязка."""
+    if not user or not user.eth_address:
+        return None
+    mapping = get_active_chat_ids_for_addresses(db, [user.eth_address])
+    return mapping.get(user.eth_address.lower())
 
 
 def get_wallet_by_chat_id(db: Session, chat_id: int) -> str | None:

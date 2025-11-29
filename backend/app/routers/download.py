@@ -16,11 +16,11 @@ from app.blockchain.web3_client import Chain
 from app.cache import Cache
 from app.deps import get_chain, get_db
 from app.models import File, Grant, User
-
-# --- НОВЫЙ ИМПОРТ ---
 from app.quotas import QuotaManager, protect_download
+from app.repos.telegram_repo import get_active_chat_id_for_user
 from app.security import parse_token
 from app.services.event_logger import EventLogger
+from app.services.notification_publisher import NotificationPublisher
 
 router = APIRouter(prefix="/download", tags=["download"])
 logger = logging.getLogger(__name__)
@@ -45,6 +45,32 @@ def require_user(authorization: AuthorizationHeader, db: Annotated[Session, Depe
     if user_obj is None:
         raise HTTPException(401, "user_not_found")
     return user_obj
+
+
+def _publish_download_event(
+    db: Session,
+    user: User,
+    cap_id: str,
+    event_type: str,
+    *,
+    reason: str | None = None,
+) -> None:
+    """Публикует download_allowed/denied если есть chat_id."""
+    try:
+        chat_id = get_active_chat_id_for_user(db, user)
+        if not chat_id:
+            return
+        payload: dict[str, Any] = {"capId": cap_id}
+        if reason:
+            payload["reason"] = reason
+        NotificationPublisher().publish(
+            event_type,
+            chat_id=chat_id,
+            payload=payload,
+            event_id=f"{event_type}:{cap_id}:{chat_id}",
+        )
+    except Exception as e:
+        logger.debug("Failed to publish %s event for %s: %s", event_type, cap_id, e, exc_info=True)
 
 
 @router.get("/{cap_id}")
@@ -136,6 +162,7 @@ def get_download_info(
                 out.update({"requestId": str(req_uuid), "typedData": typed})
             except Exception as e:
                 logger.debug("get_download_info: failed to build typedData for %s: %s", cap_id, e, exc_info=True)
+            _publish_download_event(db, user, cap_id, "download_allowed")
             return out
 
     # Full recompute path (or cache miss)
@@ -171,12 +198,15 @@ def get_download_info(
 
     if revoked:
         Cache.set_text(cache_key, "0", ttl=10)
+        _publish_download_event(db, user, cap_id, "download_denied", reason="revoked")
         raise HTTPException(403, "revoked")
     if expired:
         Cache.set_text(cache_key, "0", ttl=10)
+        _publish_download_event(db, user, cap_id, "download_denied", reason="expired")
         raise HTTPException(403, "expired")
     if exhausted:
         Cache.set_text(cache_key, "0", ttl=10)
+        _publish_download_event(db, user, cap_id, "download_denied", reason="exhausted")
         raise HTTPException(403, "exhausted")
 
     # Allowed → set positive cache
@@ -192,6 +222,7 @@ def get_download_info(
         if f and f.cid:
             cid = f.cid
     if not cid:
+        _publish_download_event(db, user, cap_id, "download_denied", reason="registry_unavailable")
         raise HTTPException(502, "registry_unavailable")
 
     # В соответствии с AC: "учитываем useOnce только при успешной выдаче encK"
@@ -234,4 +265,5 @@ def get_download_info(
         logger.debug("get_download_info: failed reading file name for full path for %s: %s", file_hex, e, exc_info=True)
     if typed is not None:
         out.update({"requestId": str(req_uuid), "typedData": typed})
+    _publish_download_event(db, user, cap_id, "download_allowed")
     return out

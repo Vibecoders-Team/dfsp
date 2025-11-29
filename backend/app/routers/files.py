@@ -19,11 +19,13 @@ from app.config import settings
 from app.deps import get_chain, get_db, rds
 from app.models import File, FileVersion, Grant, User
 from app.quotas import protect_meta_tx
+from app.repos.telegram_repo import get_active_chat_ids_for_addresses
 from app.repos.user_repo import get_by_eth_address
 from app.schemas.auth import FileCreateIn, TypedDataOut
 from app.schemas.grants import DuplicateOut, ShareIn, ShareItemOut, ShareOut
 from app.security import parse_token
 from app.services.event_logger import EventLogger
+from app.services.notification_publisher import NotificationPublisher
 
 router = APIRouter(prefix="/files", tags=["files"])
 logger = logging.getLogger(__name__)
@@ -408,6 +410,34 @@ def share_file(
             )
     except Exception as e:
         logger.warning(f"Failed to log grant_created events: {e}")
+
+    # Publish notification events for grantor/grantee if chat_id known
+    try:
+        publisher = NotificationPublisher()
+        addr_map = get_active_chat_ids_for_addresses(
+            db,
+            [user.eth_address] + [ga for ga, _ in grantees],
+        )
+        for (grantee_addr, _grantee_user), cap_b in zip(grantees, cap_ids_bytes, strict=False):
+            cap_hex = "0x" + cap_b.hex()
+            grantor_chat = addr_map.get(user.eth_address.lower())
+            if grantor_chat:
+                publisher.publish(
+                    "grant_created",
+                    chat_id=grantor_chat,
+                    payload={"capId": cap_hex, "fileId": id},
+                    event_id=f"grant_created:{cap_hex}:{grantor_chat}",
+                )
+            grantee_chat = addr_map.get(grantee_addr.lower())
+            if grantee_chat:
+                publisher.publish(
+                    "grant_received",
+                    chat_id=grantee_chat,
+                    payload={"capId": cap_hex, "fileId": id},
+                    event_id=f"grant_received:{cap_hex}:{grantee_chat}",
+                )
+    except Exception as e:
+        logger.warning("Failed to publish notification events for grants: %s", e, exc_info=True)
 
     items = [
         ShareItemOut(grantee=addr_lower_to_input[ga.lower()], capId=ch, status="queued")

@@ -14,8 +14,10 @@ from web3 import Web3
 from app.blockchain.web3_client import Chain
 from app.deps import get_chain, get_db
 from app.models import File, Grant, User
+from app.repos.telegram_repo import get_active_chat_ids_for_addresses
 from app.security import parse_token
 from app.services.event_logger import EventLogger
+from app.services.notification_publisher import NotificationPublisher
 
 router = APIRouter(prefix="/grants", tags=["grants"])
 logger = logging.getLogger(__name__)
@@ -181,6 +183,20 @@ def revoke_grant(
             revoker_id=user.id,
         )
         typed = chain.build_forward_typed_data(from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000)
+        # Notify grantee if chat_id known
+        try:
+            grantee_user: User | None = db.get(User, grant.grantee_id)
+            addr_map = get_active_chat_ids_for_addresses(db, [grantee_user.eth_address]) if grantee_user else {}
+            chat_id = addr_map.get(grantee_user.eth_address.lower()) if grantee_user else None
+            if chat_id:
+                NotificationPublisher().publish(
+                    "grant_revoked",
+                    chat_id=chat_id,
+                    payload={"capId": cap_id},
+                    event_id=f"grant_revoked:{cap_id}:{chat_id}",
+                )
+        except Exception as e:
+            logger.warning("Failed to publish grant_revoked notification: %s", e, exc_info=True)
     except Exception as e:
         logger.warning(f"Failed to log grant_revoked event or build typed data: {e}")
         raise HTTPException(502, f"chain_unavailable: {e}") from e
