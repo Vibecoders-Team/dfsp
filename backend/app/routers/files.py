@@ -22,9 +22,11 @@ from app.quotas import protect_meta_tx
 from app.repos.telegram_repo import get_active_chat_ids_for_addresses
 from app.repos.user_repo import get_by_eth_address
 from app.schemas.auth import FileCreateIn, TypedDataOut
+from app.schemas.common import OkResponse
 from app.schemas.grants import DuplicateOut, ShareIn, ShareItemOut, ShareOut
 from app.security import parse_token
 from app.services.event_logger import EventLogger
+from app.services.event_publisher import EventPublisher
 from app.services.notification_publisher import NotificationPublisher
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -84,7 +86,11 @@ def list_my_files(
     # Count total files and per-user count for diagnostics
     total_files = db.query(File).count()
     user_files_q = (
-        select(File).where(File.owner_id == user.id).order_by(File.created_at.desc()).limit(limit).offset(offset)
+        select(File)
+        .where(File.owner_id == user.id, File.deleted_at.is_(None))
+        .order_by(File.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     files = db.scalars(user_files_q).all()
     per_user_count = len(files)
@@ -95,7 +101,7 @@ def list_my_files(
             fallback_q = (
                 select(File)
                 .join(User, File.owner_id == User.id)
-                .where(User.eth_address == user.eth_address.lower())
+                .where(User.eth_address == user.eth_address.lower(), File.deleted_at.is_(None))
                 .order_by(File.created_at.desc())
             )
             fb_files = db.scalars(fallback_q).all()
@@ -112,7 +118,9 @@ def list_my_files(
 
     # Log owner_ids of a few recent files for visibility
     try:
-        sample = db.execute(select(File.owner_id, File.id).order_by(File.created_at.desc()).limit(5)).all()
+        sample = db.execute(
+            select(File.owner_id, File.id).where(File.deleted_at.is_(None)).order_by(File.created_at.desc()).limit(5)
+        ).all()
         sample_str = ", ".join([f"(owner={row[0]}, id={row[1].hex()})" for row in sample])
     except Exception as e:
         logger.debug("list_my_files: failed to compose sample_str: %s", e, exc_info=True)
@@ -446,6 +454,70 @@ def share_file(
     return ShareOut(items=items, typedDataList=typed_list)
 
 
+@router.delete("/{id}", response_model=OkResponse)
+def delete_file(
+    id: str,
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
+) -> OkResponse:
+    """
+    Soft-delete file: mark deleted_at, revoke active grants, publish event.
+    """
+    if not (isinstance(id, str) and id.startswith("0x") and len(id) == 66):
+        raise HTTPException(400, "bad_file_id")
+    try:
+        file_id_bytes = Web3.to_bytes(hexstr=cast(HexStr, id))
+    except Exception as e:
+        raise HTTPException(400, "bad_file_id") from e
+
+    file_obj: File | None = db.get(File, file_id_bytes)
+    if file_obj is None or file_obj.deleted_at is not None:
+        raise HTTPException(404, "file_not_found")
+    if file_obj.owner_id != user.id:
+        raise HTTPException(403, "not_owner")
+
+    now = datetime.now(UTC)
+    file_obj.deleted_at = now
+
+    # Revoke active grants
+    active_grants = db.query(Grant).filter(Grant.file_id == file_id_bytes, Grant.revoked_at.is_(None)).all()
+    for g in active_grants:
+        g.revoked_at = now
+        g.status = "revoked"
+        db.add(g)
+
+    db.add(file_obj)
+    db.commit()
+
+    # Publish notification to owner chat if available
+    try:
+        publisher = NotificationPublisher()
+        chat_map = get_active_chat_ids_for_addresses(db, [user.eth_address])
+        chat_id = chat_map.get(user.eth_address.lower())
+        if chat_id:
+            publisher.publish(
+                "file_deleted",
+                chat_id=chat_id,
+                payload={"fileId": id},
+                event_id=f"file_deleted:{id}:{chat_id}",
+            )
+    except Exception as e:
+        logger.warning("Failed to publish file_deleted notification: %s", e, exc_info=True)
+
+    try:
+        EventPublisher().publish(
+            "file_deleted",
+            subject={"fileId": id, "owner": user.eth_address},
+            payload={"ts": now.isoformat()},
+            event_id=f"file_deleted:{id}",
+        )
+    except Exception as e:
+        logger.debug("Failed to log file_deleted event: %s", e, exc_info=True)
+
+    return OkResponse()
+
+
 @router.get("/{id}/grants")
 def list_file_grants(
     id: str,
@@ -465,6 +537,8 @@ def list_file_grants(
     file_row: File | None = db.get(File, file_id_bytes)
     if file_row is None:
         raise HTTPException(404, "file_not_found")
+    if file_row.deleted_at is not None:
+        raise HTTPException(404, "file_not_found")
     if file_row.owner_id != user.id:
         raise HTTPException(403, "not_owner")
 
@@ -472,7 +546,7 @@ def list_file_grants(
     rows = db.execute(
         select(Grant, User.eth_address)
         .join(User, Grant.grantee_id == User.id)
-        .where(Grant.file_id == file_id_bytes)
+        .where(Grant.file_id == file_id_bytes, Grant.revoked_at.is_(None))
         .order_by(Grant.created_at.desc())
     ).all()
 

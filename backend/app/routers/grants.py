@@ -58,14 +58,14 @@ def list_my_grants(
         rows = db.execute(
             select(Grant, File.name)
             .join(File, File.id == Grant.file_id)
-            .where(Grant.grantee_id == user.id)
+            .where(Grant.grantee_id == user.id, File.deleted_at.is_(None))
             .order_by(Grant.created_at.desc())
         ).all()
     else:
         rows = db.execute(
             select(Grant, File.name)
             .join(File, File.id == Grant.file_id)
-            .where(Grant.grantor_id == user.id)
+            .where(Grant.grantor_id == user.id, File.deleted_at.is_(None))
             .order_by(Grant.created_at.desc())
         ).all()
 
