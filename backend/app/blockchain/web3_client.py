@@ -62,9 +62,7 @@ class Chain:
             if tx_from
             else (self.w3.eth.accounts[0] if self.w3.eth.accounts else None)
         )
-        self.deployment_json = deploy_json_path or os.getenv(
-            "CONTRACTS_DEPLOYMENT_JSON", "/app/shared/deployment.localhost.json"
-        )
+        self.deployment_json = deploy_json_path or os.getenv("CONTRACTS_DEPLOYMENT_JSON", "/app/shared/deployment.json")
         self._fn = {f["name"]: f for f in self.abi if f.get("type") == "function"}
         self._events = {e["name"]: e for e in self.abi if e.get("type") == "event"}
         self.contracts: dict[str, Any] = {}
@@ -295,7 +293,14 @@ class Chain:
 
         out = to_dict(res)
         if out:
-            Cache.set_json(key, out, ttl=300)  # 5 minutes
+            sanitized: dict[str, Any] = {}
+            for k, v in out.items():
+                if isinstance(v, (bytes, bytearray)):
+                    sanitized[k] = "0x" + v.hex()
+                else:
+                    sanitized[k] = v
+            Cache.set_json(key, sanitized, ttl=300)  # 5 minutes
+            return sanitized
         return out
 
     def versions_of(self, item_id: bytes) -> list[dict[str, Any]]:

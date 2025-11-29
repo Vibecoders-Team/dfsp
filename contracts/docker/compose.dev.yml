@@ -45,7 +45,7 @@ services:
         condition: service_healthy
     environment:
       HARDHAT_URL: "${HARDHAT_URL:-http://chain:8545}"
-      DEPLOY_OUT: "${DEPLOY_OUT:-/shared/deployment.localhost.json}"
+      DEPLOY_OUT: "${DEPLOY_OUT:-/shared/deployment.json}"
       NPM_CONFIG_CACHE: /npm-cache
     command: >
       sh -lc "npm ci &&

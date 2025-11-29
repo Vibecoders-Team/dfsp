@@ -143,6 +143,11 @@ export async function postLogin(payload: LoginPayload) {
     return data;
 }
 
+export async function completeTelegramLink(linkToken: string) {
+    const { data } = await api.post<{ ok: boolean }>("/tg/link-complete", { link_token: linkToken });
+    return data;
+}
+
 export async function storeFile(file: File, idHex?: string) {
     const fd = new FormData();
     fd.append("file", file);

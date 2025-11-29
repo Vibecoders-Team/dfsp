@@ -16,7 +16,9 @@ import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
 import { decryptStream } from '@/lib/cryptoClient';
 
-const IPFS_GATEWAY = ((import.meta as unknown as { env?: { VITE_IPFS_PUBLIC_GATEWAY?: string } }).env?.VITE_IPFS_PUBLIC_GATEWAY) ?? 'http://localhost:8080';
+const IPFS_GATEWAY =
+  ((import.meta as unknown as { env?: { VITE_IPFS_PUBLIC_GATEWAY?: string } }).env?.VITE_IPFS_PUBLIC_GATEWAY)
+  ?? 'https://ipfs.dfsp.app';
 
 function b64ToU8(b64: string): Uint8Array {
   const bin = atob(b64);

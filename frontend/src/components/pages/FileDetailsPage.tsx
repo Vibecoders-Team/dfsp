@@ -111,7 +111,9 @@ export default function FileDetailsPage() {
   const handleDownload = async () => {
     try {
       if (!file?.cid) throw new Error('CID missing');
-      const gw = ((import.meta as unknown as { env?: { VITE_IPFS_PUBLIC_GATEWAY?: string } }).env?.VITE_IPFS_PUBLIC_GATEWAY) ?? 'http://localhost:8080';
+      const gw =
+        ((import.meta as unknown as { env?: { VITE_IPFS_PUBLIC_GATEWAY?: string } }).env?.VITE_IPFS_PUBLIC_GATEWAY)
+        ?? 'https://ipfs.dfsp.app';
       const url = gw.replace(/\/+$/, '') + `/ipfs/${file.cid}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed: ${res.status}`);

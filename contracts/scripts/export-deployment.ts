@@ -27,7 +27,7 @@ async function main() {
   const configPath = process.env.CHAIN_CONFIG_PATH || defaultCfg;
 
   // Куда писать итог (можно переопределить DEPLOY_OUT)
-  const defaultOut = path.resolve("deployments/deployment.localhost.json");
+  const defaultOut = path.resolve("deployments/deployment.json");
   const outPath = process.env.DEPLOY_OUT || defaultOut;
 
   const networkName = process.env.NETWORK || "localhost";

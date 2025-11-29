@@ -329,6 +329,8 @@ def _normalize_checksum(value: object) -> str | None:
     """Приводит чек-сумму в байтах к hex-строке '0x...'."""
     if isinstance(value, (bytes, bytearray)):
         return "0x" + value.hex()
+    if isinstance(value, str):
+        return value.lower()
     return None
 
 

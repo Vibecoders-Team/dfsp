@@ -66,7 +66,7 @@ async function main() {
 
   // --- 2) backend: адреса + ABI, путь из DEPLOY_OUT ---
   const deployOut =
-    process.env.DEPLOY_OUT || path.join(__dirname, "../out/deployment.localhost.json");
+    process.env.DEPLOY_OUT || path.join(__dirname, "../out/deployment.json");
 
   const regAbi = (await hre.artifacts.readArtifact("FileRegistry")).abi;
   const accAbi = (await hre.artifacts.readArtifact("AccessControlDFSP")).abi;

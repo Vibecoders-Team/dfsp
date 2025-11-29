@@ -211,6 +211,37 @@ services:
       retries: 1
       start_period: 5s
 
+  # ---------------- Telegram Bot ----------------
+  telegram-bot:
+    build:
+      context: ../bot
+      dockerfile: Dockerfile
+    container_name: dfsp-telegram-bot
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      BOT_MODE: "${BOT_MODE:-prod}"
+      BOT_TOKEN: "${BOT_TOKEN:-}"
+      DFSP_API_URL: "${DFSP_API_URL:-http://api:8000}"
+      DFSP_API_TOKEN: "${DFSP_API_TOKEN:-}"
+      WEBHOOK_SECRET: "${WEBHOOK_SECRET:-bot_secret}"
+      PUBLIC_WEB_ORIGIN: "${PUBLIC_WEB_ORIGIN:-https://dfsp.app}"
+      REDIS_DSN: "${BOT_REDIS_DSN:-${REDIS_URL:-redis://redis:6379/0}}"
+      QUEUE_DSN: "${BOT_QUEUE_DSN:-${REDIS_URL:-redis://redis:6379/0}}"
+      APP_HOST: "${BOT_APP_HOST:-0.0.0.0}"
+      APP_PORT: "${BOT_APP_PORT:-8080}"
+      PROM_PORT: "${BOT_PROM_PORT:-8001}"
+    ports:
+      - "${BOT_APP_PORT:-8080}:8080"
+      - "${BOT_PROM_PORT:-8001}:8001"
+    depends_on:
+      api:
+        condition: service_started
+      redis:
+        condition: service_started
+    networks: [ dfsp ]
+
   # ---------------- Redis ----------------
   redis:
     image: redis:7.2-alpine

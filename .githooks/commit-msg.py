@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-import re, sys, textwrap
+import re
+import sys
+import textwrap
 
 if len(sys.argv) < 2:
     sys.exit(0)
@@ -35,7 +37,9 @@ if "!" in header and not re.search(r"(?m)^BREAKING CHANGE:\s+.+", body):
     errors.append("Header contains '!' but no 'BREAKING CHANGE:' block in body/footer")
 
 # 4) Рекомендация футера ссылок (только предупреждение)
-if header.startswith(("feat", "fix")) and not re.search(r"(?mi)^(Refs:|Closes:)\s+\S+", raw):
+if header.startswith(("feat", "fix")) and not re.search(
+    r"(?mi)^(Refs:|Closes:)\s+\S+", raw
+):
     print("[warn] Add footer 'Refs: PROJ-123' or 'Closes: #456' if applicable.")
 
 if errors:
@@ -45,11 +49,13 @@ if errors:
     print("\nExamples:")
     print(" - feat(api): add rate limiting for POST /orders")
     print(" - feat(api)!: switch auth to JWT\n")
-    print(textwrap.dedent("""\
+    print(
+        textwrap.dedent("""\
         Example body for breaking change:
 
         BREAKING CHANGE: OAuth tokens are no longer supported; migrate to JWT by 2025-10-01.
-    """))
+    """)
+    )
     sys.exit(1)
 
 sys.exit(0)

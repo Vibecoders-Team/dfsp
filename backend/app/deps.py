@@ -55,7 +55,7 @@ def get_chain() -> Chain:
             chain_id=int(os.getenv("CHAIN_ID", "31337")),
             contract_name=os.getenv("REGISTRY_CONTRACT_NAME", "FileRegistry"),
             tx_from=os.getenv("CHAIN_TX_FROM") or None,
-            deploy_json_path=os.getenv("CONTRACTS_DEPLOYMENT_JSON", "/app/shared/deployment.localhost.json"),
+            deploy_json_path=os.getenv("CONTRACTS_DEPLOYMENT_JSON", "/app/shared/deployment.json"),
             relayer_private_key=os.getenv("RELAYER_PRIVATE_KEY") or settings.relayer_private_key,
         )
     # если инстанс уже жив, но контрактов нет — попробуем перечитать файл

@@ -6,20 +6,21 @@ from aiogram.client.default import DefaultBotProperties
 from aiohttp import web
 from redis import asyncio as aioredis
 
-from .config import settings
-from .handlers import files as files_handlers
-from .handlers import link as link_handlers
-from .handlers import link_callback as link_callback_handlers
-from .handlers import me as me_handlers
-from .handlers import menu as menu_handlers
-from .handlers import start as start_handlers
-from .handlers import unlink as unlink_handlers
-from .handlers import verify as verify_handlers
-from .metrics import setup_metrics_server, tg_webhook_errors_total
-from .middlewares.error_handler import ErrorHandlerMiddleware
-from .middlewares.logging import LoggingMiddleware
-from .middlewares.rate_limit import RateLimitMiddleware
-from .services.notifications.consumer import NotificationConsumer
+from app.config import settings
+from app.handlers import files as files_handlers
+from app.handlers import link as link_handlers
+from app.handlers import link_callback as link_callback_handlers
+from app.handlers import me as me_handlers
+from app.handlers import menu as menu_handlers
+from app.handlers import start as start_handlers
+from app.handlers import unlink as unlink_handlers
+from app.handlers import verify as verify_handlers
+from app.metrics import setup_metrics_server, tg_webhook_errors_total
+from app.middlewares.error_handler import ErrorHandlerMiddleware
+from app.middlewares.logging import LoggingMiddleware
+from app.middlewares.rate_limit import RateLimitMiddleware
+from app.services.notifications.consumer import NotificationConsumer
+from app.utils.webhook import build_webhook_url, mask_webhook_url
 
 logging.basicConfig(
     level=logging.INFO,
@@ -118,6 +119,36 @@ async def run_polling() -> None:
 # --- PROD: webhook + healthz ---------------------------------------------------
 
 
+def get_webhook_url() -> str:
+    """Формирует URL webhook на основе PUBLIC_WEB_ORIGIN и WEBHOOK_SECRET."""
+    return build_webhook_url(settings.PUBLIC_WEB_ORIGIN, settings.WEBHOOK_SECRET)
+
+
+async def ensure_webhook(bot_: Bot) -> str:
+    """Проверяет и настраивает webhook в Telegram."""
+    webhook_url = get_webhook_url()
+    masked_url = mask_webhook_url(webhook_url, settings.WEBHOOK_SECRET)
+
+    try:
+        info = await bot_.get_webhook_info()
+    except Exception:
+        logger.exception("Failed to fetch current webhook info")
+        info = None
+
+    if info and info.url == webhook_url:
+        logger.info("Webhook already set to %s", masked_url)
+        return webhook_url
+
+    try:
+        await bot_.set_webhook(url=webhook_url, drop_pending_updates=True)
+        logger.info("Webhook set to %s (pending updates dropped)", masked_url)
+    except Exception:
+        logger.exception("Failed to set webhook to %s", masked_url)
+        raise
+
+    return webhook_url
+
+
 async def healthz_handler(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok"})
 
@@ -154,10 +185,18 @@ def create_web_app() -> web.Application:
     app = web.Application()
 
     app.router.add_get("/healthz", healthz_handler)
+    # Caddy uses handle_path /tg/webhook* which strips both "/tg/webhook",
+    # so Telegram requests arrive as "/{secret}". Accept all variants.
+    app.router.add_post("/{secret}", webhook_handler)
+    app.router.add_post("/webhook/{secret}", webhook_handler)
     app.router.add_post("/tg/webhook/{secret}", webhook_handler)
 
     async def on_startup(app_: web.Application) -> None:
         logger.info("Webhook app startup")
+
+        # Ensure webhook is set in Telegram
+        webhook_url = await ensure_webhook(bot)
+        logger.info("Webhook configured at %s", mask_webhook_url(webhook_url, settings.WEBHOOK_SECRET))
 
         # Setup bot commands menu
         await setup_bot_commands(bot)

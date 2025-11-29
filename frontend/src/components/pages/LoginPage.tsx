@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../useAuth';
 import { Button } from '../ui/button';
 import { Alert, AlertDescription } from '../ui/alert';
@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [keysExist, setKeysExist] = useState<boolean | null>(null);
 
   // Check if keys exist on mount (optional)
@@ -40,7 +41,10 @@ export default function LoginPage() {
       }
       await login();
       setState('success');
-      navigate('/files');
+      const params = new URLSearchParams(location.search);
+      const redirect = params.get('redirect');
+      const safeRedirect = redirect && redirect.startsWith('/') ? redirect : '/files';
+      navigate(safeRedirect);
     } catch (error) {
       setState('error');
       setErrorMessage(getErrorMessage(error, 'Authentication failed'));

@@ -4,6 +4,7 @@ import logging
 from urllib.parse import urlparse
 
 from ..config import settings
+from .webhook import build_webhook_url, mask_webhook_url
 
 logger = logging.getLogger(__name__)
 
@@ -63,3 +64,7 @@ def print_config_diagnostics() -> None:
     # Пример ссылки для линка
     origin = str(settings.PUBLIC_WEB_ORIGIN).rstrip("/")
     logger.info("Пример ссылки для линка: %s/tg/link?token=EXAMPLE_TOKEN", origin)
+
+    # Webhook URL (без явного секрета в логах)
+    webhook_url = build_webhook_url(settings.PUBLIC_WEB_ORIGIN, settings.WEBHOOK_SECRET)
+    logger.info("Webhook URL: %s", mask_webhook_url(webhook_url, settings.WEBHOOK_SECRET))

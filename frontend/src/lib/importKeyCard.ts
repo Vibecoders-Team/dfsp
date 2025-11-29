@@ -1,7 +1,7 @@
 // src/lib/importKeyCard.ts
 import { saveKey } from "./pubkeys";
 
-const IPFS = import.meta.env.VITE_IPFS_PUBLIC_GATEWAY ?? "http://localhost:8080";
+const IPFS = import.meta.env.VITE_IPFS_PUBLIC_GATEWAY ?? "https://ipfs.dfsp.app";
 
 type KeyCardV1 = {
   type: "dfsp-rsa-pubkey";
@@ -37,4 +37,3 @@ export async function importKeyFromCid(cidOrUrl: string): Promise<{ address: str
   saveKey(address, pem);
   return { address };
 }
-

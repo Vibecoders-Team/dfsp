@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './components/AuthContext';
 import { Toaster } from './components/ui/sonner';
 import LoginPage from './components/pages/LoginPage';
@@ -21,9 +21,11 @@ import { useAuth } from './components/useAuth';
 import TermsPage from './components/pages/TermsPage';
 import RestorePage from './components/pages/RestorePage';
 import PrivacyPage from './components/pages/PrivacyPage';
+import TelegramLinkPage from './components/pages/TelegramLinkPage';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
   
   if (isLoading) {
     return (
@@ -37,7 +39,8 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   }
   
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    const redirect = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/login?redirect=${redirect}`} replace />;
   }
   
   return <>{children}</>;
@@ -165,6 +168,12 @@ function AppRoutes() {
         <Route
           path="/restore"
           element={<PublicRoute children={<RestorePage />} />}
+        />
+        <Route
+          path="/tg/link"
+          element={
+            <ProtectedRoute children={<TelegramLinkPage />} />
+          }
         />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="*" element={<NotFoundPage />} />

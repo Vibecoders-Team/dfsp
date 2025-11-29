@@ -24,7 +24,7 @@ services:
     ports:
       - "${DB_HOST_PORT:-55432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dfsp} -p 5432 || exit 1"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dfsp} -d ${DB_NAME:-dfsp} -p 5432 || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 30
@@ -46,7 +46,7 @@ services:
     command: >-
       bash -lc "./docker/entrypoint.sh migrate"
     volumes:
-      - ./shared-dev:/app/shared
+      - ./shared:/app/shared
     networks: [ dfsp-dev, caddy ]
     depends_on:
       db:
@@ -115,7 +115,7 @@ services:
       - ../contracts/scripts:/app/scripts:ro
       - ../contracts/deploy:/app/deploy
       - ../contracts/docker:/app/docker:ro
-      - ./shared-dev:/shared
+      - ./shared:/shared
     networks: [ dfsp-dev, caddy ]
 
   api:
@@ -137,7 +137,7 @@ services:
       retries: 5
       start_period: 10s
     volumes:
-      - ./shared-dev:/app/shared
+      - ./shared:/app/shared
     networks: [ dfsp-dev, caddy ]
     depends_on:
       migrator:
@@ -159,7 +159,7 @@ services:
     command: >-
       uv run celery -A app.relayer:celery worker --loglevel=info --concurrency=${RELAYER_CONCURRENCY:-2} -Q ${RELAYER_HIGH_QUEUE:-relayer.high},${RELAYER_DEFAULT_QUEUE:-relayer.default}
     volumes:
-      - ./shared-dev:/app/shared
+      - ./shared:/app/shared
     networks: [ dfsp-dev ]
     depends_on:
       redis:
@@ -185,7 +185,7 @@ services:
     command: >-
       uv run celery -A app.relayer:celery beat --loglevel=info
     volumes:
-      - ./shared-dev:/app/shared
+      - ./shared:/app/shared
     networks: [ dfsp-dev ]
     depends_on:
       redis:
@@ -200,6 +200,40 @@ services:
       timeout: 5s
       retries: 1
       start_period: 5s
+
+  telegram-bot:
+    build:
+      context: ../bot
+      dockerfile: Dockerfile
+    container_name: dfsp-telegram-bot-dev
+    restart: unless-stopped
+    env_file:
+      - .env.dev
+    environment:
+      BOT_MODE: "${BOT_MODE:-dev}"
+      BOT_TOKEN: "${BOT_TOKEN:-}"
+      DFSP_API_URL: "${DFSP_API_URL:-http://api:8000}"
+      DFSP_API_TOKEN: "${DFSP_API_TOKEN:-}"
+      WEBHOOK_SECRET: "${WEBHOOK_SECRET:-dev_bot_secret}"
+      PUBLIC_WEB_ORIGIN: "${PUBLIC_WEB_ORIGIN:-http://localhost:${VITE_PORT:-5173}}"
+      REDIS_DSN: "${BOT_REDIS_DSN:-${REDIS_DSN:-redis://redis:6379/0}}"
+      QUEUE_DSN: "${BOT_QUEUE_DSN:-${REDIS_DSN:-redis://redis:6379/0}}"
+      APP_HOST: "${BOT_APP_HOST:-0.0.0.0}"
+      APP_PORT: "${BOT_APP_PORT:-8080}"
+      PROM_PORT: "${BOT_PROM_PORT:-8001}"
+    ports:
+      - "${BOT_APP_PORT:-8080}:8080"
+      - "${BOT_PROM_PORT:-8001}:8001"
+    volumes:
+      - ../bot/app:/app/app:ro
+      - ../bot/pyproject.toml:/app/pyproject.toml:ro
+      - ../bot/uv.lock:/app/uv.lock:ro
+    depends_on:
+      api:
+        condition: service_started
+      redis:
+        condition: service_started
+    networks: [ dfsp-dev, caddy ]
 
   redis:
     image: redis:7.2-alpine
