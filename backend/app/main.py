@@ -21,6 +21,7 @@ from app.routers.admin import router as admin_router
 from app.routers.auth import router as auth_router
 from app.routers.bot import router as bot_router
 from app.routers.health import router as health_router
+from app.routers.intents import router as intents_router
 from app.routers.storage import router as storage_router
 
 # NEW: telemetry
@@ -104,6 +105,7 @@ app.include_router(download_router)
 app.include_router(one_time_router)
 app.include_router(grants_router)
 app.include_router(anchors_router)
+app.include_router(intents_router)
 app.include_router(users_router)
 app.include_router(admin_router)
 app.include_router(pow_router.router)
