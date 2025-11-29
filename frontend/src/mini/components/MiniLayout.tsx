@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import { useMiniAuth } from "../auth";
 
 const links = [
@@ -42,10 +42,7 @@ export function MiniLayout({ children }: { children: ReactNode }) {
         ))}
       </nav>
 
-      <main className="p-4">
-        <Outlet />
-        {children}
-      </main>
+      <main className="p-4">{children}</main>
     </div>
   );
 }

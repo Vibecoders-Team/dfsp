@@ -1,14 +1,17 @@
 import { useMiniAuth } from "../auth";
 import { useEffect, useState } from "react";
-import { miniApi } from "../api";
+import { miniGet, MiniApiError } from "../api";
+import { signNavigationPayload, type SignedPayload } from "../hmac";
 
 type HealthSnapshot = { ok: boolean } | null;
+type NavPreview = SignedPayload<{ route: string }> | null;
 
 export function MiniHomePage() {
   const { session } = useMiniAuth();
   const [health, setHealth] = useState<HealthSnapshot>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [navSig, setNavSig] = useState<NavPreview>(null);
 
   useEffect(() => {
     if (!session) return;
@@ -16,16 +19,30 @@ export function MiniHomePage() {
       setLoading(true);
       setError(null);
       try {
-        const { data } = await miniApi.get<{ ok: boolean }>("/health");
+        const data = await miniGet<{ ok: boolean }>("/health");
         setHealth({ ok: data.ok });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Ошибка проверки /health");
+        const msg = err instanceof MiniApiError ? err.message : "Ошибка проверки /health";
+        setError(msg);
       } finally {
         setLoading(false);
       }
     };
     void probe();
   }, [session]);
+
+  useEffect(() => {
+    const buildNavSig = async () => {
+      try {
+        const signed = await signNavigationPayload({ route: "/mini/files" });
+        setNavSig(signed);
+      } catch (err) {
+        // keep it non-fatal; we only preview signature for now
+        console.warn("Failed to sign navigation payload", err);
+      }
+    };
+    void buildNavSig();
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -46,6 +63,15 @@ export function MiniHomePage() {
           {error && <p className="text-red-400 mt-1">{error}</p>}
         </div>
       </div>
+
+      {navSig && (
+        <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-2">
+          <p className="font-semibold text-sm text-slate-200">Подпись навигационного payload</p>
+          <p className="text-xs text-slate-400">route: {navSig.payload.route}</p>
+          <p className="text-xs text-sky-300 break-all">hmac: {navSig.hmac}</p>
+          <p className="text-xs text-slate-500">ts: {navSig.ts}</p>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-3">
         <Card title="Files" body="Список файлов и операции откроем здесь в MINI-3." />

@@ -1,7 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { authenticateWithInitData, getMiniSession, setMiniSession, type WebAppAuthResponse } from "./api";
+import {
+  authenticateWithInitData,
+  getMiniSession,
+  normalizeMiniError,
+  setMiniSession,
+  type WebAppAuthResponse,
+} from "./api";
 import { readInitData, markWebAppReady } from "./telegram";
-import { isAxiosError } from "axios";
 
 type MiniAuthStatus = "idle" | "authenticating" | "ready" | "error";
 
@@ -69,11 +74,8 @@ export function useMiniAuth() {
 }
 
 function resolveErrorMessage(err: unknown): string {
-  if (isAxiosError(err)) {
-    const status = err.response?.status;
-    if (status === 403) return "Неверная подпись initData (403).";
-    if (status === 401) return "Сессия истекла, обновите WebApp.";
-    return `Ошибка авторизации: ${err.response?.data?.detail ?? status ?? "network"}`;
-  }
-  return err instanceof Error ? err.message : "Неизвестная ошибка авторизации";
+  const normalized = normalizeMiniError(err);
+  if (normalized.status === 403) return "Неверная подпись initData (403).";
+  if (normalized.status === 401) return "Сессия истекла, обновите WebApp.";
+  return normalized.message || "Неизвестная ошибка авторизации";
 }
