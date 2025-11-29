@@ -33,6 +33,7 @@ from .routers.download import router as download_router
 from .routers.files import router as files_router
 from .routers.grants import router as grants_router
 from .routers.meta_tx import router as mtx_router
+from .routers.one_time import router as one_time_router
 from .routers.telegram import router as telegram_router
 from .routers.users import router as users_router
 from .routers.verify import router as verify_router
@@ -100,6 +101,7 @@ app.include_router(mtx_router)
 app.include_router(verify_router)
 app.include_router(files_router)
 app.include_router(download_router)
+app.include_router(one_time_router)
 app.include_router(grants_router)
 app.include_router(anchors_router)
 app.include_router(users_router)

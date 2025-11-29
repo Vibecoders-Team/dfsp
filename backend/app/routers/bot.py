@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
+import os
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -12,12 +15,13 @@ from sqlalchemy.orm import Session
 from web3 import Web3
 
 from app.blockchain.web3_client import Chain
-from app.deps import get_chain, get_db
+from app.deps import get_chain, get_db, rds
 from app.models import File, Grant, User
 from app.models.action_intent import ActionIntent
 from app.models.anchors import Anchor
 from app.repos import telegram_repo
 from app.repos.user_repo import get_by_eth_address
+from app.routers.download import _build_download_payload
 from app.schemas.action_intent import (
     ActionIntentConsumeIn,
     ActionIntentConsumeOut,
@@ -30,6 +34,8 @@ from app.security import parse_token
 router = APIRouter(prefix="/bot", tags=["Bot"])
 
 ACTION_INTENT_TTL_SECONDS = 15 * 60  # 10–15 min as per task; we pick 15
+DL_ONCE_TTL = int(os.getenv("DL_ONCE_TTL", "300"))
+PUBLIC_WEB_ORIGIN = os.getenv("PUBLIC_WEB_ORIGIN", "http://localhost:3000").rstrip("/")
 
 AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 DbSessionDep = Annotated[Session, Depends(get_db)]
@@ -165,6 +171,16 @@ class BotLinkSwitchIn(BaseModel):
     address: str
 
 
+class BotPrepareDownloadIn(BaseModel):
+    capId: str
+
+
+class BotPrepareDownloadOut(BaseModel):
+    url: str
+    ttl: int
+    fileName: str | None = None
+
+
 # =========================
 # /bot/links CRUD
 # =========================
@@ -239,6 +255,45 @@ def bot_delete_link(
 
     telegram_repo.revoke_link(db, chat_id, addr)
     return _links_response(db, chat_id)
+
+
+# =========================
+# POST /bot/prepare-download
+# =========================
+
+
+@router.post("/prepare-download", response_model=BotPrepareDownloadOut)
+def bot_prepare_download(
+    body: BotPrepareDownloadIn,
+    db: DbSessionDep,
+    chain: Annotated[Chain, Depends(get_chain)],
+    x_tg_chat_id: str = Header(..., alias="X-TG-Chat-Id"),
+) -> BotPrepareDownloadOut:
+    chat_id = _parse_chat_id(x_tg_chat_id)
+    cap_id = body.capId
+    if not (isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66):
+        raise HTTPException(status_code=400, detail="bad_cap_id")
+    try:
+        cap_b = Web3.to_bytes(hexstr=cap_id)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="bad_cap_id") from exc
+
+    grant: Grant | None = db.scalar(select(Grant).where(Grant.cap_id == cap_b))
+    if grant is None:
+        raise HTTPException(status_code=404, detail="grant_not_found")
+
+    user = _resolve_user_by_chat_id_value(chat_id, db)
+    if grant.grantee_id != user.id:
+        raise HTTPException(status_code=403, detail="not_grantee")
+
+    payload = _build_download_payload(db, chain, user, grant, cap_id)
+
+    token = secrets.token_urlsafe(20)
+    key = f"dl:once:{token}"
+    rds.setex(key, DL_ONCE_TTL, json.dumps(payload, separators=(",", ":")))
+
+    url = f"{PUBLIC_WEB_ORIGIN}/dl/one-time/{token}"
+    return BotPrepareDownloadOut(url=url, ttl=DL_ONCE_TTL, fileName=payload.get("fileName"))
 
 
 # =========================

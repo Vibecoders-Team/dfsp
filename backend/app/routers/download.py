@@ -2,19 +2,21 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
 from eth_typing import HexStr
 from fastapi import APIRouter, Depends, Header, HTTPException
+from redis.exceptions import ResponseError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from web3 import Web3
 
 from app.blockchain.web3_client import Chain
 from app.cache import Cache
-from app.deps import get_chain, get_db
+from app.deps import get_chain, get_db, rds
 from app.models import File, Grant, User
 from app.quotas import QuotaManager, protect_download
 from app.repos.telegram_repo import get_active_chat_id_for_user
@@ -29,6 +31,8 @@ logger = logging.getLogger(__name__)
 AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 
 ZERO_ADDR = "0x0000000000000000000000000000000000000000"
+DL_ONCE_TTL = 300
+PUBLIC_WEB_ORIGIN = os.getenv("PUBLIC_WEB_ORIGIN", "http://localhost:3000").rstrip("/")
 
 
 def require_user(authorization: AuthorizationHeader, db: Annotated[Session, Depends(get_db)]) -> User:
@@ -71,6 +75,107 @@ def _publish_download_event(
         )
     except Exception as e:
         logger.debug("Failed to publish %s event for %s: %s", event_type, cap_id, e, exc_info=True)
+
+
+def _build_download_payload(
+    db: Session,
+    chain: Chain,
+    user: User,
+    grant: Grant,
+    cap_id: str,
+) -> dict[str, Any]:
+    cap_b = grant.cap_id
+    file_id_bytes = grant.file_id
+    now = datetime.now(UTC)
+    revoked = False
+    expired = False
+    exhausted = False
+    try:
+        ac = chain.get_access_control()
+        g = ac.functions.grants(cap_b).call()
+        on_grantee = Web3.to_checksum_address(g[1]) if g and len(g) >= 2 else None
+        on_file_id = g[2] if g and len(g) >= 3 else None
+        on_expires_at = int(g[3]) if g and len(g) >= 4 else 0
+        on_max = int(g[4]) if g and len(g) >= 5 else 0
+        on_used = int(g[5]) if g and len(g) >= 6 else 0
+        on_revoked = bool(g[7]) if g and len(g) >= 8 else False
+        if g and len(g) >= 7 and int(g[6]) == 0:
+            raise RuntimeError("not_mined_yet")
+        if on_grantee and on_grantee.lower() != user.eth_address.lower():
+            raise HTTPException(403, "not_grantee")
+        revoked = on_revoked
+        expired = now.timestamp() > on_expires_at if on_expires_at else False
+        exhausted = on_used >= on_max if on_max else True
+        file_id_bytes = bytes(on_file_id) if isinstance(on_file_id, (bytes, bytearray)) else grant.file_id
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.debug("prepare_download: on-chain grants lookup failed for %s: %s", cap_id, e, exc_info=True)
+        revoked = grant.revoked_at is not None or (grant.status == "revoked")
+        expired = now > grant.expires_at
+        exhausted = int(grant.used or 0) >= int(grant.max_dl or 0)
+        file_id_bytes = grant.file_id
+
+    if revoked:
+        raise HTTPException(403, "revoked")
+    if expired:
+        raise HTTPException(403, "expired")
+    if exhausted:
+        raise HTTPException(403, "exhausted")
+
+    cid = ""
+    try:
+        cid = chain.cid_of(file_id_bytes) or ""
+    except Exception as e:
+        logger.debug("prepare_download: chain.cid_of failed for %s: %s", file_id_bytes, e, exc_info=True)
+    if not cid:
+        f: File | None = db.get(File, file_id_bytes)
+        if f and f.cid:
+            cid = f.cid
+    if not cid:
+        raise HTTPException(502, "registry_unavailable")
+
+    enc_b64 = base64.b64encode(grant.enc_key).decode("ascii")
+    out: dict[str, Any] = {"encK": enc_b64, "ipfsPath": f"/ipfs/{cid}", "capId": cap_id}
+    try:
+        file_obj: File | None = db.get(File, file_id_bytes)
+        if file_obj and file_obj.name:
+            out["fileName"] = str(file_obj.name)
+    except Exception as e:
+        logger.debug("prepare_download: failed reading file name for %s: %s", cap_id, e, exc_info=True)
+
+    try:
+        ac = chain.get_access_control()
+        to_addr = getattr(ac, "address", None) or Web3.to_checksum_address(ZERO_ADDR)
+        call_data = chain.encode_use_once_call(cap_b)
+        typed = chain.build_forward_typed_data(from_addr=user.eth_address, to_addr=to_addr, data=call_data, gas=120_000)
+        req_name = f"useOnce:{cap_id}:{user.id}"
+        req_uuid = uuid.uuid5(uuid.NAMESPACE_URL, req_name)
+        out.update({"requestId": str(req_uuid), "typedData": typed})
+    except Exception as e:
+        logger.debug("prepare_download: failed to build typedData for %s: %s", cap_id, e, exc_info=True)
+    return out
+
+
+def _load_one_time_payload(token: str) -> dict[str, Any] | None:
+    key = f"dl:once:{token}"
+    try:
+        try:
+            raw = rds.execute_command("GETDEL", key)
+        except ResponseError:
+            raw = rds.get(key)
+            if raw is not None:
+                rds.delete(key)
+        if not raw:
+            return None
+        import json as _json
+
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode()
+        return _json.loads(raw)
+    except Exception as e:
+        logger.debug("Failed to load one-time payload for %s: %s", token, e, exc_info=True)
+        return None
 
 
 @router.get("/{cap_id}")
