@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import secrets
 import time
 from datetime import UTC, datetime, timedelta
@@ -8,6 +9,7 @@ from typing import Annotated
 import redis
 from fastapi import APIRouter, Depends, HTTPException, Request  # Добавили Request
 from fastapi.security import HTTPAuthorizationCredentials  # Нужно для ручного создания Creds
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.cache import Cache
@@ -20,6 +22,8 @@ from app.schemas.telegram import (
     TgLinkStartRequest,
     TgLinkStartResponse,
 )
+from app.security import create_token
+from app.security_telegram import InitData, verify_init_data
 
 # --- Константы ---
 LINK_TOKEN_TTL_SECONDS = 10 * 60
@@ -28,6 +32,18 @@ RATE_LIMIT_WINDOW_SECONDS = 60
 
 # --- Создание Роутера ---
 router = APIRouter(prefix="/tg", tags=["Telegram"])
+
+
+# --- Schemas ---
+
+
+class WebAppAuthIn(BaseModel):
+    initData: str
+
+
+class WebAppAuthOut(BaseModel):
+    session: str
+    exp: int
 
 
 # --- Зависимость для Рейт-Лимита по Chat ID ---
@@ -50,7 +66,6 @@ async def rate_limit_by_chat_id(
         raise HTTPException(status_code=429, detail="Too many requests", headers=headers)
 
 
-# --- Эндпоинт #115 ---
 @router.post(
     "/link-start",
     response_model=TgLinkStartResponse,
@@ -68,7 +83,22 @@ async def start_telegram_link(payload: TgLinkStartRequest) -> TgLinkStartRespons
     )
 
 
-# --- Эндпоинт #116 ---
+@router.post("/webapp/auth", response_model=WebAppAuthOut)
+def telegram_webapp_auth(body: WebAppAuthIn) -> WebAppAuthOut:
+    """Validate Telegram initData and issue short-lived webapp session JWT."""
+    bot_token = os.getenv("BOT_TOKEN") or ""
+    init_data: InitData | None = verify_init_data(body.initData, bot_token=bot_token)
+    if init_data is None:
+        raise HTTPException(status_code=403, detail="bad_signature")
+
+    # In production we should inject BOT_TOKEN via env; cache it once for speed
+    # For now, require env BOT_TOKEN
+    # Here, we simply embed user_id (if present) into JWT sub claim.
+    payload = {"sub": str(init_data.user_id or 0), "scope": "tg_webapp"}
+    session_jwt = create_token(payload, expires_delta=timedelta(hours=1))
+    return WebAppAuthOut(session=session_jwt, exp=3600)
+
+
 @router.post(
     "/link-complete",
     response_model=OkResponse,
