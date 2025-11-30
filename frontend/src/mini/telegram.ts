@@ -15,29 +15,22 @@ declare global {
  * Telegram passes it as a raw query string; we keep it as-is for signature verification.
  */
 export function readInitData(): string | null {
+  // Prefer the raw initData from Telegram WebApp (already a query string). Do NOT decode/encode it.
+  const rawInitData = window.Telegram?.WebApp?.initData;
+  if (rawInitData) return rawInitData;
+
+  // Fallbacks: some clients can pass tgWebAppData in query/hash; keep raw value to preserve signature.
   const search = new URLSearchParams(window.location.search);
   const queryInit = search.get("tgWebAppData");
-  if (queryInit) {
-    try {
-      return decodeURIComponent(queryInit);
-    } catch {
-      return queryInit;
-    }
-  }
+  if (queryInit) return queryInit;
 
   const hashParams = window.location.hash.startsWith("#")
     ? new URLSearchParams(window.location.hash.slice(1))
     : null;
   const hashInit = hashParams?.get("tgWebAppData");
-  if (hashInit) {
-    try {
-      return decodeURIComponent(hashInit);
-    } catch {
-      return hashInit;
-    }
-  }
+  if (hashInit) return hashInit;
 
-  return window.Telegram?.WebApp?.initData || null;
+  return null;
 }
 
 export function markWebAppReady() {
