@@ -32,7 +32,8 @@ def verify_init_data(init_data: str, bot_token: str) -> InitData | None:
         data = dict(pairs)
         hash_hex = data.get("hash") or ""
         check_str = _build_check_string(pairs)
-        secret_key = hashlib.sha256(bot_token.encode()).digest()
+        # Telegram WebApp requires secret = HMAC_SHA256("WebAppData", bot_token)
+        secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
         calc = hmac.new(secret_key, check_str.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(calc, hash_hex):
             return None
