@@ -2,16 +2,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type LoginMessage, LOGIN_TYPES as KC_LOGIN_TYPES, LOGIN_DOMAIN as KC_LOGIN_DOMAIN } from '@/lib/keychain';
-import { postChallenge, postLogin, postRegister, ACCESS_TOKEN_KEY, type RegisterPayload, type TypedLoginData } from '@/lib/api';
+import { postChallenge, postLogin, postRegister, postTonChallenge, postTonLogin, ACCESS_TOKEN_KEY, type RegisterPayload, type TypedLoginData, type TonSignPayload } from '@/lib/api';
 import { ethers, type TypedDataDomain, type TypedDataField } from 'ethers';
 import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
 import { setSelectedAgentKind } from '@/lib/agent/manager';
+import { deriveEthFromTonPub, getTonConnect, hexToBytes, toBase64 } from '@/lib/tonconnect';
 
 const LOGIN_DOMAIN: TypedDataDomain = KC_LOGIN_DOMAIN;
 const LOGIN_TYPES: Record<string, TypedDataField[]> = KC_LOGIN_TYPES;
 const EXPECTED_CHAIN_ID = Number((import.meta as any).env?.VITE_CHAIN_ID || 0);
 const ADDRESS_KEY = 'dfsp_address';
+const TON_ADDRESS_KEY = 'dfsp_ton_address';
+const AUTH_METHOD_KEY = 'dfsp_auth_method';
 const SESSION_GEN_KEY = 'SESSION_GEN';
 function bumpSessionGen() {
   try { localStorage.setItem(SESSION_GEN_KEY, crypto.randomUUID()); } catch { /* ignore */ }
@@ -21,6 +24,8 @@ interface User {
   address: string;
   displayName?: string;
   hasBackup: boolean;
+  authMethod?: 'eoa' | 'ton';
+  tonAddress?: string;
 }
 
 interface AuthContextType {
@@ -28,6 +33,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: () => Promise<void>;
+  loginWithTon: () => Promise<void>;
   register: (password: string, confirmPassword: string, displayName?: string) => Promise<{ backupData: Blob }>;
   logout: () => void;
   restoreAccount: (file: File, password: string) => Promise<void>;
@@ -58,9 +64,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!token) { setIsLoading(false); return; }
         const address = localStorage.getItem(ADDRESS_KEY) || null;
         const storedName = localStorage.getItem('dfsp_display_name');
-        const backup = await hasEOA();
+        const authMethod = (localStorage.getItem(AUTH_METHOD_KEY) as 'eoa' | 'ton' | null) || 'eoa';
+        const tonAddress = localStorage.getItem(TON_ADDRESS_KEY) || undefined;
+        const backup = authMethod === 'ton' ? false : await hasEOA();
         if (address) {
-          setUser({ address, displayName: storedName || undefined, hasBackup: backup });
+          setUser({ address, displayName: storedName || undefined, hasBackup: backup, authMethod, tonAddress });
         }
         // ensure session gen exists
         const gen = localStorage.getItem(SESSION_GEN_KEY);
@@ -139,16 +147,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             message,
           } satisfies TypedLoginData,
           signature,
-        };
+       };
        const tokens = await postLogin(payload);
        localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
        localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
        localStorage.setItem(ADDRESS_KEY, address);
+       localStorage.setItem(AUTH_METHOD_KEY, 'eoa');
+       localStorage.removeItem(TON_ADDRESS_KEY);
        bumpSessionGen();
        const storedName = localStorage.getItem('dfsp_display_name');
        const backup = await hasEOA();
-       setUser({ address, displayName: storedName || undefined, hasBackup: backup });
+       setUser({ address, displayName: storedName || undefined, hasBackup: backup, authMethod: 'eoa' });
    };
+
+  const loginWithTon = async () => {
+    const ton = getTonConnect();
+    if (!ton.wallet) {
+      await ton.connectWallet();
+    }
+    const account = ton.wallet?.account;
+    const pubkeyHex = account?.publicKey;
+    const tonAddress = account?.address;
+    if (!pubkeyHex || !tonAddress) {
+      throw new Error('TON wallet not connected');
+    }
+
+    const pubB64 = toBase64(hexToBytes(pubkeyHex));
+    const challenge = await postTonChallenge(pubB64);
+    // mark signing stage for UI consumers
+    try { setSelectedAgentKind('local'); } catch { /* ignore */ }
+    const signed = await ton.signData({ type: "binary", bytes: challenge.nonce });
+    const payload: TonSignPayload =
+      (signed as { payload?: TonSignPayload })?.payload || { type: "binary", bytes: challenge.nonce };
+    const ts =
+      typeof (signed as { timestamp?: number }).timestamp === "number"
+        ? (signed as { timestamp: number }).timestamp
+        : Math.floor(Date.now() / 1000);
+
+    const tokens = await postTonLogin({
+      challenge_id: challenge.challenge_id,
+      signature: (signed as { signature: string }).signature,
+      domain: (signed as { domain?: string }).domain || "",
+      timestamp: ts,
+      payload,
+      address: tonAddress,
+    });
+
+    const derivedEth = deriveEthFromTonPub(pubkeyHex);
+    localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
+    localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
+    localStorage.setItem(ADDRESS_KEY, derivedEth);
+    localStorage.setItem(TON_ADDRESS_KEY, tonAddress);
+    localStorage.setItem(AUTH_METHOD_KEY, 'ton');
+    bumpSessionGen();
+    setUser({ address: derivedEth, displayName: 'TON user', hasBackup: false, authMethod: 'ton', tonAddress });
+  };
 
   const register = async (
     password: string,
@@ -217,6 +270,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
        localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
        localStorage.setItem(ADDRESS_KEY, address);
+       localStorage.setItem(AUTH_METHOD_KEY, 'eoa');
+       localStorage.removeItem(TON_ADDRESS_KEY);
        if (displayName) localStorage.setItem('dfsp_display_name', displayName);
        let backupData: Blob;
        if (agent.kind === 'local') {
@@ -239,6 +294,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
      // soft logout: leave wallet session intact, just clear auth tokens
      localStorage.removeItem(ACCESS_TOKEN_KEY);
      localStorage.removeItem('REFRESH_TOKEN');
+     localStorage.removeItem(AUTH_METHOD_KEY);
+     localStorage.removeItem(TON_ADDRESS_KEY);
      // Do not clear address/display name so UI can prefill
      // localStorage.removeItem(ADDRESS_KEY);
      // localStorage.removeItem('dfsp_display_name');
@@ -259,6 +316,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: !!user,
       isLoading,
       login,
+      loginWithTon,
       register,
       logout,
       restoreAccount,

@@ -45,6 +45,11 @@ api.interceptors.response.use(
 /** ---- Types ---- */
 export type ChallengeOut = { challenge_id: string; nonce: `0x${string}`; exp_sec: number };
 export type Tokens = { access: string; refresh: string };
+export type TonChallenge = { challenge_id: string; nonce: string; exp_sec: number };
+export type TonSignPayload =
+  | { type: "binary"; bytes: string }
+  | { type: "text"; text: string }
+  | { type: "cell"; cell: string; schema: string };
 
 export type HealthOut = {
     ok: boolean;
@@ -136,6 +141,23 @@ export async function postChallenge() {
 export async function postRegister(payload: RegisterPayload) {
     const {data} = await api.post<Tokens>("/auth/register", payload);
     return data;
+}
+
+export async function postTonChallenge(pubkeyB64: string) {
+  const { data } = await api.post<TonChallenge>("/auth/ton/challenge", { pubkey: pubkeyB64 });
+  return data;
+}
+
+export async function postTonLogin(payload: {
+  challenge_id: string;
+  signature: string;
+  domain: string;
+  timestamp: number;
+  payload: TonSignPayload;
+  address: string;
+}) {
+  const { data } = await api.post<Tokens>("/auth/ton/login", payload);
+  return data;
 }
 
 export async function postLogin(payload: LoginPayload) {

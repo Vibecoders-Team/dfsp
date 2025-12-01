@@ -8,14 +8,18 @@ import { hasEOA, isEOAUnlocked } from '@/lib/keychain';
 import { getAgent, setSelectedAgentKind } from '@/lib/agent/manager';
 import { getErrorMessage } from '@/lib/errors';
 import AgentSelector from '../AgentSelector';
+import TonConnectLogo from '@/assets/icons/TonConnect-Logo.svg';
 import type * as React from "react";
 
 type LoginState = 'idle' | 'checking' | 'unlocking' | 'signing' | 'error' | 'success';
+type TonState = 'idle' | 'connecting' | 'signing' | 'error' | 'success';
 
 export default function LoginPage() {
   const [state, setState] = useState<LoginState>('idle');
+  const [tonState, setTonState] = useState<TonState>('idle');
   const [errorMessage, setErrorMessage] = useState('');
-  const { login } = useAuth();
+  const [tonError, setTonError] = useState('');
+  const { login, loginWithTon } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [keysExist, setKeysExist] = useState<boolean | null>(null);
@@ -51,6 +55,22 @@ export default function LoginPage() {
     }
   };
 
+  const handleTonLogin = async () => {
+    try {
+      setTonState('connecting');
+      setTonError('');
+      await loginWithTon();
+      setTonState('success');
+      const params = new URLSearchParams(location.search);
+      const redirect = params.get('redirect');
+      const safeRedirect = redirect && redirect.startsWith('/') ? redirect : '/files';
+      navigate(safeRedirect);
+    } catch (error) {
+      setTonState('error');
+      setTonError(getErrorMessage(error, 'TON login failed'));
+    }
+  };
+
   const getStateMessage = () => {
     switch (state) {
       case 'checking':
@@ -67,6 +87,7 @@ export default function LoginPage() {
   };
 
   const isLoading = state === 'checking' || state === 'unlocking' || state === 'signing';
+  const isTonLoading = tonState === 'connecting' || tonState === 'signing';
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
@@ -76,7 +97,25 @@ export default function LoginPage() {
             <Key className="h-8 w-8 text-blue-600" />
           </div>
           <h1 className="mb-2">Login</h1>
-          <div className="flex justify-center mt-2"><AgentSelector showInlineError={false} /></div>
+          <div className="flex flex-col items-center gap-3 mt-2">
+            <AgentSelector showInlineError={false} />
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full max-w-xs gap-2"
+              onClick={handleTonLogin}
+              disabled={isTonLoading}
+            >
+              <img src={TonConnectLogo} alt="TON Connect" className="h-5 w-5" />
+              {isTonLoading ? 'Awaiting TON signature...' : 'Login with TON Connect'}
+            </Button>
+            {tonError && (
+              <Alert variant="destructive" className="w-full max-w-xs">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{tonError}</AlertDescription>
+              </Alert>
+            )}
+          </div>
           <p className="text-gray-600">
             {keysExist === false 
               ? 'No local keys found — you can still login with MetaMask/WalletConnect'
