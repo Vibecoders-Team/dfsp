@@ -10,7 +10,13 @@ const links = [
 ];
 
 export function MiniLayout({ children }: { children: ReactNode }) {
-  const { status, error, expSeconds } = useMiniAuth();
+  const { status, error, expSeconds, method, tonAddress } = useMiniAuth();
+
+  const truncate = (value: string, len = 10) => {
+    if (!value || value.length <= len) return value;
+    const half = Math.floor(len / 2);
+    return `${value.slice(0, half)}…${value.slice(-half)}`;
+  };
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
@@ -20,7 +26,10 @@ export function MiniLayout({ children }: { children: ReactNode }) {
           <p className="text-lg font-semibold">Telegram WebApp</p>
         </div>
         <div className="text-right">
-          <p className="text-xs text-slate-400">Auth state: {status}</p>
+          <p className="text-xs text-slate-400">
+            Auth: {status} {method ? `(${method})` : ""}
+          </p>
+          {tonAddress && <p className="text-xs text-slate-400">TON: {truncate(tonAddress, 16)}</p>}
           {expSeconds !== null && <p className="text-xs text-slate-500">JWT TTL: {expSeconds}s</p>}
           {error && <p className="text-xs text-red-400 max-w-xs text-right">{error}</p>}
         </div>

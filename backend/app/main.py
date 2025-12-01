@@ -38,6 +38,7 @@ from .routers.one_time import router as one_time_router
 from .routers.telegram import router as telegram_router
 from .routers.users import router as users_router
 from .routers.verify import router as verify_router
+from .routers.tonconnect import router as tonconnect_router
 
 # Initialize structured logging
 init_logging()
@@ -111,4 +112,5 @@ app.include_router(admin_router)
 app.include_router(pow_router.router)
 app.include_router(chain_info_router)
 app.include_router(telegram_router)
+app.include_router(tonconnect_router)
 app.include_router(bot_router)

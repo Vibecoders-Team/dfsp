@@ -37,13 +37,11 @@ def get_current_user(
     return user
 
 
-def make_token(sub: str, ttl_min: int) -> str:
+def make_token(sub: str | dict, ttl_min: int) -> str:
     now = datetime.now(UTC)
-    payload = {
-        "sub": sub,
-        "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=ttl_min)).timestamp()),
-    }
+    payload = sub if isinstance(sub, dict) else {"sub": sub}
+    payload["iat"] = int(now.timestamp())
+    payload["exp"] = int((now + timedelta(minutes=ttl_min)).timestamp())
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 

@@ -13,14 +13,14 @@
                X-Content-Type-Options "nosniff"
                Referrer-Policy "no-referrer"
                # Content Security Policy tuned for the frontend and related services
-               Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://t.me; script-src 'self' https://telegram.org https://*.telegram.org; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://*.walletconnect.com; font-src 'self' data: https://*.walletconnect.com; connect-src 'self' https://ipfs.dfsp.app https://rpc.dfsp.app https://ipfs.dev.dfsp.app https://rpc.dev.dfsp.app https://dev.dfsp.app https://*.walletconnect.com wss://*.walletconnect.com; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://*.walletconnect.com; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests"
+               Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://t.me; script-src 'self' https://telegram.org https://*.telegram.org; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://*.walletconnect.com; font-src 'self' data: https://*.walletconnect.com; connect-src 'self' https://ipfs.dfsp.app https://rpc.dfsp.app https://ipfs.dev.dfsp.app https://rpc.dev.dfsp.app https://dev.dfsp.app https://*.walletconnect.com wss://*.walletconnect.com https://walletbot.me https://connect.tonhubapi.com https://tonconnectbridge.tonapi.io https://config.ton.org https://events-gateway.walletteam.org; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://*.walletconnect.com; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests"
            }
 }
 
 (dfsp_explorer_csp) {
     header {
                -Content-Security-Policy
-               Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://*.walletconnect.com; font-src 'self' data: https://*.walletconnect.com https://fonts.gstatic.com; connect-src 'self' https://ipfs.dfsp.app https://rpc.dfsp.app https://ipfs.dev.dfsp.app https://rpc.dev.dfsp.app https://dev.dfsp.app https://*.walletconnect.com wss://*.walletconnect.com; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://*.walletconnect.com; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests"
+               Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://*.walletconnect.com; font-src 'self' data: https://*.walletconnect.com https://fonts.gstatic.com; connect-src 'self' https://ipfs.dfsp.app https://rpc.dfsp.app https://ipfs.dev.dfsp.app https://rpc.dev.dfsp.app https://dev.dfsp.app https://*.walletconnect.com wss://*.walletconnect.com https://walletbot.me https://connect.tonhubapi.com https://tonconnectbridge.tonapi.io; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://*.walletconnect.com; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests"
            }
 }
 
@@ -31,6 +31,15 @@ dfsp.app {
         # API proxy must match first
         handle_path /api/* {
             reverse_proxy api:8000
+        }
+        # CORS headers for tonconnect manifest (wallet origin fetch)
+        handle_path /tonconnect-manifest.json {
+            header Access-Control-Allow-Origin "*"
+            header Access-Control-Allow-Methods "GET, OPTIONS"
+            header Access-Control-Allow-Headers "*"
+            # allow caching
+            header Cache-Control "public, max-age=300"
+            file_server
         }
 
         # Telegram bot webhook (only webhook/healthz paths; UI link handled by SPA)
@@ -104,7 +113,13 @@ dev.dfsp.app {
         handle_path /api/* {
             reverse_proxy dfsp-api-dev:8000
         }
-
+        handle_path /tonconnect-manifest.json {
+            header Access-Control-Allow-Origin "*"
+            header Access-Control-Allow-Methods "GET, OPTIONS"
+            header Access-Control-Allow-Headers "*"
+            header Cache-Control "public, max-age=60"
+            file_server
+        }
         handle {
             root * /usr/share/caddy/html-dev
             try_files {path} /index.html

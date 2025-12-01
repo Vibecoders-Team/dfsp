@@ -17,6 +17,7 @@ import NotFoundPage from './components/pages/NotFoundPage';
 import ForbiddenPage from './components/pages/ForbiddenPage';
 import ServerErrorPage from './components/pages/ServerErrorPage';
 import { MiniApp, MiniFilesPage, MiniGrantsPage, MiniHomePage, MiniVerifyPage } from './mini/MiniApp';
+import IntentPage from './components/pages/IntentPage';
 import UnlockPortal from './components/UnlockPortal';
 import { useAuth } from './components/useAuth';
 import TermsPage from './components/pages/TermsPage';
@@ -166,6 +167,7 @@ function AppRoutes() {
         <Route path="/403" element={<ForbiddenPage />} />
         <Route path="/500" element={<ServerErrorPage />} />
         <Route path="/terms" element={<TermsPage />} />
+        <Route path="/intent/:intentId" element={<IntentPage />} />
         <Route
           path="/restore"
           element={<PublicRoute children={<RestorePage />} />}

@@ -99,3 +99,83 @@ function ensureSession() {
     throw new MiniApiError("Нет webapp сессии", { status: 401 });
   }
 }
+
+export type MiniFileListItem = {
+  id: string;
+  name: string;
+  size: number;
+  mime: string;
+  cid: string;
+  checksum: string;
+  created_at: string;
+};
+
+export type MiniGrantItem = {
+  grantee: string;
+  capId: string;
+  maxDownloads: number;
+  usedDownloads: number;
+  expiresAt: string;
+  status: "queued" | "pending" | "confirmed" | "revoked" | "expired" | "exhausted";
+};
+
+export async function miniListFiles(): Promise<MiniFileListItem[]> {
+  return miniGet<MiniFileListItem[]>("/files");
+}
+
+export async function miniListFileGrants(fileId: string): Promise<MiniGrantItem[]> {
+  const data = await miniGet<{ items: MiniGrantItem[] }>(`/files/${fileId}/grants`);
+  return data.items || [];
+}
+
+export type MiniIntentCreateResponse = { intent_id: string; url: string; ttl: number };
+
+export async function miniCreateIntent(
+  action: "share" | "revoke" | "delete_file",
+  payload: Record<string, unknown>
+): Promise<MiniIntentCreateResponse> {
+  return miniPost<MiniIntentCreateResponse>("/intents", { action, payload });
+}
+
+export type MiniTonChallenge = { challenge_id: string; nonce: string; exp_sec: number };
+
+export async function miniTonChallenge(pubkeyB64: string): Promise<MiniTonChallenge> {
+  const { data } = await miniApi.post<MiniTonChallenge>("/auth/ton/challenge", { pubkey: pubkeyB64 });
+  return data;
+}
+
+export type MiniTonLoginOut = { access: string; refresh: string };
+export type MiniTonSignPayload =
+  | { type: "binary"; bytes: string }
+  | { type: "text"; text: string }
+  | { type: "cell"; cell: string; schema: string };
+
+export async function miniTonLogin(payload: {
+  challenge_id: string;
+  signature: string;
+  domain: string;
+  timestamp: number;
+  payload: MiniTonSignPayload;
+  address: string; // добавлено поле адреса TON
+}): Promise<MiniTonLoginOut> {
+  const { data } = await miniApi.post<MiniTonLoginOut>("/auth/ton/login", payload);
+  return data;
+}
+
+export type MiniVerifyMeta = {
+  cid: string;
+  checksum: string;
+  size: number;
+  mime: string | null;
+  name?: string | null;
+};
+
+export type MiniVerifyResponse = {
+  onchain: MiniVerifyMeta | null;
+  offchain: MiniVerifyMeta | null;
+  match: boolean;
+};
+
+export async function miniVerify(fileId: string): Promise<MiniVerifyResponse> {
+  return miniGet<MiniVerifyResponse>(`/verify/${fileId}`);
+}

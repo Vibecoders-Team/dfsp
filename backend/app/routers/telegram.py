@@ -16,6 +16,7 @@ from app.cache import Cache
 from app.deps import get_db, get_redis
 from app.models import User
 from app.repos import telegram_repo
+from app.repos import user_repo
 from app.schemas.telegram import (
     OkResponse,
     TgLinkCompleteRequest,
@@ -84,17 +85,27 @@ async def start_telegram_link(payload: TgLinkStartRequest) -> TgLinkStartRespons
 
 
 @router.post("/webapp/auth", response_model=WebAppAuthOut)
-def telegram_webapp_auth(body: WebAppAuthIn) -> WebAppAuthOut:
+def telegram_webapp_auth(body: WebAppAuthIn, db: Annotated[Session, Depends(get_db)]) -> WebAppAuthOut:
     """Validate Telegram initData and issue short-lived webapp session JWT."""
     bot_token = os.getenv("BOT_TOKEN") or ""
     init_data: InitData | None = verify_init_data(body.initData, bot_token=bot_token)
     if init_data is None:
         raise HTTPException(status_code=403, detail="bad_signature")
 
-    # In production we should inject BOT_TOKEN via env; cache it once for speed
-    # For now, require env BOT_TOKEN
-    # Here, we simply embed user_id (if present) into JWT sub claim.
-    payload = {"sub": str(init_data.user_id or 0), "scope": "tg_webapp"}
+    chat_id = init_data.user_id
+    if chat_id is None:
+        raise HTTPException(status_code=403, detail="bad_signature")
+
+    # Resolve linked wallet by chat_id and issue JWT for the linked DFSP user.
+    wallet = telegram_repo.get_wallet_by_chat_id(db, chat_id)
+    if not wallet:
+        raise HTTPException(status_code=403, detail="tg_not_linked")
+
+    user = user_repo.get_by_eth_address(db, wallet)
+    if not user:
+        raise HTTPException(status_code=403, detail="user_not_found")
+
+    payload = {"sub": str(user.id), "scope": "tg_webapp", "chat_id": chat_id}
     session_jwt = create_token(payload, expires_delta=timedelta(hours=1))
     return WebAppAuthOut(session=session_jwt, exp=3600)
 

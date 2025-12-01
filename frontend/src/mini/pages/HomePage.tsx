@@ -2,12 +2,13 @@ import { useMiniAuth } from "../auth";
 import { useEffect, useState } from "react";
 import { miniGet, MiniApiError } from "../api";
 import { signNavigationPayload, type SignedPayload } from "../hmac";
+import { openWebAppLink } from "../telegram";
 
 type HealthSnapshot = { ok: boolean } | null;
 type NavPreview = SignedPayload<{ route: string }> | null;
 
 export function MiniHomePage() {
-  const { session } = useMiniAuth();
+  const { session, method } = useMiniAuth();
   const [health, setHealth] = useState<HealthSnapshot>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +53,7 @@ export function MiniHomePage() {
           Мы валидируем initData на бэкенде и работаем через webapp‑сессию. Все запросы идут с Bearer
           JWT, полученным из <code className="text-sky-300">/tg/webapp/auth</code>.
         </p>
+        <p className="text-xs text-slate-400 mt-2">Текущий метод входа: {method || "—"}.</p>
       </div>
 
       <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-2">
@@ -70,6 +72,21 @@ export function MiniHomePage() {
           <p className="text-xs text-slate-400">route: {navSig.payload.route}</p>
           <p className="text-xs text-sky-300 break-all">hmac: {navSig.hmac}</p>
           <p className="text-xs text-slate-500">ts: {navSig.ts}</p>
+        </div>
+      )}
+
+      {method === "ton" && (
+        <div className="bg-amber-900/20 border border-amber-500/50 rounded-lg p-4 space-y-2 text-amber-50">
+          <p className="font-semibold text-sm">Вход через TON</p>
+          <p className="text-xs">
+            Для операций, требующих EVM-подписи, перейдите на основной веб и свяжите EVM-адрес (handoff).
+          </p>
+          <button
+            onClick={() => openWebAppLink("/files")}
+            className="px-3 py-1 rounded border border-amber-400 hover:bg-amber-500/10 text-xs transition"
+          >
+            Открыть основной веб
+          </button>
         </div>
       )}
 

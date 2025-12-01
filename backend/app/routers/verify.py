@@ -22,6 +22,12 @@ def normalize_checksum(value: object) -> str | None:
     """Приводит чек-сумму в байтах к hex-строке '0x...'."""
     if isinstance(value, (bytes, bytearray)):
         return "0x" + value.hex()
+    if isinstance(value, str):
+        v = value.lower()
+        if v.startswith("0x"):
+            v = v[2:]
+        if len(v) == 64 and all(c in "0123456789abcdef" for c in v):
+            return "0x" + v
     return None
 
 
@@ -74,9 +80,7 @@ def verify(
         onchain_data = None
 
     # 3. Сравниваем чек-суммы
-    match = False
-    if onchain_data and offchain_data:
-        match = onchain_data.checksum == offchain_data.checksum
+    match = bool(onchain_data and offchain_data and onchain_data.checksum == offchain_data.checksum)
 
     if not onchain_data and not offchain_data:
         raise HTTPException(status_code=404, detail="file_not_found")

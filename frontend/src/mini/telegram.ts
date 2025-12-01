@@ -5,6 +5,7 @@ declare global {
         initData?: string;
         initDataUnsafe?: unknown;
         ready?: () => void;
+        openLink?: (url: string, opts?: { try_instant_view?: boolean }) => void;
       };
     };
   }
@@ -39,4 +40,17 @@ export function markWebAppReady() {
   } catch {
     /* noop */
   }
+}
+
+export function openWebAppLink(url: string) {
+  try {
+    const opener = window.Telegram?.WebApp?.openLink;
+    if (opener) {
+      opener(url, { try_instant_view: false });
+      return;
+    }
+  } catch {
+    /* ignored */
+  }
+  window.open(url, "_blank", "noreferrer");
 }

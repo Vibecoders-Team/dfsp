@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../Layout';
 import { Button } from '../ui/button';
 import {
@@ -61,12 +61,16 @@ interface FileDetailsModel {
 export default function FileDetailsPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [file, setFile] = useState<FileDetailsModel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [selectedCapId, setSelectedCapId] = useState<string | null>(null);
+  const [intentAutoOpened, setIntentAutoOpened] = useState(false);
+  const intentId = searchParams.get('intent');
+  const revokeCapParam = searchParams.get('revoke');
 
   useEffect(() => {
     const onLogout = () => {
@@ -220,6 +224,15 @@ export default function FileDetailsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  useEffect(() => {
+    if (!revokeCapParam || !file || intentAutoOpened) return;
+    const exists = file.grants.some((g) => g.capId === revokeCapParam);
+    if (exists) {
+      setIntentAutoOpened(true);
+      handleRevokeAsk(revokeCapParam);
+    }
+  }, [revokeCapParam, file, intentAutoOpened]);
+
   if (loading) {
     return (
       <Layout>
@@ -249,6 +262,12 @@ export default function FileDetailsPage() {
   return (
     <Layout>
       <div className="space-y-6">
+        {intentId && (
+          <div className="rounded border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+            Открыто из intent {truncate(intentId, 16)}.{" "}
+            {revokeCapParam ? `Запрос на revoke ${truncate(revokeCapParam, 18)}.` : "Продолжайте действие."}
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button

@@ -380,3 +380,11 @@ export async function storeEncrypted(
     const { data } = await api.post<StoreFileOut>('/storage/store', fd);
     return data;
 }
+
+// === Action intents (handoff) ===
+export type IntentConsumeOut = { ok: boolean; action: string | null; payload: Record<string, unknown> | null };
+
+export async function consumeIntent(intentId: string): Promise<IntentConsumeOut> {
+  const { data } = await api.post<IntentConsumeOut>(`/intents/${intentId}/consume`);
+  return data;
+}
