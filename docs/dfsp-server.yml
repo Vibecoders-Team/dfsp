@@ -1,802 +1,2439 @@
 openapi: 3.1.0
 info:
-  title: DFSP Backend API
-  version: "1.0.0"
-  description: |
-    DFSP — децентрализованный обмен файлами с клиентским шифрованием и on-chain правами доступа (gasless ERC-2771).
-    Этот API возвращает EIP-712 typedData для подписания и принимает подписанные meta-tx на релейер.
-    Без PII. IP не логируем. Логи — агрегаты/счётчики.
-
-servers:
-  - url: https://api.dfsp.local
-    description: Stage/Prod через Caddy + <IP>.sslip.io
-  - url: http://localhost:8000
-    description: Dev (Docker Compose)
-
-tags:
-  - name: Auth
-    description: Аутентификация без e-mail (EOA + PoP)
-  - name: Files
-    description: Регистрация шифрованных файлов и версии
-  - name: Grants
-    description: Гранты доступа (TTL, лимиты, revoke, useOnce)
-  - name: Download
-    description: Выдача encK и пути к IPFS (с PoW)
-  - name: MetaTx
-    description: Подпись/отправка meta-tx (ERC-2771)
-  - name: Verify
-    description: Проверки CID/Checksum против он-чейн
-  - name: Anchors
-    description: Последние меркль-якоря
-  - name: PoW
-    description: Челленджи proof-of-work
-  - name: System
-    description: Health/метрики
-
-security:
-  - bearerAuth: [ ]
-
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-
-  headers:
-    X-RateLimit-Limit:
-      description: Лимит запросов в текущем окне
-      schema: { type: integer, example: 60 }
-    X-RateLimit-Remaining:
-      description: Остаток лимита
-      schema: { type: integer, example: 57 }
-    X-RateLimit-Reset:
-      description: Время UNIX, когда окно лимита обнулится
-      schema: { type: integer, example: 1695800000 }
-
-  schemas:
-    Address:
-      type: string
-      description: Ethereum-адрес в формате 0x...
-      pattern: "^0x[a-fA-F0-9]{40}$"
-      example: "0x1234567890abcdef1234567890abcdef12345678"
-
-    Bytes32:
-      type: string
-      description: 0x-префиксованный 32-байтовый хеш
-      pattern: "^0x[a-fA-F0-9]{64}$"
-      example: "0x6a2b9c...deadbeef6a2b9c0f..."
-
-    CID:
-      type: string
-      description: CIDv1 (строка Base32)
-      example: "bafybeigdyrztv...k3n5s"
-
-    FileId:
-      type: string
-      description: fileId = keccak256(owner||rand||time), hex 0x..32B
-      pattern: "^0x[a-fA-F0-9]{64}$"
-      example: "0x4e3b...5d2c"
-
-    CapId:
-      type: string
-      description: Идентификатор гранта (capability id), hex 0x..32B или bytes
-      pattern: "^0x[a-fA-F0-9]{64}$"
-      example: "0xabc1...fff2"
-
-    Mime:
-      type: string
-      example: "application/octet-stream"
-
-    Error:
-      type: object
-      required: [ code, message ]
-      properties:
-        code: { type: string, example: "rate_limited" }
-        message: { type: string, example: "Too many requests" }
-        details: { type: object, additionalProperties: true }
-
-    AuthChallengeResponse:
-      type: object
-      required: [ nonce, exp ]
-      properties:
-        nonce:
-          type: string
-          description: Одноразовый nonce (base64url)
-          example: "g2KMx1xO6O2E3hNXH8zq9A"
-        exp:
-          type: string
-          format: date-time
-          example: "2025-10-01T10:00:00Z"
-
-    AuthRegisterRequest:
-      type: object
-      required: [ rsa_public, eth_address, challenge, signature ]
-      properties:
-        rsa_public:
-          type: string
-          description: RSA-SPKI (PEM)
-        eth_address:
-          $ref: "#/components/schemas/Address"
-        display_name:
-          type: string
-          maxLength: 64
-        challenge:
-          type: string
-          description: Nonce, полученный из /auth/challenge
-        signature:
-          type: string
-          description: EIP-712 или personal_sign подпись PoP (см. доку)
-
-    AuthLoginRequest:
-      type: object
-      required: [ eth_address, challenge, signature ]
-      properties:
-        eth_address: { $ref: "#/components/schemas/Address" }
-        challenge: { type: string }
-        signature: { type: string }
-
-    AuthTokens:
-      type: object
-      required: [ access, refresh ]
-      properties:
-        access:
-          type: string
-          description: JWT access token
-        refresh:
-          type: string
-          description: Refresh token
-
-    PowChallenge:
-      type: object
-      required: [ challenge, difficulty, ttl ]
-      properties:
-        challenge:
-          type: string
-          description: base64(16B)
-          example: "lsmQ9nR9y4M2w9ZcQ+0u0g=="
-        difficulty:
-          type: integer
-          minimum: 1
-          maximum: 32
-          example: 18
-        ttl:
-          type: integer
-          description: Секунд жизни челленджа
-          example: 30
-
-    PowSolution:
-      type: object
-      required: [ challenge, nonce ]
-      properties:
-        challenge:
-          type: string
-          description: base64, как выдали
-        nonce:
-          type: integer
-          description: 32-бит целое, такое что SHA256(challenge||nonce) имеет N ведущих нулевых бит
-          example: 392847123
-
-    Eip712Domain:
-      type: object
-      properties:
-        name: { type: string }
-        version: { type: string }
-        chainId: { type: integer }
-        verifyingContract: { type: string }
-
-    ForwardRequestType:
-      type: object
-      properties:
-        name: { type: string, example: "ForwardRequest" }
-        type: { type: string, example: "tuple" }
-
-    ForwardRequestMessage:
-      type: object
-      required: [ from, to, value, gas, nonce, data ]
-      properties:
-        from: { $ref: "#/components/schemas/Address" }
-        to: { $ref: "#/components/schemas/Address" }
-        value: { type: string, example: "0" }
-        gas: { type: string, example: "200000" }
-        nonce: { type: string, example: "1" }
-        data: { type: string, example: "0xabcdef..." }
-        validUntil:
-          type: integer
-          description: Опц. off-chain дедлайн (unix); проверяется сервером, не форвардером
-          nullable: true
-
-    Eip712TypedData:
-      type: object
-      required: [ domain, types, primaryType, message ]
-      properties:
-        domain: { $ref: "#/components/schemas/Eip712Domain" }
-        types:
-          type: object
-          description: EIP-712 type map (ForwardRequest и пр.)
-          additionalProperties: true
-        primaryType: { type: string, example: "ForwardRequest" }
-        message: { $ref: "#/components/schemas/ForwardRequestMessage" }
-
-    SignedForwardRequest:
-      type: object
-      required: [ request, signature ]
-      properties:
-        request: { $ref: "#/components/schemas/ForwardRequestMessage" }
-        signature:
-          type: string
-          description: Подпись EIP-712
-
-    MetaTxSubmitRequest:
-      type: object
-      required: [ signedForwardRequest, request_id ]
-      properties:
-        signedForwardRequest: { $ref: "#/components/schemas/SignedForwardRequest" }
-        request_id:
-          type: string
-          description: Идемпотентный UUIDv4
-          example: "6d7a2b9c-2a4e-4a62-9c1e-58a88a7a9a5a"
-
-    MetaTxSubmitResponse:
-      type: object
-      required: [ txHash, status ]
-      properties:
-        txHash:
-          type: string
-          example: "0xdeadbeef..."
-        status:
-          type: string
-          enum: [ queued, sent, confirmed ]
-          example: "queued"
-
-    FileRegisterRequest:
-      type: object
-      required: [ fileId, name, size, mime, cid, checksum ]
-      properties:
-        fileId: { $ref: "#/components/schemas/FileId" }
-        name: { type: string, example: "report.enc" }
-        size: { type: integer, example: 104857600 }
-        mime: { $ref: "#/components/schemas/Mime" }
-        cid: { $ref: "#/components/schemas/CID" }
-        checksum:
-          $ref: "#/components/schemas/Bytes32"
-        pow:
-          $ref: "#/components/schemas/PowSolution"
-
-    FileRegisterResponse:
-      type: object
-      required: [ typedData, forwarder ]
-      properties:
-        typedData: { $ref: "#/components/schemas/Eip712TypedData" }
-        forwarder:
-          $ref: "#/components/schemas/Address"
-
-    FileVersionRequest:
-      type: object
-      required: [ cid, checksum, size, mime ]
-      properties:
-        cid: { $ref: "#/components/schemas/CID" }
-        checksum: { $ref: "#/components/schemas/Bytes32" }
-        size: { type: integer }
-        mime: { $ref: "#/components/schemas/Mime" }
-        pow: { $ref: "#/components/schemas/PowSolution" }
-
-    FileMeta:
-      type: object
-      required: [ fileId, owner, cid, checksum, size, mime, createdAt ]
-      properties:
-        fileId: { $ref: "#/components/schemas/FileId" }
-        owner: { $ref: "#/components/schemas/Address" }
-        cid: { $ref: "#/components/schemas/CID" }
-        checksum: { $ref: "#/components/schemas/Bytes32" }
-        size: { type: integer }
-        mime: { $ref: "#/components/schemas/Mime" }
-        createdAt: { type: string, format: date-time }
-
-    FileVersion:
-      type: object
-      required: [ cid, checksum, size, mime, createdAt ]
-      properties:
-        cid: { $ref: "#/components/schemas/CID" }
-        checksum: { $ref: "#/components/schemas/Bytes32" }
-        size: { type: integer }
-        mime: { $ref: "#/components/schemas/Mime" }
-        createdAt: { type: string, format: date-time }
-
-    GrantCreateRequest:
-      type: object
-      required: [ users, ttl_days, max_dl, encK_map, pow ]
-      properties:
-        users:
-          type: array
-          items: { $ref: "#/components/schemas/Address" }
-          description: Получатели
-        ttl_days:
-          type: integer
-          minimum: 1
-          maximum: 365
-        max_dl:
-          type: integer
-          minimum: 1
-          maximum: 1000
-          description: Максимум выдач ключа (доставок encK)
-        encK_map:
-          type: object
-          additionalProperties:
-            type: string
-            description: base64(K_file, зашифрованный RSA-OAEP публичным ключом пользователя)
-          example:
-            "0xabc...1": "base64EncK=="
-            "0xdef...2": "base64EncK=="
-        pow: { $ref: "#/components/schemas/PowSolution" }
-
-    GrantTypedDataBatchResponse:
-      type: object
-      required: [ batchId, typedDataList ]
-      properties:
-        batchId:
-          type: string
-          format: uuid
-        typedDataList:
-          type: array
-          items: { $ref: "#/components/schemas/Eip712TypedData" }
-
-    GrantState:
-      type: object
-      required: [ capId, fileId, grantor, grantee, expiresAt, maxDownloads, used, revokedAt ]
-      properties:
-        capId: { $ref: "#/components/schemas/CapId" }
-        fileId: { $ref: "#/components/schemas/FileId" }
-        grantor: { $ref: "#/components/schemas/Address" }
-        grantee: { $ref: "#/components/schemas/Address" }
-        expiresAt: { type: string, format: date-time }
-        maxDownloads: { type: integer }
-        used: { type: integer }
-        revokedAt: { type: string, format: date-time, nullable: true }
-
-    DownloadResponse:
-      type: object
-      required: [ encK, ipfsPath ]
-      properties:
-        encK:
-          type: string
-          description: base64(K_file, зашифрованный RSA-публичным ключом скачивающего)
-        ipfsPath:
-          type: string
-          example: "/ipfs/bafybeigd.../report.enc"
-
-    FilesListResponse:
-      type: object
-      required: [ items, page, page_size, total ]
-      properties:
-        items:
-          type: array
-          items: { $ref: "#/components/schemas/FileMeta" }
-        page: { type: integer, minimum: 1, example: 1 }
-        page_size: { type: integer, example: 20 }
-        total: { type: integer, example: 2 }
-
-    FileDetailsResponse:
-      type: object
-      required: [ meta, versions, grants ]
-      properties:
-        meta: { $ref: "#/components/schemas/FileMeta" }
-        versions:
-          type: array
-          items: { $ref: "#/components/schemas/FileVersion" }
-        grants:
-          type: array
-          items: { $ref: "#/components/schemas/GrantState" }
-
-    VerifyResponse:
-      type: object
-      required: [ onchain, matches ]
-      properties:
-        onchain:
-          type: object
-          nullable: true
-          properties:
-            fileId: { $ref: "#/components/schemas/FileId" }
-            cid: { $ref: "#/components/schemas/CID" }
-            checksum: { $ref: "#/components/schemas/Bytes32" }
-            owner: { $ref: "#/components/schemas/Address" }
-        matches:
-          type: object
-          properties:
-            cid: { type: boolean }
-            checksum: { type: boolean }
-
-    AnchorInfo:
-      type: object
-      required: [ period_id, merkle_root, tx_hash ]
-      properties:
-        period_id: { type: integer, example: 12345 }
-        merkle_root: { $ref: "#/components/schemas/Bytes32" }
-        tx_hash: { type: string, example: "0x..." }
-
+  title: DFSP API
+  version: 1.0.0
 paths:
-  /healthz:
+  /health:
     get:
-      tags: [ System ]
-      summary: Liveness/health
+      tags:
+      - health
+      summary: Health
+      operationId: health_health_get
       responses:
-        "200":
-          description: OK
-        "500":
-          description: Not healthy
-
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Health Health Get
+  /live:
+    get:
+      tags:
+      - health
+      summary: Live
+      operationId: live_live_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Live Live Get
+  /ready:
+    get:
+      tags:
+      - health
+      summary: Ready
+      operationId: ready_ready_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Ready Ready Get
   /metrics:
     get:
-      tags: [ System ]
-      summary: Prometheus metrics
-      responses:
-        "200":
-          description: Prometheus exposition format
+      summary: Metrics
+      description: 'Prometheus metrics endpoint.
 
+
+        Before rendering, pull selected gauges from Redis/DB to current values.'
+      operationId: metrics_metrics_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
   /auth/challenge:
     post:
-      tags: [ Auth ]
-      summary: Выдать nonce для Proof-of-Possession входа/регистрации
-      description: Клиент подписывает полученный nonce EOA-ключом и присылает подпись в /auth/register или /auth/login.
-      requestBody:
-        required: false
+      tags:
+      - auth
+      summary: Challenge
+      operationId: challenge_auth_challenge_post
       responses:
-        "200":
-          description: Nonce выдан
-          headers:
-            X-RateLimit-Limit: { $ref: "#/components/headers/X-RateLimit-Limit" }
-            X-RateLimit-Remaining: { $ref: "#/components/headers/X-RateLimit-Remaining" }
-            X-RateLimit-Reset: { $ref: "#/components/headers/X-RateLimit-Reset" }
+        '200':
+          description: Successful Response
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AuthChallengeResponse" }
-
+              schema:
+                $ref: '#/components/schemas/app__schemas__auth__ChallengeOut'
+  /auth/ton/challenge:
+    post:
+      tags:
+      - auth
+      summary: Ton Challenge
+      operationId: ton_challenge_auth_ton_challenge_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Body
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/app__schemas__auth__ChallengeOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /auth/ton/login:
+    post:
+      tags:
+      - auth
+      summary: Ton Login
+      operationId: ton_login_auth_ton_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+              title: Body
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tokens'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /auth/register:
     post:
-      tags: [ Auth ]
-      summary: Регистрация (EOA + RSA-публичный ключ)
+      tags:
+      - auth
+      summary: Register
+      operationId: register_auth_register_post
       requestBody:
-        required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/AuthRegisterRequest" }
+            schema:
+              $ref: '#/components/schemas/RegisterIn'
+        required: true
       responses:
-        "200":
-          description: Токены выданы
+        '200':
+          description: Successful Response
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AuthTokens" }
-        "400":
-          description: Неверные данные
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-        "409":
-          description: Уже зарегистрирован
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-
+              schema:
+                $ref: '#/components/schemas/Tokens'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /auth/login:
     post:
-      tags: [ Auth ]
-      summary: Логин через PoP (без e-mail)
+      tags:
+      - auth
+      summary: Login
+      operationId: login_auth_login_post
       requestBody:
-        required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/AuthLoginRequest" }
+            schema:
+              $ref: '#/components/schemas/LoginIn'
+        required: true
       responses:
-        "200":
-          description: Токены выданы
+        '200':
+          description: Successful Response
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AuthTokens" }
-        "401":
-          description: Подпись невалидна / nonce просрочен
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-
-  /auth/refresh:
+              schema:
+                $ref: '#/components/schemas/Tokens'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /storage/store:
     post:
-      tags: [ Auth ]
-      summary: Обновить access token по refresh
+      tags:
+      - storage
+      summary: Store File
+      operationId: store_file_storage_store_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_store_file_storage_store_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /storage/cid/{id_hex}:
+    get:
+      tags:
+      - storage
+      summary: Resolve
+      operationId: resolve_storage_cid__id_hex__get
+      parameters:
+      - name: id_hex
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id Hex
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /storage/meta/{id_hex}:
+    get:
+      tags:
+      - storage
+      summary: Meta
+      operationId: meta_storage_meta__id_hex__get
+      parameters:
+      - name: id_hex
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id Hex
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetaOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /storage/versions/{id_hex}:
+    get:
+      tags:
+      - storage
+      summary: Versions
+      operationId: versions_storage_versions__id_hex__get
+      parameters:
+      - name: id_hex
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id Hex
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionsOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /storage/history/{id_hex}:
+    get:
+      tags:
+      - storage
+      summary: History
+      operationId: history_storage_history__id_hex__get
+      parameters:
+      - name: id_hex
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id Hex
+      - name: owner
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner
+      - name: event_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - FileRegistered
+            - FileVersioned
+            type: string
+          - type: 'null'
+          title: Event Type
+      - name: from_block
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: From Block
+      - name: to_block
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: To Block
+      - name: order
+        in: query
+        required: false
+        schema:
+          enum:
+          - asc
+          - desc
+          type: string
+          default: asc
+          title: Order
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /meta-tx/submit:
+    post:
+      tags:
+      - meta-tx
+      summary: Submit
+      description: 'Принимаем подписанный ForwardRequest и кладем задачу в релейер.
+
+        Гарантируем детерминированный JSON-ответ со статусом.
+
+        В DEV-режиме (RELAYER_SYNC_DEV=1) дополнительно выполняем задачу синхронно
+        в текущем процессе.
+
+        Поведение идемпотентности: мы допускаем повторную постановку в очередь с тем
+        же request_id,
+
+        опираясь на БД/релейер для дедупликации, чтобы не залипать из-за прежнего
+        NX-флага.'
+      operationId: submit_meta_tx_submit_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MetaTxSubmitIn'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Submit Meta Tx Submit Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /verify/{file_id_hex}:
+    get:
+      tags:
+      - verify
+      summary: Verify
+      operationId: verify_verify__file_id_hex__get
+      parameters:
+      - name: file_id_hex
+        in: path
+        required: true
+        schema:
+          type: string
+          title: File Id Hex
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /files:
+    get:
+      tags:
+      - files
+      summary: List My Files
+      description: Возвращает список всех файлов текущего пользователя
+      operationId: list_my_files_files_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: Authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FileListItem'
+                title: Response List My Files Files Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - files
+      summary: Create File
+      operationId: create_file_files_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [ access ]
-              properties:
-                access: { type: string }
+              $ref: '#/components/schemas/FileCreateIn'
       responses:
-        "200":
-          description: Access/refresh выданы
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/AuthTokens" }
-        "401":
-          description: Недействителен
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-
-  /pow:
-    get:
-      tags: [ PoW ]
-      summary: Получить PoW-челлендж
-      description: Вернёт challenge+difficulty+ttl. Решение передаётся в поле `pow` на тяжелых методах (upload/share/download).
-      responses:
-        "200":
-          description: Челлендж выдан
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/PowChallenge" }
-        "429":
-          description: Слишком часто запрашиваете челлендж
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-
-  /files:
-    get:
-      tags: [ Files ]
-      summary: Список файлов пользователя
-      security: [ { bearerAuth: [ ] } ]
-      parameters:
-        - in: query
-          name: mine
-          schema: { type: boolean, default: true }
-          description: Только мои файлы
-        - in: query
-          name: page
-          schema: { type: integer, minimum: 1, default: 1 }
-        - in: query
-          name: page_size
-          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
-      responses:
-        "200":
-          description: Ок
-          headers:
-            X-RateLimit-Limit: { $ref: "#/components/headers/X-RateLimit-Limit" }
-            X-RateLimit-Remaining: { $ref: "#/components/headers/X-RateLimit-Remaining" }
-            X-RateLimit-Reset: { $ref: "#/components/headers/X-RateLimit-Reset" }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/FilesListResponse" }
-
-    post:
-      tags: [ Files, MetaTx ]
-      summary: Подготовка meta-tx для регистрации файла (on-chain FileRegistry.register)
-      description: |
-        Клиент уже зашифровал файл и добавил в IPFS. Отправляет метаданные и PoW.
-        В ответ — EIP-712 typedData для MinimalForwarder → подписать → /meta-tx/submit.
-      security: [ { bearerAuth: [ ] } ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/FileRegisterRequest" }
-      responses:
-        "200":
-          description: Возвращён typedData для подписи
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/FileRegisterResponse" }
-        "400":
-          description: Валидация / denylist дубликата checksum
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-        "429":
-          description: Квота/PoW
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-
-  /files/{id}:
-    get:
-      tags: [ Files ]
-      summary: Детали файла — мета, версии, гранты
-      security: [ { bearerAuth: [ ] } ]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { $ref: "#/components/schemas/FileId" }
-      responses:
-        "200":
-          description: Ок
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/FileDetailsResponse" }
-        "404":
-          description: Не найден
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-
-  /files/{id}/version:
-    post:
-      tags: [ Files, MetaTx ]
-      summary: Новая версия файла (updateCid)
-      security: [ { bearerAuth: [ ] } ]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { $ref: "#/components/schemas/FileId" }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/FileVersionRequest" }
-      responses:
-        "200":
-          description: typedData для подписи updateCid
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                type: object
-                required: [ typedData, forwarder ]
-                properties:
-                  typedData: { $ref: "#/components/schemas/Eip712TypedData" }
-                  forwarder: { $ref: "#/components/schemas/Address" }
-        "404":
-          description: Файл не найден
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-
+                $ref: '#/components/schemas/TypedDataOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /files/{id}/share:
     post:
-      tags: [ Grants, MetaTx ]
-      summary: Создать гранты (grant) с TTL и лимитами; вернуть набор typedData для каждого получателя
-      description: |
-        Передайте encK per-recipient (RSA-OAEP-2048). Сервер вернёт массив EIP-712 typedData (по одному на grant).
-        Затем клиент подпишет каждый и отправит через /meta-tx/submit (батчем или по одному).
-      security: [ { bearerAuth: [ ] } ]
+      tags:
+      - files
+      summary: Share File
+      operationId: share_file_files__id__share_post
+      security:
+      - HTTPBearer: []
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { $ref: "#/components/schemas/FileId" }
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id
+      - name: X-PoW-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Pow-Token
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/GrantCreateRequest" }
+            schema:
+              $ref: '#/components/schemas/ShareIn'
       responses:
-        "200":
-          description: Массив typedData для подписания grant(ов)
+        '200':
+          description: Successful Response
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/GrantTypedDataBatchResponse" }
-        "403":
-          description: Нет прав на файл
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-        "429":
-          description: Квота/PoW
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-
-  /grants/{capId}:
+              schema:
+                anyOf:
+                - $ref: '#/components/schemas/ShareOut'
+                - $ref: '#/components/schemas/DuplicateOut'
+                title: Response Share File Files  Id  Share Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /files/{id}:
+    delete:
+      tags:
+      - files
+      summary: Delete File
+      description: 'Soft-delete file: mark deleted_at, revoke active grants, publish
+        event.'
+      operationId: delete_file_files__id__delete
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id
+      - name: Authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/app__schemas__telegram__OkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /files/{id}/grants:
     get:
-      tags: [ Grants ]
-      summary: Состояние конкретного гранта
-      security: [ { bearerAuth: [ ] } ]
+      tags:
+      - files
+      summary: List File Grants
+      operationId: list_file_grants_files__id__grants_get
       parameters:
-        - in: path
-          name: capId
-          required: true
-          schema: { $ref: "#/components/schemas/CapId" }
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id
+      - name: Authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
       responses:
-        "200":
-          description: Ок
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/GrantState" }
-        "404":
-          description: Не найден
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-
-  /grants/{capId}/revoke:
-    post:
-      tags: [ Grants, MetaTx ]
-      summary: Сформировать meta-tx для revoke гранта
-      security: [ { bearerAuth: [ ] } ]
-      parameters:
-        - in: path
-          name: capId
-          required: true
-          schema: { $ref: "#/components/schemas/CapId" }
-      requestBody:
-        required: false
-      responses:
-        "200":
-          description: typedData для revoke
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: object
-                required: [ typedData, forwarder ]
-                properties:
-                  typedData: { $ref: "#/components/schemas/Eip712TypedData" }
-                  forwarder: { $ref: "#/components/schemas/Address" }
-        "404":
-          description: Не найден
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-
-  /download/{capId}:
-    get:
-      tags: [ Download ]
-      summary: Проверка права + выдача encK и пути IPFS; параллельно ставится useOnce с высоким приоритетом
-      description: |
-        Требует авторизации и валидного PoW (challenge из /pow).
-        Возвращает encK (RSA-OAEP для текущего пользователя) и защищённый путь к нашему gateway.
-      security: [ { bearerAuth: [ ] } ]
-      parameters:
-        - in: path
-          name: capId
-          required: true
-          schema: { $ref: "#/components/schemas/CapId" }
-        - in: query
-          name: pow_challenge
-          schema: { type: string }
-          required: true
-          description: base64 челлендж, ранее выданный /pow
-        - in: query
-          name: pow_nonce
-          schema: { type: integer }
-          required: true
-          description: Решение PoW
-      responses:
-        "200":
-          description: Ключ и путь выданы
-          headers:
-            X-RateLimit-Limit: { $ref: "#/components/headers/X-RateLimit-Limit" }
-            X-RateLimit-Remaining: { $ref: "#/components/headers/X-RateLimit-Remaining" }
-            X-RateLimit-Reset: { $ref: "#/components/headers/X-RateLimit-Reset" }
+                additionalProperties: true
+                title: Response List File Grants Files  Id  Grants Get
+        '422':
+          description: Validation Error
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/DownloadResponse" }
-        "403":
-          description: Нет права / TTL/лимит исчерпан / revoke
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-        "429":
-          description: Квота/PoW
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /download/{cap_id}:
+    get:
+      tags:
+      - download
+      summary: Get Download Info
+      operationId: get_download_info_download__cap_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: cap_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cap Id
+      - name: X-PoW-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Pow-Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Download Info Download  Cap Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /dl/one-time/{token}:
+    get:
+      tags:
+      - download
+      summary: Consume One Time
+      operationId: consume_one_time_dl_one_time__token__get
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /grants:
+    get:
+      tags:
+      - grants
+      summary: List My Grants
+      description: 'Список грантов для текущего пользователя.
 
-  /meta-tx/submit:
+        role=received — я получатель (grantee)
+
+        role=granted  — я выдавший (grantor)
+
+        Возвращает items: [{ fileId, capId, grantor, grantee, maxDownloads, usedDownloads,
+        status, expiresAt, fileName? }]'
+      operationId: list_my_grants_grants_get
+      parameters:
+      - name: role
+        in: query
+        required: false
+        schema:
+          enum:
+          - received
+          - granted
+          type: string
+          default: received
+          title: Role
+      - name: Authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List My Grants Grants Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /grants/{cap_id}/revoke:
     post:
-      tags: [ MetaTx ]
-      summary: Отправить подписанный EIP-712 ForwardRequest на релейер
-      description: Сервер проверяет подпись/nonce/validUntil (off-chain) и кладёт в соответствующую очередь.
-      security: [ { bearerAuth: [ ] } ]
+      tags:
+      - grants
+      summary: Revoke Grant
+      operationId: revoke_grant_grants__cap_id__revoke_post
+      parameters:
+      - name: cap_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cap Id
+      - name: Authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Revoke Grant Grants  Cap Id  Revoke Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /grants/{cap_id}:
+    get:
+      tags:
+      - grants
+      summary: Get Grant Status
+      operationId: get_grant_status_grants__cap_id__get
+      parameters:
+      - name: cap_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cap Id
+      - name: Authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Grant Status Grants  Cap Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /anchors/latest:
+    get:
+      tags:
+      - anchors
+      summary: Get Latest Anchor
+      description: "Get the latest anchor.\n\nReturns:\n    Latest anchor with period_id,\
+        \ merkle_root, and timestamp"
+      operationId: get_latest_anchor_anchors_latest_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnchorResponse'
+  /anchors/{period_id}:
+    get:
+      tags:
+      - anchors
+      summary: Get Anchor By Period
+      description: "Get anchor details for a specific period.\n\nArgs:\n    period_id:\
+        \ Period ID to query\n\nReturns:\n    Anchor details including events count"
+      operationId: get_anchor_by_period_anchors__period_id__get
+      parameters:
+      - name: period_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+          title: Period Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnchorDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /anchors/trigger/{period_id}:
+    post:
+      tags:
+      - anchors
+      summary: Trigger Anchoring
+      description: 'Manually trigger anchoring for a specific period.
+
+
+        Idempotent semantics:
+
+        - If anchor already exists in DB OR scheduling marker exists in Redis, return
+        {status: "already_anchored"}.
+
+        - Otherwise, mark as scheduled and enqueue the task, return {status: "queued"}.'
+      operationId: trigger_anchoring_anchors_trigger__period_id__post
+      parameters:
+      - name: period_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+          title: Period Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Trigger Anchoring Anchors Trigger  Period Id  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /intents:
+    post:
+      tags:
+      - intents
+      summary: Create Intent
+      operationId: create_intent_intents_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntentCreateIn'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentCreateOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /intents/{intent_id}/consume:
+    post:
+      tags:
+      - intents
+      summary: Consume Intent
+      operationId: consume_intent_intents__intent_id__consume_post
+      parameters:
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Intent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentConsumeOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /users/{addr}/pubkey:
+    get:
+      tags:
+      - users
+      summary: Get User Pubkey
+      operationId: get_user_pubkey_users__addr__pubkey_get
+      parameters:
+      - name: addr
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Addr
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get User Pubkey Users  Addr  Pubkey Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /admin/denylist:
+    post:
+      tags:
+      - admin
+      summary: Add To Denylist
+      operationId: add_to_denylist_admin_denylist_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DenylistIn'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Add To Denylist Admin Denylist Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /pow/challenge:
+    post:
+      tags:
+      - pow
+      summary: Get Pow Challenge
+      description: Создает и возвращает новую PoW-задачу для клиента.
+      operationId: get_pow_challenge_pow_challenge_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/app__routers__pow__ChallengeOut'
+  /chain/info:
+    get:
+      tags:
+      - chain
+      summary: Chain Info
+      operationId: chain_info_chain_info_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Chain Info Chain Info Get
+  /tg/link-start:
+    post:
+      tags:
+      - Telegram
+      summary: Start Telegram account linking process
+      operationId: start_telegram_link_tg_link_start_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TgLinkStartRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TgLinkStartResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /tg/webapp/auth:
+    post:
+      tags:
+      - Telegram
+      summary: Telegram Webapp Auth
+      description: Validate Telegram initData and issue short-lived webapp session
+        JWT.
+      operationId: telegram_webapp_auth_tg_webapp_auth_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebAppAuthIn'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebAppAuthOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /tg/link-complete:
+    post:
+      tags:
+      - Telegram
+      summary: Complete Telegram account linking
+      operationId: complete_telegram_link_tg_link_complete_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TgLinkCompleteRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/app__schemas__telegram__OkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /tg/link:
+    delete:
+      tags:
+      - Telegram
+      summary: Unlink Telegram account
+      description: 'Revokes all active links associated with the authenticated user''s
+        wallet address.
+
+        This is an idempotent operation.'
+      operationId: unlink_telegram_account_tg_link_delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/app__schemas__telegram__OkResponse'
+  /tonconnect-manifest.json:
+    get:
+      summary: Tonconnect Manifest
+      description: TonConnect manifest with permissive CORS so wallet hosts (walletbot,
+        tonkeeper) can fetch it.
+      operationId: tonconnect_manifest_tonconnect_manifest_json_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /bot/links:
+    get:
+      tags:
+      - Bot
+      summary: Bot List Links
+      operationId: bot_list_links_bot_links_get
+      parameters:
+      - name: X-TG-Chat-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Tg-Chat-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotLinksResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Bot
+      summary: Bot Add Link
+      operationId: bot_add_link_bot_links_post
+      parameters:
+      - name: X-TG-Chat-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Tg-Chat-Id
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/MetaTxSubmitRequest" }
+            schema:
+              $ref: '#/components/schemas/BotLinkCreateIn'
       responses:
-        "200":
-          description: Принято релейером
+        '201':
+          description: Successful Response
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/MetaTxSubmitResponse" }
-        "409":
-          description: Дубликат request_id / nonce conflict
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-
-  /verify/{fileId}:
-    get:
-      tags: [ Verify ]
-      summary: Сверка CID/Checksum по он-чейн записи
+              schema:
+                $ref: '#/components/schemas/BotLinksResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /bot/links/switch:
+    post:
+      tags:
+      - Bot
+      summary: Bot Switch Active Link
+      operationId: bot_switch_active_link_bot_links_switch_post
       parameters:
-        - in: path
-          name: fileId
-          required: true
-          schema: { $ref: "#/components/schemas/FileId" }
+      - name: X-TG-Chat-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Tg-Chat-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BotLinkSwitchIn'
       responses:
-        "200":
-          description: Результат сверки
+        '200':
+          description: Successful Response
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/VerifyResponse" }
-        "404":
-          description: Нет он-чейн записи
-          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
-
-  /anchors/latest:
+              schema:
+                $ref: '#/components/schemas/BotLinksResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /bot/links/{address}:
+    delete:
+      tags:
+      - Bot
+      summary: Bot Delete Link
+      operationId: bot_delete_link_bot_links__address__delete
+      parameters:
+      - name: address
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Address
+      - name: X-TG-Chat-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Tg-Chat-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotLinksResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /bot/prepare-download:
+    post:
+      tags:
+      - Bot
+      summary: Bot Prepare Download
+      operationId: bot_prepare_download_bot_prepare_download_post
+      parameters:
+      - name: X-TG-Chat-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Tg-Chat-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BotPrepareDownloadIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotPrepareDownloadOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /bot/me:
     get:
-      tags: [ Anchors ]
-      summary: Последний меркль-якорь
+      tags:
+      - Bot
+      summary: Bot Get Me
+      description: "Bot-friendly профиль пользователя по Telegram chat_id.\n\nВход:\n\
+        \  - X-TG-Chat-Id (header)\n\nВыход:\n  - address: связанный wallet-адрес\n\
+        \  - display_name: имя пользователя, если задано"
+      operationId: bot_get_me_bot_me_get
+      parameters:
+      - name: X-TG-Chat-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Tg-Chat-Id
       responses:
-        "200":
-          description: Информация о последнем анкоре
+        '200':
+          description: Successful Response
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/AnchorInfo" }
+              schema:
+                $ref: '#/components/schemas/BotProfileResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /bot/files:
+    get:
+      tags:
+      - Bot
+      summary: Bot List Files
+      description: "Bot-friendly список файлов по Telegram chat_id.\n\nВход:\n  -\
+        \ X-TG-Chat-Id (header)\n  - limit, cursor (строковый курсор)\n\nОтвет:\n\
+        {\n  \"files\": [\n    {\n      \"id_hex\": \"...\",   # без 0x\n      \"\
+        name\": \"...\",\n      \"size\": 123,\n      \"mime\": \"...\",\n      \"\
+        cid\": \"...\",\n      \"updatedAt\": \"ISO8601\"\n    },\n    ...\n  ],\n\
+        \  \"cursor\": \"<строковый курсор или null>\"\n}"
+      operationId: bot_list_files_bot_files_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      - name: X-TG-Chat-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Tg-Chat-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Bot List Files Bot Files Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /bot/grants:
+    get:
+      tags:
+      - Bot
+      summary: Bot List Grants
+      description: "Bot-friendly список грантов.\n\nВход:\n  - X-TG-Chat-Id\n  - direction\
+        \ = \"in\" | \"out\"\n  - limit, cursor\n\nОтвет:\n{\n  \"grants\": [\n  \
+        \  {\n      \"capId\": \"0x...\",\n      \"fileName\": \"...\",\n      \"\
+        used\": 0,\n      \"max\": 3,\n      \"expiresAt\": \"ISO8601\",\n      \"\
+        status\": \"pending|confirmed|expired|revoked|exhausted\"\n    },\n    ...\n\
+        \  ],\n  \"cursor\": \"<строковый курсор или null>\"\n}"
+      operationId: bot_list_grants_bot_grants_get
+      parameters:
+      - name: direction
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Direction
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+      - name: X-TG-Chat-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Tg-Chat-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Bot List Grants Bot Grants Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /bot/verify/{file_id}:
+    get:
+      tags:
+      - Bot
+      summary: Bot Verify File
+      description: "Bot-friendly верификация файла по fileId.\n\nВалидация:\n  - формат\
+        \ 0x + 64 hex, иначе 400.\n  - если файла нет в БД — 404.\n\nВозвращает:\n\
+        \  - onchain_ok: есть ли файл в блокчейне\n  - offchain_ok: есть ли файл в\
+        \ БД\n  - match: совпадают ли checksum on-chain и off-chain\n  - lastAnchorTx:\
+        \ последняя транзакция анкора (если есть)"
+      operationId: bot_verify_file_bot_verify__file_id__get
+      parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: File Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  anyOf:
+                  - type: boolean
+                  - type: string
+                  - type: 'null'
+                title: Response Bot Verify File Bot Verify  File Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /bot/action-intents:
+    post:
+      tags:
+      - Bot
+      summary: Create Action Intent
+      description: Создаёт одноразовый интент (handoff) для текущего пользователя.
+      operationId: create_action_intent_bot_action_intents_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionIntentCreateIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionIntentCreateOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /bot/action-intents/consume:
+    post:
+      tags:
+      - Bot
+      summary: Consume Action Intent
+      description: Потребляет одноразовый интент.
+      operationId: consume_action_intent_bot_action_intents_consume_post
+      parameters:
+      - name: Authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionIntentConsumeIn'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionIntentConsumeOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    ActionIntentConsumeIn:
+      properties:
+        state:
+          type: string
+          title: State
+          description: Opaque state token obtained from /bot/action-intents
+      type: object
+      required:
+      - state
+      title: ActionIntentConsumeIn
+    ActionIntentConsumeOut:
+      properties:
+        type:
+          type: string
+          title: Type
+        params:
+          additionalProperties: true
+          type: object
+          title: Params
+      type: object
+      required:
+      - type
+      - params
+      title: ActionIntentConsumeOut
+    ActionIntentCreateIn:
+      properties:
+        type:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Type
+          description: Action type identifier
+        params:
+          additionalProperties: true
+          type: object
+          title: Params
+          description: Arbitrary JSON-serializable parameters for this intent
+      type: object
+      required:
+      - type
+      title: ActionIntentCreateIn
+    ActionIntentCreateOut:
+      properties:
+        state:
+          type: string
+          title: State
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+      type: object
+      required:
+      - state
+      - expires_at
+      title: ActionIntentCreateOut
+    AnchorDetailResponse:
+      properties:
+        period_id:
+          type: integer
+          title: Period Id
+          description: Period ID that was anchored
+        merkle_root:
+          type: string
+          title: Merkle Root
+          description: Merkle root hash (hex)
+        anchored_at:
+          type: string
+          format: date-time
+          title: Anchored At
+          description: Timestamp when anchor was created
+        tx_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tx Hash
+          description: On-chain transaction hash (if available)
+        event_count:
+          type: integer
+          title: Event Count
+          description: Number of events in this period
+      type: object
+      required:
+      - period_id
+      - merkle_root
+      - anchored_at
+      - event_count
+      title: AnchorDetailResponse
+      description: Detailed anchor response including event count.
+    AnchorResponse:
+      properties:
+        period_id:
+          type: integer
+          title: Period Id
+          description: Period ID that was anchored
+        merkle_root:
+          type: string
+          title: Merkle Root
+          description: Merkle root hash (hex)
+        anchored_at:
+          type: string
+          format: date-time
+          title: Anchored At
+          description: Timestamp when anchor was created
+        tx_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tx Hash
+          description: On-chain transaction hash (if available)
+      type: object
+      required:
+      - period_id
+      - merkle_root
+      - anchored_at
+      title: AnchorResponse
+      description: Response schema for anchor queries.
+    Body_store_file_storage_store_post:
+      properties:
+        file:
+          type: string
+          format: binary
+          title: File
+        id_hex:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id Hex
+        checksum:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Checksum
+        plain_size:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Plain Size
+        orig_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Orig Name
+        orig_mime:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Orig Mime
+      type: object
+      required:
+      - file
+      title: Body_store_file_storage_store_post
+    BotLinkCreateIn:
+      properties:
+        address:
+          type: string
+          title: Address
+        make_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Make Active
+          default: false
+      type: object
+      required:
+      - address
+      title: BotLinkCreateIn
+    BotLinkItem:
+      properties:
+        address:
+          type: string
+          title: Address
+        is_active:
+          type: boolean
+          title: Is Active
+      type: object
+      required:
+      - address
+      - is_active
+      title: BotLinkItem
+    BotLinkSwitchIn:
+      properties:
+        address:
+          type: string
+          title: Address
+      type: object
+      required:
+      - address
+      title: BotLinkSwitchIn
+    BotLinksResponse:
+      properties:
+        links:
+          items:
+            $ref: '#/components/schemas/BotLinkItem'
+          type: array
+          title: Links
+      type: object
+      required:
+      - links
+      title: BotLinksResponse
+    BotPrepareDownloadIn:
+      properties:
+        capId:
+          type: string
+          title: Capid
+      type: object
+      required:
+      - capId
+      title: BotPrepareDownloadIn
+    BotPrepareDownloadOut:
+      properties:
+        url:
+          type: string
+          title: Url
+        ttl:
+          type: integer
+          title: Ttl
+        fileName:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Filename
+      type: object
+      required:
+      - url
+      - ttl
+      title: BotPrepareDownloadOut
+    BotProfileResponse:
+      properties:
+        address:
+          type: string
+          title: Address
+          description: Связанный wallet-адрес пользователя
+        display_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Name
+          description: Отображаемое имя пользователя, если задано
+      type: object
+      required:
+      - address
+      title: BotProfileResponse
+      description: Профиль пользователя для бота (/bot/me).
+    DenylistIn:
+      properties:
+        checksum:
+          type: string
+          title: Checksum
+      type: object
+      required:
+      - checksum
+      title: DenylistIn
+    DuplicateOut:
+      properties:
+        status:
+          type: string
+          title: Status
+        capIds:
+          items:
+            type: string
+          type: array
+          title: Capids
+      type: object
+      required:
+      - status
+      - capIds
+      title: DuplicateOut
+    FileCreateIn:
+      properties:
+        fileId:
+          type: string
+          title: Fileid
+        name:
+          type: string
+          title: Name
+        size:
+          type: integer
+          title: Size
+        mime:
+          type: string
+          title: Mime
+        cid:
+          type: string
+          title: Cid
+        checksum:
+          type: string
+          title: Checksum
+      type: object
+      required:
+      - fileId
+      - name
+      - size
+      - mime
+      - cid
+      - checksum
+      title: FileCreateIn
+    FileListItem:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          type: string
+          title: Name
+        size:
+          type: integer
+          title: Size
+        mime:
+          type: string
+          title: Mime
+        cid:
+          type: string
+          title: Cid
+        checksum:
+          type: string
+          title: Checksum
+        created_at:
+          type: string
+          title: Created At
+      type: object
+      required:
+      - id
+      - name
+      - size
+      - mime
+      - cid
+      - checksum
+      - created_at
+      title: FileListItem
+    FileMeta:
+      properties:
+        cid:
+          type: string
+          title: Cid
+        checksum:
+          type: string
+          pattern: ^0x[0-9a-fA-F]{64}$
+          title: Checksum
+        size:
+          type: integer
+          title: Size
+        mime:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Mime
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      type: object
+      required:
+      - cid
+      - checksum
+      - size
+      - mime
+      title: FileMeta
+      description: Схема для представления метаданных файла (on-chain или off-chain).
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HistoryItem:
+      properties:
+        type:
+          type: string
+          title: Type
+        blockNumber:
+          type: integer
+          title: Blocknumber
+        txHash:
+          type: string
+          title: Txhash
+        timestamp:
+          type: integer
+          title: Timestamp
+        owner:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner
+        cid:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cid
+        checksum:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Checksum
+        size:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Size
+        mime:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Mime
+      type: object
+      required:
+      - type
+      - blockNumber
+      - txHash
+      - timestamp
+      title: HistoryItem
+    HistoryOut:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/HistoryItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - items
+      title: HistoryOut
+    IntentConsumeOut:
+      properties:
+        ok:
+          type: boolean
+          title: Ok
+        action:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Action
+        payload:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Payload
+      type: object
+      required:
+      - ok
+      title: IntentConsumeOut
+    IntentCreateIn:
+      properties:
+        action:
+          type: string
+          pattern: ^(share|revoke|delete_file)$
+          title: Action
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+      type: object
+      required:
+      - action
+      - payload
+      title: IntentCreateIn
+    IntentCreateOut:
+      properties:
+        intent_id:
+          type: string
+          format: uuid
+          title: Intent Id
+        url:
+          type: string
+          title: Url
+        ttl:
+          type: integer
+          title: Ttl
+      type: object
+      required:
+      - intent_id
+      - url
+      - ttl
+      title: IntentCreateOut
+    LoginIn:
+      properties:
+        challenge_id:
+          type: string
+          title: Challenge Id
+        eth_address:
+          type: string
+          title: Eth Address
+        typed_data:
+          $ref: '#/components/schemas/TypedData'
+        signature:
+          type: string
+          title: Signature
+      type: object
+      required:
+      - challenge_id
+      - eth_address
+      - typed_data
+      - signature
+      title: LoginIn
+    MetaOut:
+      properties:
+        owner:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner
+        cid:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cid
+        checksum:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Checksum
+        size:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Size
+        mime:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Mime
+        createdAt:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Createdat
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      type: object
+      title: MetaOut
+    MetaTxSubmitIn:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        typed_data:
+          additionalProperties: true
+          type: object
+          title: Typed Data
+        signature:
+          type: string
+          title: Signature
+      type: object
+      required:
+      - request_id
+      - typed_data
+      - signature
+      title: MetaTxSubmitIn
+    RegisterIn:
+      properties:
+        challenge_id:
+          type: string
+          title: Challenge Id
+        eth_address:
+          type: string
+          title: Eth Address
+        rsa_public:
+          type: string
+          title: Rsa Public
+        display_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Name
+        typed_data:
+          $ref: '#/components/schemas/TypedData'
+        signature:
+          type: string
+          title: Signature
+      type: object
+      required:
+      - challenge_id
+      - eth_address
+      - rsa_public
+      - typed_data
+      - signature
+      title: RegisterIn
+    ResolveOut:
+      properties:
+        cid:
+          type: string
+          title: Cid
+        url:
+          type: string
+          title: Url
+      type: object
+      required:
+      - cid
+      - url
+      title: ResolveOut
+    ShareIn:
+      properties:
+        users:
+          items:
+            type: string
+          type: array
+          title: Users
+          description: Ethereum addresses 0x..
+        ttl_days:
+          type: integer
+          maximum: 365.0
+          minimum: 1.0
+          title: Ttl Days
+        max_dl:
+          type: integer
+          maximum: 1000.0
+          minimum: 1.0
+          title: Max Dl
+        encK_map:
+          additionalProperties:
+            type: string
+          type: object
+          title: Enck Map
+        request_id:
+          type: string
+          title: Request Id
+      type: object
+      required:
+      - ttl_days
+      - max_dl
+      - request_id
+      title: ShareIn
+    ShareItemOut:
+      properties:
+        grantee:
+          type: string
+          title: Grantee
+        capId:
+          type: string
+          title: Capid
+        status:
+          type: string
+          title: Status
+      type: object
+      required:
+      - grantee
+      - capId
+      - status
+      title: ShareItemOut
+    ShareOut:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ShareItemOut'
+          type: array
+          title: Items
+        typedDataList:
+          anyOf:
+          - items:
+              additionalProperties: true
+              type: object
+            type: array
+          - type: 'null'
+          title: Typeddatalist
+      type: object
+      required:
+      - items
+      title: ShareOut
+    StoreOut:
+      properties:
+        id_hex:
+          type: string
+          title: Id Hex
+        cid:
+          type: string
+          title: Cid
+        tx_hash:
+          type: string
+          title: Tx Hash
+        url:
+          type: string
+          title: Url
+      type: object
+      required:
+      - id_hex
+      - cid
+      - tx_hash
+      - url
+      title: StoreOut
+    TgLinkCompleteRequest:
+      properties:
+        link_token:
+          type: string
+          title: Link Token
+      type: object
+      required:
+      - link_token
+      title: TgLinkCompleteRequest
+    TgLinkStartRequest:
+      properties:
+        chat_id:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Chat Id
+          description: Telegram User Chat ID
+      type: object
+      required:
+      - chat_id
+      title: TgLinkStartRequest
+    TgLinkStartResponse:
+      properties:
+        link_token:
+          type: string
+          title: Link Token
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+      type: object
+      required:
+      - link_token
+      - expires_at
+      title: TgLinkStartResponse
+    Tokens:
+      properties:
+        access:
+          type: string
+          title: Access
+        refresh:
+          type: string
+          title: Refresh
+      type: object
+      required:
+      - access
+      - refresh
+      title: Tokens
+    TypedData:
+      properties:
+        domain:
+          additionalProperties: true
+          type: object
+          title: Domain
+        types:
+          additionalProperties: true
+          type: object
+          title: Types
+        primaryType:
+          type: string
+          title: Primarytype
+        message:
+          additionalProperties: true
+          type: object
+          title: Message
+      type: object
+      required:
+      - domain
+      - types
+      - primaryType
+      - message
+      title: TypedData
+    TypedDataOut:
+      properties:
+        typedData:
+          additionalProperties: true
+          type: object
+          title: Typeddata
+      type: object
+      required:
+      - typedData
+      title: TypedDataOut
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    VerifyOut:
+      properties:
+        onchain:
+          anyOf:
+          - $ref: '#/components/schemas/FileMeta'
+          - type: 'null'
+        offchain:
+          anyOf:
+          - $ref: '#/components/schemas/FileMeta'
+          - type: 'null'
+        match:
+          type: boolean
+          title: Match
+      type: object
+      required:
+      - match
+      title: VerifyOut
+      description: Схема ответа для эндпоинта верификации.
+    VersionItem:
+      properties:
+        owner:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner
+        cid:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cid
+        checksum:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Checksum
+        size:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Size
+        mime:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Mime
+        createdAt:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Createdat
+      type: object
+      title: VersionItem
+    VersionsOut:
+      properties:
+        versions:
+          items:
+            $ref: '#/components/schemas/VersionItem'
+          type: array
+          title: Versions
+      type: object
+      required:
+      - versions
+      title: VersionsOut
+    WebAppAuthIn:
+      properties:
+        initData:
+          type: string
+          title: Initdata
+      type: object
+      required:
+      - initData
+      title: WebAppAuthIn
+    WebAppAuthOut:
+      properties:
+        session:
+          type: string
+          title: Session
+        exp:
+          type: integer
+          title: Exp
+      type: object
+      required:
+      - session
+      - exp
+      title: WebAppAuthOut
+    app__routers__pow__ChallengeOut:
+      properties:
+        challenge:
+          type: string
+          title: Challenge
+        difficulty:
+          type: integer
+          title: Difficulty
+        ttl:
+          type: integer
+          title: Ttl
+      type: object
+      required:
+      - challenge
+      - difficulty
+      - ttl
+      title: ChallengeOut
+    app__schemas__auth__ChallengeOut:
+      properties:
+        challenge_id:
+          type: string
+          title: Challenge Id
+        nonce:
+          type: string
+          title: Nonce
+        exp_sec:
+          type: integer
+          title: Exp Sec
+      type: object
+      required:
+      - challenge_id
+      - nonce
+      - exp_sec
+      title: ChallengeOut
+    app__schemas__telegram__OkResponse:
+      properties:
+        ok:
+          type: boolean
+          title: Ok
+          default: true
+      type: object
+      title: OkResponse
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer
