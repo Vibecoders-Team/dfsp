@@ -24,6 +24,9 @@ import TermsPage from './components/pages/TermsPage';
 import RestorePage from './components/pages/RestorePage';
 import PrivacyPage from './components/pages/PrivacyPage';
 import TelegramLinkPage from './components/pages/TelegramLinkPage';
+import { MainLandingPage } from './pages/MainLandingPage/MainLandingPage';
+
+const LANDING_ENABLED = (import.meta as any).env?.VITE_LANDING_ENABLED !== 'false';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -90,7 +93,10 @@ function AppRoutes() {
   return (
     <>
       <Routes>
-        <Route path="/" element={<RootRedirect />} />
+        {/* Новый корневой маршрут: лендинг */}
+        <Route path="/" element={LANDING_ENABLED ? <MainLandingPage /> : <RootRedirect />} />
+        {/* Старая логика редиректа доступна по "/app" для отката */}
+        <Route path="/app" element={<RootRedirect />} />
         <Route
           path="/login"
           element={
