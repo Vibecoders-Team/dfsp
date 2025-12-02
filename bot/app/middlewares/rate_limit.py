@@ -14,6 +14,7 @@ except Exception:  # на всякий, если пакета нет
     aioredis = None  # type: ignore[assignment]
 
 from ..config import settings
+from ..services.message_store import get_message
 from ..utils.format import mask_chat_id
 
 logger = logging.getLogger(__name__)
@@ -139,7 +140,7 @@ class RateLimitMiddleware(BaseMiddleware):
 
         # Ответ в чат
         retry_seconds = max(1, round(retry_after))
-        text = f"Слишком часто 😅 Попробуйте ещё раз через {retry_seconds} секунд."
+        text = await get_message("rate_limit.hit", variables={"retry_seconds": retry_seconds})
 
         if event.message and isinstance(event.message, Message):
             await event.message.answer(text)

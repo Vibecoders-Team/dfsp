@@ -218,9 +218,12 @@ services:
       PUBLIC_WEB_ORIGIN: "${PUBLIC_WEB_ORIGIN:-http://localhost:${VITE_PORT:-5173}}"
       REDIS_DSN: "${BOT_REDIS_DSN:-${REDIS_DSN:-redis://redis:6379/0}}"
       QUEUE_DSN: "${BOT_QUEUE_DSN:-${REDIS_DSN:-redis://redis:6379/0}}"
+      BOT_DB_DSN: "${BOT_DB_DSN:-postgresql://dfsp:dfsp_dev@db:5432/dfsp_bot}"
       APP_HOST: "${BOT_APP_HOST:-0.0.0.0}"
       APP_PORT: "${BOT_APP_PORT:-8080}"
       PROM_PORT: "${BOT_PROM_PORT:-8001}"
+      BOT_MESSAGES_DB_PATH: "${BOT_MESSAGES_DB_PATH:-/app/dfsp-bot.db}"
+      BOT_DEFAULT_LANGUAGE: "${BOT_DEFAULT_LANGUAGE:-ru}"
     ports:
       - "${BOT_APP_PORT:-8080}:8080"
       - "${BOT_PROM_PORT:-8001}:8001"
@@ -233,6 +236,8 @@ services:
         condition: service_started
       redis:
         condition: service_started
+      db:
+        condition: service_healthy
     networks: [ dfsp-dev, caddy ]
 
   redis:

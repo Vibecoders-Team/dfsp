@@ -154,7 +154,7 @@ class NotificationConsumer:
     async def _send_single(self, chat_id: int, event: NotificationEvent) -> None:
         """Send a single notification."""
         try:
-            text = format_notification(event)
+            text = await format_notification(event)
             success = await send_with_retry(self.bot, chat_id, text, self.retry_config)
             if success:
                 tg_notify_sent_total.labels(type=event.type).inc()
@@ -204,7 +204,7 @@ class NotificationConsumer:
                 last_ts=latest_event.get_timestamp(),
             )
 
-            text = format_coalesced(coalesced)
+            text = await format_coalesced(coalesced)
             success = await send_with_retry(self.bot, chat_id, text, self.retry_config)
 
             if success:

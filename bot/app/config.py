@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     PUBLIC_WEB_ORIGIN: AnyHttpUrl
 
     PROM_PORT: int = 8001
+    BOT_DB_DSN: str = "postgresql://dfsp_bot:dfsp_bot@localhost:5432/dfsp_bot"
+    BOT_DEFAULT_LANGUAGE: str = "ru"
+    I18N_FALLBACK: str = "ru"
+    CALLBACK_HMAC_SECRET: str | None = None
 
     # новый конфиг
     BOT_MODE: Literal["dev", "prod"] = "dev"  # dev = polling, prod = webhook
