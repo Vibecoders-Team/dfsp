@@ -12,6 +12,11 @@ class Settings(BaseSettings):
 
     QUEUE_DSN: str | None = None
     REDIS_DSN: str = "redis://localhost:6379/0"
+    NOTIFY_STREAM_KEY: str = "tg.notifications"
+    NOTIFY_CONSUMER_GROUP: str = "tg-bot"
+    NOTIFY_COALESCE_WINDOW_SEC: int = 60
+    NOTIFY_DAILY_MAX: int = 500
+    NOTIFY_DEFAULT_SUBSCRIBED: bool = True
 
     WEBHOOK_SECRET: str
     PUBLIC_WEB_ORIGIN: AnyHttpUrl

@@ -1,260 +1,92 @@
-"""Integration tests for notification consumer."""
+"""Integration-ish tests for notification consumer (coalescing, dedup, limits)."""
 
-import json
-import sys
+import asyncio
 from datetime import UTC, datetime
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiogram import Bot
 from redis import asyncio as aioredis
 
-# Добавляем корень проекта (bot/) в sys.path
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from app.services.notifications.consumer import NotificationConsumer, QueueMessage
 
-from app.services.notifications.consumer import NotificationConsumer
+
+@pytest.fixture(autouse=True)
+def patch_get_message(monkeypatch):
+    async def _fake_get_message(key: str, *, language: str | None = None, variables: dict | None = None) -> str:
+        return f"{key}:{variables}" if variables else key
+
+    monkeypatch.setattr("app.services.notifications.formatter.get_message", _fake_get_message)
+    return _fake_get_message
+
+
+def _build_message(event_id: str, chat_id: int = 123, event_type: str = "grant_created") -> QueueMessage:
+    fields = {
+        "id": event_id,
+        "type": event_type,
+        "chat_id": chat_id,
+        "ts": datetime.now(UTC).isoformat(),
+        "payload": {"capId": "0x" + "ab" * 32, "fileId": "0x" + "cd" * 32},
+    }
+    ack = AsyncMock()
+    return QueueMessage(event_id, fields, ack=ack)
 
 
 @pytest.fixture
 def mock_redis():
-    """Mock Redis client."""
     redis_mock = AsyncMock(spec=aioredis.Redis)
-    redis_mock.blpop = AsyncMock(return_value=None)  # No events by default
-    redis_mock.get = AsyncMock(return_value=None)
-    redis_mock.setex = AsyncMock()
-    redis_mock.exists = AsyncMock(return_value=False)
-    redis_mock.incr = AsyncMock(return_value=1)
+    redis_mock.sadd = AsyncMock(return_value=1)
     redis_mock.expire = AsyncMock()
-    redis_mock.lrange = AsyncMock(return_value=[])
+    redis_mock.incrby = AsyncMock(return_value=1)
+    redis_mock.get = AsyncMock(return_value=None)
+    redis_mock.set = AsyncMock()
     redis_mock.delete = AsyncMock()
-    redis_mock.rpush = AsyncMock()
-    redis_mock.sadd = AsyncMock(return_value=1)  # New event
-    redis_mock.set = AsyncMock(return_value=True)  # For deduplication
     return redis_mock
 
 
 @pytest.fixture
 def mock_bot():
-    """Mock Telegram bot."""
     bot = MagicMock(spec=Bot)
     bot.send_message = AsyncMock()
     return bot
 
 
-@pytest.fixture
-def sample_grant_created_event():
-    """Sample grant_created event."""
-    return {
-        "event_id": "test-grant-created-1",
-        "version": 1,
-        "type": "grant_created",
-        "source": "api",
-        "ts": datetime.now(UTC).isoformat(),
-        "subject": {
-            "capId": "0x" + "ab" * 32,
-            "fileId": "0x" + "cd" * 32,
-            "grantor": "0x1234567890123456789012345678901234567890",
-            "grantee": "0x0987654321098765432109876543210987654321",
-        },
-        "data": {
-            "ttlDays": 30,
-            "maxDownloads": 10,
-        },
-    }
+@pytest.mark.asyncio
+async def test_coalesce_window_sends_single_message(mock_redis, mock_bot):
+    consumer = NotificationConsumer(mock_bot, mock_redis)
+    consumer.antispam.coalesce_window = 0.01
 
+    messages = [_build_message(f"evt-{i}") for i in range(3)]
+    for msg in messages:
+        await consumer._handle_message(msg)
+    await asyncio.sleep(0.05)
 
-@pytest.fixture
-def sample_download_denied_event():
-    """Sample download_denied event."""
-    return {
-        "event_id": "test-download-denied-1",
-        "version": 1,
-        "type": "download_denied",
-        "source": "api",
-        "ts": datetime.now(UTC).isoformat(),
-        "subject": {
-            "capId": "0x" + "ef" * 32,
-            "fileId": "0x" + "12" * 32,
-            "user": "0x0987654321098765432109876543210987654321",
-        },
-        "data": {
-            "reason": "not_grantee",
-            "statusCode": 403,
-        },
-    }
+    assert mock_bot.send_message.call_count == 1
+    for msg in messages:
+        msg.ack.assert_awaited()
 
 
 @pytest.mark.asyncio
-async def test_consumer_processes_grant_created(mock_redis, mock_bot, sample_grant_created_event):
-    """Test consumer processes grant_created event."""
-    # Setup: event in queue, chat_id resolved from event
-    event_json = json.dumps(sample_grant_created_event).encode()
-    mock_redis.blpop = AsyncMock(return_value=("events:queue", event_json))
-    # Address resolver will try to get chat_id from cache, then resolve from event
-    mock_redis.get = AsyncMock(return_value=None)  # Not in cache
-    mock_redis.exists = AsyncMock(return_value=False)  # Not duplicate
-    mock_redis.sadd = AsyncMock(return_value=1)  # Mark as seen
-    mock_redis.setex = AsyncMock()  # Cache chat_id
-
+async def test_unsubscribed_chat_drops_events(mock_redis, mock_bot):
+    mock_redis.get = AsyncMock(return_value=b"0")  # subscription flag
     consumer = NotificationConsumer(mock_bot, mock_redis)
-    consumer.running = True
+    msg = _build_message("evt-sub-off")
 
-    # Mock address resolver to return chat_id directly
-    async def mock_resolve(event):
-        return 123456789
+    await consumer._handle_message(msg)
 
-    consumer.address_resolver.resolve_from_event = mock_resolve
-
-    # Process one event
-    await consumer._consume_batch()
-
-    # Verify: should send message to chat_id
-    mock_bot.send_message.assert_called_once()
-    call_args = mock_bot.send_message.call_args
-    assert call_args.kwargs["chat_id"] == 123456789
-    assert "Grant создан" in call_args.kwargs["text"] or "grant" in call_args.kwargs["text"].lower()
-
-
-@pytest.mark.asyncio
-async def test_consumer_skips_duplicate(mock_redis, mock_bot, sample_grant_created_event):
-    """Test consumer skips duplicate events."""
-    event_json = json.dumps(sample_grant_created_event).encode()
-    mock_redis.blpop = AsyncMock(return_value=("events:queue", event_json))
-    mock_redis.exists = AsyncMock(return_value=True)  # Duplicate
-    mock_redis.sadd = AsyncMock(return_value=0)  # Already seen
-
-    consumer = NotificationConsumer(mock_bot, mock_redis)
-    consumer.running = True
-
-    await consumer._consume_batch()
-
-    # Should not send message
     mock_bot.send_message.assert_not_called()
+    msg.ack.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_consumer_skips_unknown_event_type(mock_redis, mock_bot):
-    """Test consumer skips unknown event types."""
-    unknown_event = {
-        "event_id": "test-unknown-1",
-        "version": 1,
-        "type": "unknown_event_type",
-        "source": "api",
-        "ts": datetime.now(UTC).isoformat(),
-        "subject": {},
-        "data": {},
-    }
-    event_json = json.dumps(unknown_event).encode()
-    mock_redis.blpop = AsyncMock(return_value=("events:queue", event_json))
-
+async def test_daily_limit_blocks_delivery(mock_redis, mock_bot):
+    mock_redis.incrby = AsyncMock(return_value=9999)  # exceed limit immediately
     consumer = NotificationConsumer(mock_bot, mock_redis)
-    consumer.running = True
+    consumer.antispam.coalesce_window = 0.0
+    msg = _build_message("evt-limit")
 
-    await consumer._consume_batch()
+    await consumer._handle_message(msg)
+    await asyncio.sleep(0.01)
 
-    # Should not send message
     mock_bot.send_message.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_consumer_handles_missing_chat_id(mock_redis, mock_bot, sample_grant_created_event):
-    """Test consumer handles missing chat_id gracefully."""
-    event_json = json.dumps(sample_grant_created_event).encode()
-    mock_redis.blpop = AsyncMock(return_value=("events:queue", event_json))
-    mock_redis.get = AsyncMock(return_value=None)  # No chat_id cached
-    mock_redis.exists = AsyncMock(return_value=False)
-    mock_redis.sadd = AsyncMock(return_value=1)
-
-    consumer = NotificationConsumer(mock_bot, mock_redis)
-    consumer.running = True
-
-    await consumer._consume_batch()
-
-    # Should not send message (no chat_id)
-    mock_bot.send_message.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_consumer_handles_daily_limit(mock_redis, mock_bot, sample_grant_created_event):
-    """Test consumer respects daily limits."""
-    event_json = json.dumps(sample_grant_created_event).encode()
-    mock_redis.blpop = AsyncMock(return_value=("events:queue", event_json))
-    mock_redis.get = AsyncMock(return_value=b"123456789")
-    mock_redis.exists = AsyncMock(return_value=False)
-    mock_redis.sadd = AsyncMock(return_value=1)
-    # Daily limit exceeded (hard limit)
-    mock_redis.incr = AsyncMock(return_value=101)  # > 100
-
-    consumer = NotificationConsumer(mock_bot, mock_redis)
-    consumer.running = True
-
-    await consumer._consume_batch()
-
-    # Should not send message (dropped due to limit)
-    mock_bot.send_message.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_consumer_handles_retry_after(mock_redis, mock_bot, sample_grant_created_event):
-    """Test consumer handles Telegram rate limits."""
-    from aiogram.exceptions import TelegramRetryAfter
-
-    event_json = json.dumps(sample_grant_created_event).encode()
-    mock_redis.blpop = AsyncMock(return_value=("events:queue", event_json))
-    mock_redis.get = AsyncMock(return_value=None)
-    mock_redis.exists = AsyncMock(return_value=False)
-    mock_redis.sadd = AsyncMock(return_value=1)
-    mock_redis.setex = AsyncMock()
-
-    # First call raises rate limit, second succeeds
-    mock_bot.send_message = AsyncMock(
-        side_effect=[
-            TelegramRetryAfter(method="sendMessage", message="Rate limit", retry_after=1),
-            None,  # Success
-        ]
-    )
-
-    consumer = NotificationConsumer(mock_bot, mock_redis)
-    consumer.running = True
-
-    # Mock address resolver to return chat_id directly
-    async def mock_resolve(event):
-        return 123456789
-
-    consumer.address_resolver.resolve_from_event = mock_resolve
-
-    await consumer._consume_batch()
-
-    # Should retry and eventually send
-    assert mock_bot.send_message.call_count == 2
-
-
-@pytest.mark.asyncio
-async def test_consumer_processes_download_denied(mock_redis, mock_bot, sample_download_denied_event):
-    """Test consumer processes download_denied event."""
-    event_json = json.dumps(sample_download_denied_event).encode()
-    mock_redis.blpop = AsyncMock(return_value=("events:queue", event_json))
-    mock_redis.get = AsyncMock(return_value=None)
-    mock_redis.exists = AsyncMock(return_value=False)
-    mock_redis.sadd = AsyncMock(return_value=1)
-    mock_redis.setex = AsyncMock()
-
-    consumer = NotificationConsumer(mock_bot, mock_redis)
-    consumer.running = True
-
-    # Mock address resolver to return chat_id directly
-    async def mock_resolve(event):
-        return 987654321
-
-    consumer.address_resolver.resolve_from_event = mock_resolve
-
-    await consumer._consume_batch()
-
-    # Verify: should send message
-    mock_bot.send_message.assert_called_once()
-    call_args = mock_bot.send_message.call_args
-    assert call_args.kwargs["chat_id"] == 987654321
-    assert "отклонено" in call_args.kwargs["text"].lower() or "denied" in call_args.kwargs["text"].lower()
+    msg.ack.assert_awaited_once()

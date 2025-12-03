@@ -228,9 +228,9 @@ services:
       - "${BOT_APP_PORT:-8080}:8080"
       - "${BOT_PROM_PORT:-8001}:8001"
     volumes:
-      - ../bot/app:/app/app:ro
-      - ../bot/pyproject.toml:/app/pyproject.toml:ro
-      - ../bot/uv.lock:/app/uv.lock:ro
+      - ../bot/app:/app/app
+      - ../bot/pyproject.toml:/app/pyproject.toml
+      - ../bot/uv.lock:/app/uv.lock
     depends_on:
       api:
         condition: service_started

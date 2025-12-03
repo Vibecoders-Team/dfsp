@@ -13,6 +13,7 @@ from app.handlers import link as link_handlers
 from app.handlers import link_callback as link_callback_handlers
 from app.handlers import me as me_handlers
 from app.handlers import menu as menu_handlers
+from app.handlers import notifications as notifications_handlers
 from app.handlers import start as start_handlers
 from app.handlers import unlink as unlink_handlers
 from app.handlers import verify as verify_handlers
@@ -50,6 +51,7 @@ async def setup_bot_commands(bot_: Bot) -> None:
             BotCommand(command="help", description=await message_store.get_message("commands.help", language=language)),
             BotCommand(command="verify", description=await message_store.get_message("commands.verify", language=language)),
             BotCommand(command="lang", description=await message_store.get_message("commands.lang", language=language)),
+            BotCommand(command="notify", description=await message_store.get_message("commands.notify", language=language)),
         ]
 
     languages = ("ru", "en")
@@ -89,6 +91,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     dp_.include_router(files_handlers.router)
     dp_.include_router(verify_handlers.router)
     dp_.include_router(lang_handlers.router)
+    dp_.include_router(notifications_handlers.router)
     # остальные роутеры: grants, callbacks
 
     return bot_, dp_
@@ -113,8 +116,10 @@ async def run_polling() -> None:
     consumer_task = None
     redis_client = None
     try:
-        redis_client = aioredis.from_url(settings.REDIS_DSN, decode_responses=False)
-        consumer = NotificationConsumer(bot, redis_client)
+        queue_dsn = settings.QUEUE_DSN or settings.REDIS_DSN
+        redis_dsn = settings.REDIS_DSN if queue_dsn.startswith("amqp") else queue_dsn
+        redis_client = aioredis.from_url(redis_dsn, decode_responses=False)
+        consumer = NotificationConsumer(bot, redis_client, queue_dsn=queue_dsn)
         consumer_task = asyncio.create_task(consumer.start())
         logger.info("Notification consumer started")
     except Exception as e:
@@ -223,8 +228,10 @@ def create_web_app() -> web.Application:
         await setup_bot_commands(bot)
 
         # Start notification consumer in background
-        redis_client = aioredis.from_url(settings.REDIS_DSN, decode_responses=False)
-        consumer = NotificationConsumer(bot, redis_client)
+        queue_dsn = settings.QUEUE_DSN or settings.REDIS_DSN
+        redis_dsn = settings.REDIS_DSN if queue_dsn.startswith("amqp") else queue_dsn
+        redis_client = aioredis.from_url(redis_dsn, decode_responses=False)
+        consumer = NotificationConsumer(bot, redis_client, queue_dsn=queue_dsn)
         consumer_task = asyncio.create_task(consumer.start())
         app_["consumer_task"] = consumer_task
         app_["redis_client"] = redis_client

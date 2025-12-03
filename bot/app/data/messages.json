@@ -22,12 +22,12 @@
   {
     "key": "start.help",
     "language": "ru",
-    "content": "📖 <b>Справка по командам DFSP бота</b>\n\n🔹 <b>Основные команды:</b>\n• /start — главное меню\n• /me — мой профиль\n• /files — список моих файлов\n• /verify <fileId> — проверить файл\n• /link — привязать аккаунт\n• /unlink — отвязать аккаунт\n\n💡 <b>Совет:</b> Используй кнопки меню для быстрого доступа к функциям!"
+    "content": "📖 <b>Справка по командам DFSP бота</b>\n\n🔹 <b>Основные команды:</b>\n• /start — главное меню\n• /me — мой профиль\n• /files — список моих файлов\n• /verify <fileId> — проверить файл\n• /link — привязать аккаунт\n• /unlink — отвязать аккаунт\n• /notify — уведомления и тихие часы\n\n💡 <b>Совет:</b> Используй кнопки меню для быстрого доступа к функциям!"
   },
   {
     "key": "start.help",
     "language": "en",
-    "content": "📖 <b>DFSP bot commands</b>\n\n🔹 <b>Main commands:</b>\n• /start — main menu\n• /me — my profile\n• /files — my files\n• /verify <fileId> — verify file\n• /link — link account\n• /unlink — unlink account\n\n💡 <b>Tip:</b> Use menu buttons for quick access!"
+    "content": "📖 <b>DFSP bot commands</b>\n\n🔹 <b>Main commands:</b>\n• /start — main menu\n• /me — my profile\n• /files — my files\n• /verify <fileId> — verify file\n• /link — link account\n• /unlink — unlink account\n• /notify — notifications & quiet hours\n\n💡 <b>Tip:</b> Use menu buttons for quick access!"
   },
   {
     "key": "common.missing_message",
@@ -1048,5 +1048,145 @@
     "key": "commands.lang",
     "language": "en",
     "content": "Switch language"
+  },
+  {
+    "key": "commands.notify",
+    "language": "ru",
+    "content": "Уведомления"
+  },
+  {
+    "key": "commands.notify",
+    "language": "en",
+    "content": "Notifications"
+  },
+  {
+    "key": "buttons.notify_on",
+    "language": "ru",
+    "content": "🔔 Включить"
+  },
+  {
+    "key": "buttons.notify_on",
+    "language": "en",
+    "content": "🔔 Enable"
+  },
+  {
+    "key": "buttons.notify_off",
+    "language": "ru",
+    "content": "🔕 Выключить"
+  },
+  {
+    "key": "buttons.notify_off",
+    "language": "en",
+    "content": "🔕 Disable"
+  },
+  {
+    "key": "buttons.quiet_default",
+    "language": "ru",
+    "content": "🌙 23:00–07:00"
+  },
+  {
+    "key": "buttons.quiet_default",
+    "language": "en",
+    "content": "🌙 23:00–07:00"
+  },
+  {
+    "key": "buttons.quiet_off",
+    "language": "ru",
+    "content": "🚫 Без тихих часов"
+  },
+  {
+    "key": "buttons.quiet_off",
+    "language": "en",
+    "content": "🚫 Disable quiet hours"
+  },
+  {
+    "key": "notify.title",
+    "language": "ru",
+    "content": "⚙️ <b>Настройки уведомлений</b>"
+  },
+  {
+    "key": "notify.title",
+    "language": "en",
+    "content": "⚙️ <b>Notification settings</b>"
+  },
+  {
+    "key": "notify.status.enabled",
+    "language": "ru",
+    "content": "🔔 Уведомления включены"
+  },
+  {
+    "key": "notify.status.enabled",
+    "language": "en",
+    "content": "🔔 Notifications are enabled"
+  },
+  {
+    "key": "notify.status.disabled",
+    "language": "ru",
+    "content": "🔕 Уведомления выключены"
+  },
+  {
+    "key": "notify.status.disabled",
+    "language": "en",
+    "content": "🔕 Notifications are disabled"
+  },
+  {
+    "key": "notify.status.quiet_on",
+    "language": "ru",
+    "content": "🌙 Тихие часы: {window} (UTC)"
+  },
+  {
+    "key": "notify.status.quiet_on",
+    "language": "en",
+    "content": "🌙 Quiet hours: {window} (UTC)"
+  },
+  {
+    "key": "notify.status.quiet_off",
+    "language": "ru",
+    "content": "🚫 Тихие часы отключены"
+  },
+  {
+    "key": "notify.status.quiet_off",
+    "language": "en",
+    "content": "🚫 Quiet hours are off"
+  },
+  {
+    "key": "notify.changed.on",
+    "language": "ru",
+    "content": "Уведомления включены"
+  },
+  {
+    "key": "notify.changed.on",
+    "language": "en",
+    "content": "Notifications enabled"
+  },
+  {
+    "key": "notify.changed.off",
+    "language": "ru",
+    "content": "Уведомления выключены"
+  },
+  {
+    "key": "notify.changed.off",
+    "language": "en",
+    "content": "Notifications disabled"
+  },
+  {
+    "key": "notify.changed.quiet_on",
+    "language": "ru",
+    "content": "Тихие часы установлены: {window}"
+  },
+  {
+    "key": "notify.changed.quiet_on",
+    "language": "en",
+    "content": "Quiet hours set: {window}"
+  },
+  {
+    "key": "notify.changed.quiet_off",
+    "language": "ru",
+    "content": "Тихие часы выключены"
+  },
+  {
+    "key": "notify.changed.quiet_off",
+    "language": "en",
+    "content": "Quiet hours disabled"
   }
 ]

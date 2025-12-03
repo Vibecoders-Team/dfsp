@@ -53,14 +53,13 @@ EVENT_TYPE_NAME_KEYS: dict[str, str] = {
 
 async def format_grant_created(event: NotificationEvent) -> str:
     """Format grant_created notification."""
-    subject = event.subject or {}
-    data = event.data or {}
+    payload = event.payload or {}
 
-    grantee = format_address(subject.get("grantee", ""))
-    file_id = format_file_id(subject.get("fileId", ""))
+    grantee = format_address(payload.get("grantee", ""))
+    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
 
-    ttl_days = data.get("ttlDays", "?")
-    max_dl = data.get("maxDownloads", "?")
+    ttl_days = payload.get("ttlDays", payload.get("ttl_days", "?"))
+    max_dl = payload.get("maxDownloads", payload.get("max_downloads", "?"))
 
     return await get_message(
         "notifications.grant_created",
@@ -75,14 +74,13 @@ async def format_grant_created(event: NotificationEvent) -> str:
 
 async def format_grant_received(event: NotificationEvent) -> str:
     """Format grant_received notification (same as grant_created for grantee)."""
-    subject = event.subject or {}
-    data = event.data or {}
+    payload = event.payload or {}
 
-    grantor = format_address(subject.get("grantor", ""))
-    file_id = format_file_id(subject.get("fileId", ""))
+    grantor = format_address(payload.get("grantor", ""))
+    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
 
-    ttl_days = data.get("ttlDays", "?")
-    max_dl = data.get("maxDownloads", "?")
+    ttl_days = payload.get("ttlDays", payload.get("ttl_days", "?"))
+    max_dl = payload.get("maxDownloads", payload.get("max_downloads", "?"))
 
     return await get_message(
         "notifications.grant_received",
@@ -97,26 +95,25 @@ async def format_grant_received(event: NotificationEvent) -> str:
 
 async def format_grant_revoked(event: NotificationEvent) -> str:
     """Format grant_revoked notification."""
-    subject = event.subject or {}
-    file_id = format_file_id(subject.get("fileId", ""))
+    payload = event.payload or {}
+    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
 
     return await get_message("notifications.grant_revoked", variables={"file_id": file_id})
 
 
 async def format_download_allowed(event: NotificationEvent) -> str:
     """Format download_allowed notification."""
-    subject = event.subject or {}
-    file_id = format_file_id(subject.get("fileId", ""))
+    payload = event.payload or {}
+    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
 
     return await get_message("notifications.download_allowed", variables={"file_id": file_id})
 
 
 async def format_download_denied(event: NotificationEvent) -> str:
     """Format download_denied notification."""
-    subject = event.subject or {}
-    data = event.data or {}
-    file_id = format_file_id(subject.get("fileId", ""))
-    reason = data.get("reason", "unknown")
+    payload = event.payload or {}
+    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
+    reason = payload.get("reason", "unknown")
 
     reason_key = DOWNLOAD_DENIED_REASONS.get(reason)
     reason_text = await get_message(reason_key) if reason_key else reason
@@ -132,11 +129,10 @@ async def format_download_denied(event: NotificationEvent) -> str:
 
 async def format_anchor_ok(event: NotificationEvent) -> str:
     """Format anchor_ok notification."""
-    subject = event.subject or {}
-    data = event.data or {}
+    payload = event.payload or {}
 
-    period_id = subject.get("periodId", "?")
-    tx_hash = subject.get("txHash") or data.get("txHash")
+    period_id = payload.get("periodId", "?")
+    tx_hash = payload.get("txHash")
 
     tx_display = format_address(tx_hash, max_len=8) if tx_hash else "pending"
 
@@ -151,12 +147,11 @@ async def format_anchor_ok(event: NotificationEvent) -> str:
 
 async def format_relayer_warn(event: NotificationEvent) -> str:
     """Format relayer_warn notification."""
-    subject = event.subject or {}
-    data = event.data or {}
+    payload = event.payload or {}
 
-    request_id = subject.get("requestId", "?")
-    reason = data.get("reason", "unknown")
-    error = data.get("error", "")
+    request_id = payload.get("requestId", "?")
+    reason = payload.get("reason", "unknown")
+    error = payload.get("error", "")
 
     return await get_message(
         "notifications.relayer_warn",
@@ -189,7 +184,7 @@ async def format_notification(event: NotificationEvent) -> str:
     # Fallback for unknown event types
     return await get_message(
         "notifications.unknown",
-        variables={"event_type": event_type, "data": event.data or {}},
+        variables={"event_type": event_type, "data": event.payload or {}},
     )
 
 
