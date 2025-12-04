@@ -15,6 +15,7 @@ from aiogram.types import (
 from aiohttp import ClientError, ClientSession
 
 from ..config import settings
+from ..services.message_store import get_message
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +70,13 @@ async def _request_link_token(chat_id: int) -> tuple[str, str | None]:
         raise BackendError() from e
 
 
-def _build_link_keyboard(deep_link: str) -> InlineKeyboardMarkup | None:
+async def _build_link_keyboard(deep_link: str) -> InlineKeyboardMarkup | None:
     if "localhost" in deep_link:
         return None  # не делаем кнопку для локалки
 
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🌐 Открыть DFSP", url=deep_link)]])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=await get_message("buttons.open_dfsp"), url=deep_link)]]
+    )
 
 
 async def _send_link(
@@ -88,16 +91,13 @@ async def _send_link(
             seconds = int(e.retry_after)
 
         if seconds and seconds > 0:
-            text = f"⚠️ Слишком часто запрашиваешь ссылку.\nПопробуй снова примерно через {seconds} секунд."
+            text = await get_message("link.rate_limit_seconds", variables={"seconds": seconds})
         else:
-            text = "⚠️ Слишком часто запрашиваешь ссылку.\nПопробуй ещё раз чуть позже."
+            text = await get_message("link.rate_limit_generic")
         await send(text, None)
         return
     except BackendError:
-        await send(
-            "😔 Сейчас не получается сгенерировать ссылку на привязку.\nПопробуй ещё раз чуть позже.",
-            None,
-        )
+        await send(await get_message("link.backend_error"), None)
         return
 
     origin = str(settings.PUBLIC_WEB_ORIGIN).rstrip("/")
@@ -108,18 +108,14 @@ async def _send_link(
 
     is_valid, error_msg = check_public_web_origin()
 
-    text = (
-        "Вот ссылка для привязки аккаунта DFSP к этому Telegram.\n\n"
-        f"🔗 {deep_link}\n\n"
-        "Ссылка одноразовая и действует ограниченное время. "
-        "Если она истечёт, просто вызови /link ещё раз."
+    diagnostic_note = f"\n\n⚠️ {error_msg}" if not is_valid and error_msg else ""
+    text = await get_message(
+        "link.deep_link",
+        variables={"link_url": deep_link, "diagnostic": diagnostic_note},
     )
 
-    if not is_valid:
-        text += f"\n\n⚠️ {error_msg}"
-
     # Показываем кнопку только для валидного origin
-    kb = _build_link_keyboard(deep_link) if is_valid else None
+    kb = await _build_link_keyboard(deep_link) if is_valid else None
 
     await send(text, kb)
 
@@ -142,7 +138,7 @@ async def cmd_link(message: Message) -> None:
 async def cb_link_start(callback: CallbackQuery) -> None:
     # На всякий случай: если апдейт пришёл не из лички
     if not callback.message:
-        await callback.answer("Напиши мне в личку, чтобы привязать аккаунт.", show_alert=True)
+        await callback.answer(await get_message("link.private_chat_required"), show_alert=True)
         return
 
     await _send_link(
@@ -154,18 +150,14 @@ async def cb_link_start(callback: CallbackQuery) -> None:
 
     # После отправки ссылки показываем инструкцию
     await callback.message.answer(
-        "📋 <b>Инструкция по привязке:</b>\n\n"
-        "1. Нажми на ссылку выше или скопируй её\n"
-        "2. Открой ссылку в браузере\n"
-        "3. Войди в свой кошелёк\n"
-        "4. Подпиши сообщение для подтверждения\n\n"
-        "После успешной привязки ты получишь уведомление, и сможешь использовать все функции бота!"
+        await get_message("link.instructions"),
     )
 
     # Обновляем главное меню
     from ..handlers import start as start_handlers
 
-    keyboard = start_handlers.get_main_keyboard(is_linked=False)
+    keyboard = await start_handlers.get_main_keyboard(is_linked=False)
     await callback.message.answer(
-        "💡 <b>Главное меню</b>\n\nИспользуй кнопки ниже для навигации:", reply_markup=keyboard
+        await get_message("link.main_menu_hint"),
+        reply_markup=keyboard,
     )

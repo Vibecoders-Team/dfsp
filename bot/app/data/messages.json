@@ -1,0 +1,1192 @@
+[
+  {
+    "key": "start.linked",
+    "language": "ru",
+    "content": "👋 <b>Добро пожаловать в DFSP бот!</b>\n\nТвой аккаунт привязан. Используй кнопки ниже для быстрого доступа к функциям.\n\n🔐 <b>Приватность</b>\n• Файлы шифруются на клиенте\n• Бот видит только метаданные"
+  },
+  {
+    "key": "start.linked",
+    "language": "en",
+    "content": "👋 <b>Welcome to the DFSP bot!</b>\n\nYour account is linked. Use the buttons below for quick access.\n\n🔐 <b>Privacy</b>\n• Files are encrypted on the client\n• The bot only sees metadata"
+  },
+  {
+    "key": "start.unlinked",
+    "language": "ru",
+    "content": "👋 <b>Добро пожаловать в DFSP бот!</b>\n\nЯ помогу привязать твой Telegram к аккаунту DFSP, а потом — смотреть файлы и права доступа (grants), не заходя в веб.\n\n🔐 <b>Приватность</b>\n• Файлы шифруются на клиенте, бот и сервер видят только метаданные.\n• Мы храним твой Telegram chat_id и события только для безопасности и аудита.\n\nЧтобы начать, нажми кнопку ниже и привяжи аккаунт."
+  },
+  {
+    "key": "start.unlinked",
+    "language": "en",
+    "content": "👋 <b>Welcome to the DFSP bot!</b>\n\nI’ll help link your Telegram to DFSP so you can view files and grants without the web.\n\n🔐 <b>Privacy</b>\n• Files are encrypted on the client, bot/backend see only metadata.\n• We store your Telegram chat_id and events only for security/audit.\n\nTo start, press the button below and link your account."
+  },
+  {
+    "key": "start.help",
+    "language": "ru",
+    "content": "📖 <b>Справка по командам DFSP бота</b>\n\n🔹 <b>Основные команды:</b>\n• /start — главное меню\n• /me — мой профиль\n• /files — список моих файлов\n• /verify <fileId> — проверить файл\n• /link — привязать аккаунт\n• /unlink — отвязать аккаунт\n• /notify — уведомления и тихие часы\n\n💡 <b>Совет:</b> Используй кнопки меню для быстрого доступа к функциям!"
+  },
+  {
+    "key": "start.help",
+    "language": "en",
+    "content": "📖 <b>DFSP bot commands</b>\n\n🔹 <b>Main commands:</b>\n• /start — main menu\n• /me — my profile\n• /files — my files\n• /verify <fileId> — verify file\n• /link — link account\n• /unlink — unlink account\n• /notify — notifications & quiet hours\n\n💡 <b>Tip:</b> Use menu buttons for quick access!"
+  },
+  {
+    "key": "common.missing_message",
+    "language": "ru",
+    "content": "Ошибка: не удалось определить сообщение."
+  },
+  {
+    "key": "common.missing_message",
+    "language": "en",
+    "content": "Error: could not resolve message."
+  },
+  {
+    "key": "common.no_chat",
+    "language": "ru",
+    "content": "Ошибка: не удалось определить чат."
+  },
+  {
+    "key": "common.no_chat",
+    "language": "en",
+    "content": "Error: chat is missing."
+  },
+  {
+    "key": "common.retry_later",
+    "language": "ru",
+    "content": "Что-то пошло не так, попробуй ещё раз."
+  },
+  {
+    "key": "common.retry_later",
+    "language": "en",
+    "content": "Something went wrong, try again."
+  },
+  {
+    "key": "menu.profile_loaded",
+    "language": "ru",
+    "content": "✅ Профиль загружен"
+  },
+  {
+    "key": "menu.profile_loaded",
+    "language": "en",
+    "content": "✅ Profile loaded"
+  },
+  {
+    "key": "menu.files_loaded",
+    "language": "ru",
+    "content": "✅ Список файлов загружен"
+  },
+  {
+    "key": "menu.files_loaded",
+    "language": "en",
+    "content": "✅ Files loaded"
+  },
+  {
+    "key": "menu.verify_instructions",
+    "language": "ru",
+    "content": "🔍 <b>Проверка файла</b>\n\nЧтобы проверить файл, отправь команду:\n<code>/verify &lt;fileId&gt;</code>\n\nПример:\n<code>/verify 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef</code>\n\n💡 <b>Совет:</b> Нажми кнопку ниже, чтобы получить fileId из списка файлов"
+  },
+  {
+    "key": "menu.verify_instructions",
+    "language": "en",
+    "content": "🔍 <b>File verification</b>\n\nTo verify a file, send:\n<code>/verify &lt;fileId&gt;</code>\n\nExample:\n<code>/verify 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef</code>\n\n💡 <b>Tip:</b> Tap the button below to get fileId from the list"
+  },
+  {
+    "key": "menu.home_ack",
+    "language": "ru",
+    "content": "🏠 Главное меню"
+  },
+  {
+    "key": "menu.home_ack",
+    "language": "en",
+    "content": "🏠 Main menu"
+  },
+  {
+    "key": "link.rate_limit_seconds",
+    "language": "ru",
+    "content": "⚠️ Слишком часто запрашиваешь ссылку.\nПопробуй снова примерно через {seconds} секунд."
+  },
+  {
+    "key": "link.rate_limit_seconds",
+    "language": "en",
+    "content": "⚠️ You request links too often.\nTry again in ~{seconds} seconds."
+  },
+  {
+    "key": "link.rate_limit_generic",
+    "language": "ru",
+    "content": "⚠️ Слишком часто запрашиваешь ссылку.\nПопробуй ещё раз чуть позже."
+  },
+  {
+    "key": "link.rate_limit_generic",
+    "language": "en",
+    "content": "⚠️ You request links too often.\nTry again a bit later."
+  },
+  {
+    "key": "link.backend_error",
+    "language": "ru",
+    "content": "😔 Сейчас не получается сгенерировать ссылку на привязку.\nПопробуй ещё раз чуть позже."
+  },
+  {
+    "key": "link.backend_error",
+    "language": "en",
+    "content": "😔 Can’t generate a link right now.\nPlease try again later."
+  },
+  {
+    "key": "link.deep_link",
+    "language": "ru",
+    "content": "Вот ссылка для привязки аккаунта DFSP к этому Telegram.\n\n🔗 {link_url}\n\nСсылка одноразовая и действует ограниченное время. Если она истечёт, просто вызови /link ещё раз.{diagnostic}"
+  },
+  {
+    "key": "link.deep_link",
+    "language": "en",
+    "content": "Here’s your link to connect DFSP to this Telegram.\n\n🔗 {link_url}\n\nThe link is one-time and expires. If it does, just run /link again.{diagnostic}"
+  },
+  {
+    "key": "link.private_chat_required",
+    "language": "ru",
+    "content": "Напиши мне в личку, чтобы привязать аккаунт."
+  },
+  {
+    "key": "link.private_chat_required",
+    "language": "en",
+    "content": "Write to me in a private chat to link your account."
+  },
+  {
+    "key": "link.instructions",
+    "language": "ru",
+    "content": "📋 <b>Инструкция по привязке:</b>\n\n1. Нажми на ссылку выше или скопируй её\n2. Открой ссылку в браузере\n3. Войди в свой кошелёк\n4. Подпиши сообщение для подтверждения\n\nПосле успешной привязки ты получишь уведомление, и сможешь использовать все функции бота!"
+  },
+  {
+    "key": "link.instructions",
+    "language": "en",
+    "content": "📋 <b>How to link:</b>\n\n1. Tap the link above or copy it\n2. Open it in the browser\n3. Sign in to your wallet\n4. Sign the message to confirm\n\nAfter a successful link you’ll get a notification and can use all bot features!"
+  },
+  {
+    "key": "link.main_menu_hint",
+    "language": "ru",
+    "content": "💡 <b>Главное меню</b>\n\nИспользуй кнопки ниже для навигации:"
+  },
+  {
+    "key": "link.main_menu_hint",
+    "language": "en",
+    "content": "💡 <b>Main menu</b>\n\nUse the buttons below to navigate:"
+  },
+  {
+    "key": "link.success_alert",
+    "language": "ru",
+    "content": "✅ Аккаунт успешно привязан!"
+  },
+  {
+    "key": "link.success_alert",
+    "language": "en",
+    "content": "✅ Account linked!"
+  },
+  {
+    "key": "link.success_menu_prompt",
+    "language": "ru",
+    "content": "✅ <b>Отлично! Теперь ты можешь использовать все функции бота!</b>\n\nВыбери действие из меню ниже:"
+  },
+  {
+    "key": "link.success_menu_prompt",
+    "language": "en",
+    "content": "✅ <b>Great! You can use all bot features now.</b>\n\nChoose an action below:"
+  },
+  {
+    "key": "unlink.backend_error",
+    "language": "ru",
+    "content": "😔 Сейчас не получается отвязать этот Telegram от аккаунта DFSP.\nПопробуй ещё раз чуть позже."
+  },
+  {
+    "key": "unlink.backend_error",
+    "language": "en",
+    "content": "😔 Can’t unlink this Telegram from DFSP now.\nPlease try again later."
+  },
+  {
+    "key": "unlink.success",
+    "language": "ru",
+    "content": "🔓 Привязка этого Telegram к аккаунту DFSP отключена.\n\nЕсли захочешь вернуться, используй /link, чтобы привязать аккаунт снова."
+  },
+  {
+    "key": "unlink.success",
+    "language": "en",
+    "content": "🔓 This Telegram is now unlinked from DFSP.\n\nIf you want to come back, run /link to connect again."
+  },
+  {
+    "key": "unlink.confirm",
+    "language": "ru",
+    "content": "Ты точно хочешь отвязать этот Telegram от своего DFSP аккаунта?\n\nЭто действие можно будет отменить только новой привязкой через /link."
+  },
+  {
+    "key": "unlink.confirm",
+    "language": "en",
+    "content": "Are you sure you want to unlink this Telegram from your DFSP account?\n\nYou can only revert it by linking again via /link."
+  },
+  {
+    "key": "unlink.cancelled",
+    "language": "ru",
+    "content": "Отмена"
+  },
+  {
+    "key": "unlink.cancelled",
+    "language": "en",
+    "content": "Cancelled"
+  },
+  {
+    "key": "unlink.confirmed",
+    "language": "ru",
+    "content": "✅ Аккаунт отвязан"
+  },
+  {
+    "key": "unlink.confirmed",
+    "language": "en",
+    "content": "✅ Account unlinked"
+  },
+  {
+    "key": "profile.fetch_error",
+    "language": "ru",
+    "content": "😔 Не удалось получить профиль.\nПопробуй ещё раз чуть позже."
+  },
+  {
+    "key": "profile.fetch_error",
+    "language": "en",
+    "content": "😔 Failed to fetch profile.\nPlease try again later."
+  },
+  {
+    "key": "profile.not_linked",
+    "language": "ru",
+    "content": "❌ К этому чату ещё не привязан кошелёк.\n\nЧтобы привязать кошелёк:\n1. Нажми кнопку «🔗 Привязать аккаунт» ниже\n2. Открой ссылку в браузере\n3. Войди и подпиши сообщение своим кошельком."
+  },
+  {
+    "key": "profile.not_linked",
+    "language": "en",
+    "content": "❌ No wallet is linked to this chat yet.\n\nTo link a wallet:\n1. Tap “🔗 Link account” below\n2. Open the link in a browser\n3. Sign in and sign the message with your wallet."
+  },
+  {
+    "key": "profile.details",
+    "language": "ru",
+    "content": "👤 <b>Твой профиль</b>\n\nИмя: <b>{display_name}</b>\nАдрес: <code>{address}</code>\n\nЕсли хочешь отвязать текущий кошелёк — используй команду /unlink.\nЧтобы привязать другой кошелёк:\n1. Сначала /unlink\n2. Затем снова /link и пройди привязку с новым адресом."
+  },
+  {
+    "key": "profile.details",
+    "language": "en",
+    "content": "👤 <b>Your profile</b>\n\nName: <b>{display_name}</b>\nAddress: <code>{address}</code>\n\nTo unlink this wallet, use /unlink.\nTo link another wallet:\n1. First /unlink\n2. Then /link again and complete linking with the new address."
+  },
+  {
+    "key": "files.fetch_error",
+    "language": "ru",
+    "content": "😔 Не удалось получить список файлов.\nПопробуй ещё раз чуть позже."
+  },
+  {
+    "key": "files.fetch_error",
+    "language": "en",
+    "content": "😔 Failed to fetch files.\nPlease try again later."
+  },
+  {
+    "key": "files.empty_with_menu",
+    "language": "ru",
+    "content": "📁 У тебя пока нет файлов.\n\nИспользуй кнопки ниже для навигации:"
+  },
+  {
+    "key": "files.empty_with_menu",
+    "language": "en",
+    "content": "📁 You don’t have files yet.\n\nUse the buttons below to navigate:"
+  },
+  {
+    "key": "files.list_header",
+    "language": "ru",
+    "content": "📁 *Твои файлы:*\n"
+  },
+  {
+    "key": "files.list_header",
+    "language": "en",
+    "content": "📁 *Your files:*\n"
+  },
+  {
+    "key": "files.list_item",
+    "language": "ru",
+    "content": "{index}. *{name}*\n   Размер: {size}\n   Обновлён: {updated}"
+  },
+  {
+    "key": "files.list_item",
+    "language": "en",
+    "content": "{index}. *{name}*\n   Size: {size}\n   Updated: {updated}"
+  },
+  {
+    "key": "files.list_empty",
+    "language": "ru",
+    "content": "📁 У тебя пока нет файлов."
+  },
+  {
+    "key": "files.list_empty",
+    "language": "en",
+    "content": "📁 You don’t have files yet."
+  },
+  {
+    "key": "files.link_expired",
+    "language": "ru",
+    "content": "Ссылка устарела, попробуй ещё раз."
+  },
+  {
+    "key": "files.link_expired",
+    "language": "en",
+    "content": "The link expired, please try again."
+  },
+  {
+    "key": "files.missing_cursor",
+    "language": "ru",
+    "content": "Ошибка: не указан cursor."
+  },
+  {
+    "key": "files.missing_cursor",
+    "language": "en",
+    "content": "Error: cursor is missing."
+  },
+  {
+    "key": "files.pagination_error",
+    "language": "ru",
+    "content": "Не удалось загрузить страницу."
+  },
+  {
+    "key": "files.pagination_error",
+    "language": "en",
+    "content": "Failed to load the page."
+  },
+  {
+    "key": "files.not_found",
+    "language": "ru",
+    "content": "Файлы не найдены."
+  },
+  {
+    "key": "files.not_found",
+    "language": "en",
+    "content": "Files not found."
+  },
+  {
+    "key": "files.missing_file_id",
+    "language": "ru",
+    "content": "Ошибка: не указан ID файла."
+  },
+  {
+    "key": "files.missing_file_id",
+    "language": "en",
+    "content": "Error: file ID is missing."
+  },
+  {
+    "key": "files.opening",
+    "language": "ru",
+    "content": "Открываю файл: {file_prefix}..."
+  },
+  {
+    "key": "files.opening",
+    "language": "en",
+    "content": "Opening file: {file_prefix}..."
+  },
+  {
+    "key": "files.open_link",
+    "language": "ru",
+    "content": "📂 Открыть файл:\n{file_url}"
+  },
+  {
+    "key": "files.open_link",
+    "language": "en",
+    "content": "📂 Open file:\n{file_url}"
+  },
+  {
+    "key": "files.verify_not_found",
+    "language": "ru",
+    "content": "Файл не найден."
+  },
+  {
+    "key": "files.verify_not_found",
+    "language": "en",
+    "content": "File not found."
+  },
+  {
+    "key": "files.verify_failed",
+    "language": "ru",
+    "content": "Не удалось проверить файл."
+  },
+  {
+    "key": "files.verify_failed",
+    "language": "en",
+    "content": "Failed to verify file."
+  },
+  {
+    "key": "files.unknown_command",
+    "language": "ru",
+    "content": "Неизвестная команда."
+  },
+  {
+    "key": "files.unknown_command",
+    "language": "en",
+    "content": "Unknown command."
+  },
+  {
+    "key": "verify.missing_id",
+    "language": "ru",
+    "content": "❌ Не указан ID файла.\n\nИспользование: `/verify <fileId>`\n\nПример:\n`/verify 0x1234567890abcdef...`\nили\n`/verify 1234567890abcdef...`"
+  },
+  {
+    "key": "verify.missing_id",
+    "language": "en",
+    "content": "❌ File ID is missing.\n\nUsage: `/verify <fileId>`\n\nExample:\n`/verify 0x1234567890abcdef...`\nor\n`/verify 1234567890abcdef...`"
+  },
+  {
+    "key": "verify.invalid_format",
+    "language": "ru",
+    "content": "❌ Неверный формат ID файла.\n\nID должен быть:\n• 64 hex символа с префиксом `0x` (66 символов всего)\n• или 64 hex символа без префикса\n\nПример: `0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef`"
+  },
+  {
+    "key": "verify.invalid_format",
+    "language": "en",
+    "content": "❌ Invalid file ID format.\n\nThe ID must be:\n• 64 hex chars with `0x` prefix (66 total)\n• or 64 hex chars without prefix\n\nExample: `0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef`"
+  },
+  {
+    "key": "verify.not_found",
+    "language": "ru",
+    "content": "❌ Файл с ID `{file_id}...` не найден."
+  },
+  {
+    "key": "verify.not_found",
+    "language": "en",
+    "content": "❌ File with ID `{file_id}...` not found."
+  },
+  {
+    "key": "verify.invalid_format_response",
+    "language": "ru",
+    "content": "❌ Неверный формат ID файла."
+  },
+  {
+    "key": "verify.invalid_format_response",
+    "language": "en",
+    "content": "❌ Invalid file ID format."
+  },
+  {
+    "key": "verify.status_match",
+    "language": "ru",
+    "content": "совпадает"
+  },
+  {
+    "key": "verify.status_match",
+    "language": "en",
+    "content": "matches"
+  },
+  {
+    "key": "verify.status_mismatch",
+    "language": "ru",
+    "content": "не совпадает"
+  },
+  {
+    "key": "verify.status_mismatch",
+    "language": "en",
+    "content": "does not match"
+  },
+  {
+    "key": "verify.summary",
+    "language": "ru",
+    "content": "{status_icon} *Результат верификации файла*\n\nOn-chain: {onchain_icon}\nOff-chain: {offchain_icon}\nСовпадение: {status_text}"
+  },
+  {
+    "key": "verify.summary",
+    "language": "en",
+    "content": "{status_icon} *File verification result*\n\nOn-chain: {onchain_icon}\nOff-chain: {offchain_icon}\nMatch: {status_text}"
+  },
+  {
+    "key": "verify.summary_last_anchor",
+    "language": "ru",
+    "content": "\n\nПоследняя транзакция: `{tx}...`"
+  },
+  {
+    "key": "verify.summary_last_anchor",
+    "language": "en",
+    "content": "\n\nLast transaction: `{tx}...`"
+  },
+  {
+    "key": "verify.http_error",
+    "language": "ru",
+    "content": "❌ Ошибка при проверке файла: {status_code}"
+  },
+  {
+    "key": "verify.http_error",
+    "language": "en",
+    "content": "❌ Verification error: {status_code}"
+  },
+  {
+    "key": "verify.generic_error",
+    "language": "ru",
+    "content": "❌ Не удалось проверить файл.\nПопробуй ещё раз чуть позже."
+  },
+  {
+    "key": "verify.generic_error",
+    "language": "en",
+    "content": "❌ Failed to verify file.\nPlease try again later."
+  },
+  {
+    "key": "rate_limit.hit",
+    "language": "ru",
+    "content": "Слишком часто 😅 Попробуйте ещё раз через {retry_seconds} секунд."
+  },
+  {
+    "key": "rate_limit.hit",
+    "language": "en",
+    "content": "Too many requests 😅 Try again in {retry_seconds} seconds."
+  },
+  {
+    "key": "errors.fallback",
+    "language": "ru",
+    "content": "Ой, что-то пошло не так 🤕\nМы уже смотрим, попробуйте ещё раз чуть позже."
+  },
+  {
+    "key": "errors.fallback",
+    "language": "en",
+    "content": "Oops, something went wrong 🤕\nWe’re on it, please try again later."
+  },
+  {
+    "key": "notifications.grant_created",
+    "language": "ru",
+    "content": "✅ <b>Grant создан</b>\n\n📁 Файл: <code>{file_id}</code>\n👤 Получатель: <code>{grantee}</code>\n⏰ Срок: {ttl_days} дн.\n📥 Лимит скачиваний: {max_downloads}"
+  },
+  {
+    "key": "notifications.grant_created",
+    "language": "en",
+    "content": "✅ <b>Grant created</b>\n\n📁 File: <code>{file_id}</code>\n👤 Recipient: <code>{grantee}</code>\n⏰ TTL: {ttl_days} days\n📥 Download limit: {max_downloads}"
+  },
+  {
+    "key": "notifications.grant_received",
+    "language": "ru",
+    "content": "🎁 <b>Вы получили доступ</b>\n\n📁 Файл: <code>{file_id}</code>\n👤 От: <code>{grantor}</code>\n⏰ Срок: {ttl_days} дн.\n📥 Лимит скачиваний: {max_downloads}"
+  },
+  {
+    "key": "notifications.grant_received",
+    "language": "en",
+    "content": "🎁 <b>You received access</b>\n\n📁 File: <code>{file_id}</code>\n👤 From: <code>{grantor}</code>\n⏰ TTL: {ttl_days} days\n📥 Download limit: {max_downloads}"
+  },
+  {
+    "key": "notifications.grant_revoked",
+    "language": "ru",
+    "content": "🚫 <b>Доступ отозван</b>\n\n📁 Файл: <code>{file_id}</code>\nДоступ к файлу был отозван."
+  },
+  {
+    "key": "notifications.grant_revoked",
+    "language": "en",
+    "content": "🚫 <b>Access revoked</b>\n\n📁 File: <code>{file_id}</code>\nAccess to the file was revoked."
+  },
+  {
+    "key": "notifications.download_allowed",
+    "language": "ru",
+    "content": "✅ <b>Скачивание разрешено</b>\n\n📁 Файл: <code>{file_id}</code>\nВы можете скачать файл."
+  },
+  {
+    "key": "notifications.download_allowed",
+    "language": "en",
+    "content": "✅ <b>Download allowed</b>\n\n📁 File: <code>{file_id}</code>\nYou can download the file."
+  },
+  {
+    "key": "notifications.download_denied",
+    "language": "ru",
+    "content": "❌ <b>Скачивание отклонено</b>\n\n📁 Файл: <code>{file_id}</code>\nПричина: {reason}"
+  },
+  {
+    "key": "notifications.download_denied",
+    "language": "en",
+    "content": "❌ <b>Download denied</b>\n\n📁 File: <code>{file_id}</code>\nReason: {reason}"
+  },
+  {
+    "key": "notifications.download_denied.reason.not_grantee",
+    "language": "ru",
+    "content": "Вы не являетесь получателем доступа"
+  },
+  {
+    "key": "notifications.download_denied.reason.not_grantee",
+    "language": "en",
+    "content": "You are not the grantee"
+  },
+  {
+    "key": "notifications.download_denied.reason.not_grantee_onchain",
+    "language": "ru",
+    "content": "Доступ не подтверждён в блокчейне"
+  },
+  {
+    "key": "notifications.download_denied.reason.not_grantee_onchain",
+    "language": "en",
+    "content": "Access is not confirmed on-chain"
+  },
+  {
+    "key": "notifications.download_denied.reason.revoked",
+    "language": "ru",
+    "content": "Доступ отозван"
+  },
+  {
+    "key": "notifications.download_denied.reason.revoked",
+    "language": "en",
+    "content": "Access revoked"
+  },
+  {
+    "key": "notifications.download_denied.reason.expired",
+    "language": "ru",
+    "content": "Срок действия истёк"
+  },
+  {
+    "key": "notifications.download_denied.reason.expired",
+    "language": "en",
+    "content": "Access expired"
+  },
+  {
+    "key": "notifications.download_denied.reason.exhausted",
+    "language": "ru",
+    "content": "Лимит скачиваний исчерпан"
+  },
+  {
+    "key": "notifications.download_denied.reason.exhausted",
+    "language": "en",
+    "content": "Download limit exceeded"
+  },
+  {
+    "key": "notifications.download_denied.reason.quota_exceeded",
+    "language": "ru",
+    "content": "Превышен дневной лимит"
+  },
+  {
+    "key": "notifications.download_denied.reason.quota_exceeded",
+    "language": "en",
+    "content": "Daily quota exceeded"
+  },
+  {
+    "key": "notifications.download_denied.reason.pow_required",
+    "language": "ru",
+    "content": "Требуется подтверждение PoW"
+  },
+  {
+    "key": "notifications.download_denied.reason.pow_required",
+    "language": "en",
+    "content": "Proof of Work required"
+  },
+  {
+    "key": "notifications.anchor_ok",
+    "language": "ru",
+    "content": "🔗 <b>Анкер зафиксирован</b>\n\nПериод: {period_id}\nТранзакция: <code>{tx_display}</code>"
+  },
+  {
+    "key": "notifications.anchor_ok",
+    "language": "en",
+    "content": "🔗 <b>Anchor recorded</b>\n\nPeriod: {period_id}\nTx: <code>{tx_display}</code>"
+  },
+  {
+    "key": "notifications.relayer_warn",
+    "language": "ru",
+    "content": "⚠️ <b>Предупреждение релейера</b>\n\nЗапрос: <code>{request_id}</code>\nПричина: {reason}\nОшибка: {error}"
+  },
+  {
+    "key": "notifications.relayer_warn",
+    "language": "en",
+    "content": "⚠️ <b>Relayer warning</b>\n\nRequest: <code>{request_id}</code>\nReason: {reason}\nError: {error}"
+  },
+  {
+    "key": "notifications.unknown",
+    "language": "ru",
+    "content": "📢 <b>{event_type}</b>\n\n{data}"
+  },
+  {
+    "key": "notifications.unknown",
+    "language": "en",
+    "content": "📢 <b>{event_type}</b>\n\n{data}"
+  },
+  {
+    "key": "notifications.type_name.grant_created",
+    "language": "ru",
+    "content": "созданий доступа"
+  },
+  {
+    "key": "notifications.type_name.grant_created",
+    "language": "en",
+    "content": "grant creations"
+  },
+  {
+    "key": "notifications.type_name.grant_received",
+    "language": "ru",
+    "content": "получений доступа"
+  },
+  {
+    "key": "notifications.type_name.grant_received",
+    "language": "en",
+    "content": "grant receipts"
+  },
+  {
+    "key": "notifications.type_name.grant_revoked",
+    "language": "ru",
+    "content": "отзывов доступа"
+  },
+  {
+    "key": "notifications.type_name.grant_revoked",
+    "language": "en",
+    "content": "grant revocations"
+  },
+  {
+    "key": "notifications.type_name.download_allowed",
+    "language": "ru",
+    "content": "разрешённых скачиваний"
+  },
+  {
+    "key": "notifications.type_name.download_allowed",
+    "language": "en",
+    "content": "allowed downloads"
+  },
+  {
+    "key": "notifications.type_name.download_denied",
+    "language": "ru",
+    "content": "отклонённых скачиваний"
+  },
+  {
+    "key": "notifications.type_name.download_denied",
+    "language": "en",
+    "content": "denied downloads"
+  },
+  {
+    "key": "notifications.type_name.anchor_ok",
+    "language": "ru",
+    "content": "анкеров"
+  },
+  {
+    "key": "notifications.type_name.anchor_ok",
+    "language": "en",
+    "content": "anchors"
+  },
+  {
+    "key": "notifications.type_name.relayer_warn",
+    "language": "ru",
+    "content": "предупреждений релейера"
+  },
+  {
+    "key": "notifications.type_name.relayer_warn",
+    "language": "en",
+    "content": "relayer warnings"
+  },
+  {
+    "key": "notifications.type_name.default",
+    "language": "ru",
+    "content": "событий {event_type}"
+  },
+  {
+    "key": "notifications.type_name.default",
+    "language": "en",
+    "content": "{event_type} events"
+  },
+  {
+    "key": "notifications.coalesced_summary",
+    "language": "ru",
+    "content": "📊 <b>Сводка ({count} {type_name})</b>\n\nЗа последние {seconds} сек."
+  },
+  {
+    "key": "notifications.coalesced_summary",
+    "language": "en",
+    "content": "📊 <b>Summary ({count} {type_name})</b>\n\nFor the last {seconds} sec."
+  },
+  {
+    "key": "lang.prompt",
+    "language": "ru",
+    "content": "🌐 Выбери язык / Choose language\n\nТекущий: {current}\nНажми кнопку, чтобы переключить."
+  },
+  {
+    "key": "lang.prompt",
+    "language": "en",
+    "content": "🌐 Choose language / Выбери язык\n\nCurrent: {current}\nTap a button to switch."
+  },
+  {
+    "key": "lang.changed",
+    "language": "ru",
+    "content": "Язык переключен на {lang}"
+  },
+  {
+    "key": "lang.changed",
+    "language": "en",
+    "content": "Language switched to {lang}"
+  },
+  {
+    "key": "lang.invalid_callback",
+    "language": "ru",
+    "content": "Ссылка устарела или неверна. Запусти /lang снова."
+  },
+  {
+    "key": "lang.invalid_callback",
+    "language": "en",
+    "content": "Link is invalid or expired. Please run /lang again."
+  },
+  {
+    "key": "buttons.profile",
+    "language": "ru",
+    "content": "👤 Мой профиль"
+  },
+  {
+    "key": "buttons.profile",
+    "language": "en",
+    "content": "👤 My profile"
+  },
+  {
+    "key": "buttons.files",
+    "language": "ru",
+    "content": "📁 Мои файлы"
+  },
+  {
+    "key": "buttons.files",
+    "language": "en",
+    "content": "📁 My files"
+  },
+  {
+    "key": "buttons.unlink",
+    "language": "ru",
+    "content": "🔓 Отвязать аккаунт"
+  },
+  {
+    "key": "buttons.unlink",
+    "language": "en",
+    "content": "🔓 Unlink account"
+  },
+  {
+    "key": "buttons.link",
+    "language": "ru",
+    "content": "🔗 Привязать аккаунт"
+  },
+  {
+    "key": "buttons.link",
+    "language": "en",
+    "content": "🔗 Link account"
+  },
+  {
+    "key": "buttons.home",
+    "language": "ru",
+    "content": "🏠 Главное меню"
+  },
+  {
+    "key": "buttons.home",
+    "language": "en",
+    "content": "🏠 Main menu"
+  },
+  {
+    "key": "buttons.get_file_id",
+    "language": "ru",
+    "content": "📁 Получить fileId из списка"
+  },
+  {
+    "key": "buttons.get_file_id",
+    "language": "en",
+    "content": "📁 Get fileId from list"
+  },
+  {
+    "key": "buttons.back",
+    "language": "ru",
+    "content": "◀️ Назад"
+  },
+  {
+    "key": "buttons.back",
+    "language": "en",
+    "content": "◀️ Back"
+  },
+  {
+    "key": "buttons.next",
+    "language": "ru",
+    "content": "Вперёд ▶️"
+  },
+  {
+    "key": "buttons.next",
+    "language": "en",
+    "content": "Next ▶️"
+  },
+  {
+    "key": "buttons.open",
+    "language": "ru",
+    "content": "📂 Открыть"
+  },
+  {
+    "key": "buttons.open",
+    "language": "en",
+    "content": "📂 Open"
+  },
+  {
+    "key": "buttons.verify",
+    "language": "ru",
+    "content": "✓ Проверить"
+  },
+  {
+    "key": "buttons.verify",
+    "language": "en",
+    "content": "✓ Verify"
+  },
+  {
+    "key": "buttons.open_in_browser",
+    "language": "ru",
+    "content": "🌐 Открыть в браузере"
+  },
+  {
+    "key": "buttons.open_in_browser",
+    "language": "en",
+    "content": "🌐 Open in browser"
+  },
+  {
+    "key": "buttons.verify_full",
+    "language": "ru",
+    "content": "🔍 Открыть полную проверку"
+  },
+  {
+    "key": "buttons.verify_full",
+    "language": "en",
+    "content": "🔍 Open full verification"
+  },
+  {
+    "key": "buttons.open_dfsp",
+    "language": "ru",
+    "content": "🌐 Открыть DFSP"
+  },
+  {
+    "key": "buttons.open_dfsp",
+    "language": "en",
+    "content": "🌐 Open DFSP"
+  },
+  {
+    "key": "buttons.unlink_confirm_yes",
+    "language": "ru",
+    "content": "✅ Да, отвязать"
+  },
+  {
+    "key": "buttons.unlink_confirm_yes",
+    "language": "en",
+    "content": "✅ Yes, unlink"
+  },
+  {
+    "key": "buttons.cancel",
+    "language": "ru",
+    "content": "↩️ Отмена"
+  },
+  {
+    "key": "buttons.cancel",
+    "language": "en",
+    "content": "↩️ Cancel"
+  },
+  {
+    "key": "profile.no_name",
+    "language": "ru",
+    "content": "без имени"
+  },
+  {
+    "key": "profile.no_name",
+    "language": "en",
+    "content": "no name"
+  },
+  {
+    "key": "commands.start",
+    "language": "ru",
+    "content": "Главное меню"
+  },
+  {
+    "key": "commands.start",
+    "language": "en",
+    "content": "Main menu"
+  },
+  {
+    "key": "commands.me",
+    "language": "ru",
+    "content": "Мой профиль"
+  },
+  {
+    "key": "commands.me",
+    "language": "en",
+    "content": "My profile"
+  },
+  {
+    "key": "commands.files",
+    "language": "ru",
+    "content": "Мои файлы"
+  },
+  {
+    "key": "commands.files",
+    "language": "en",
+    "content": "My files"
+  },
+  {
+    "key": "commands.link",
+    "language": "ru",
+    "content": "Привязать аккаунт"
+  },
+  {
+    "key": "commands.link",
+    "language": "en",
+    "content": "Link account"
+  },
+  {
+    "key": "commands.unlink",
+    "language": "ru",
+    "content": "Отвязать аккаунт"
+  },
+  {
+    "key": "commands.unlink",
+    "language": "en",
+    "content": "Unlink account"
+  },
+  {
+    "key": "commands.help",
+    "language": "ru",
+    "content": "Справка"
+  },
+  {
+    "key": "commands.help",
+    "language": "en",
+    "content": "Help"
+  },
+  {
+    "key": "commands.verify",
+    "language": "ru",
+    "content": "Проверить файл"
+  },
+  {
+    "key": "commands.verify",
+    "language": "en",
+    "content": "Verify file"
+  },
+  {
+    "key": "commands.lang",
+    "language": "ru",
+    "content": "Переключить язык"
+  },
+  {
+    "key": "commands.lang",
+    "language": "en",
+    "content": "Switch language"
+  },
+  {
+    "key": "commands.notify",
+    "language": "ru",
+    "content": "Уведомления"
+  },
+  {
+    "key": "commands.notify",
+    "language": "en",
+    "content": "Notifications"
+  },
+  {
+    "key": "buttons.notify_on",
+    "language": "ru",
+    "content": "🔔 Включить"
+  },
+  {
+    "key": "buttons.notify_on",
+    "language": "en",
+    "content": "🔔 Enable"
+  },
+  {
+    "key": "buttons.notify_off",
+    "language": "ru",
+    "content": "🔕 Выключить"
+  },
+  {
+    "key": "buttons.notify_off",
+    "language": "en",
+    "content": "🔕 Disable"
+  },
+  {
+    "key": "buttons.quiet_default",
+    "language": "ru",
+    "content": "🌙 23:00–07:00"
+  },
+  {
+    "key": "buttons.quiet_default",
+    "language": "en",
+    "content": "🌙 23:00–07:00"
+  },
+  {
+    "key": "buttons.quiet_off",
+    "language": "ru",
+    "content": "🚫 Без тихих часов"
+  },
+  {
+    "key": "buttons.quiet_off",
+    "language": "en",
+    "content": "🚫 Disable quiet hours"
+  },
+  {
+    "key": "notify.title",
+    "language": "ru",
+    "content": "⚙️ <b>Настройки уведомлений</b>"
+  },
+  {
+    "key": "notify.title",
+    "language": "en",
+    "content": "⚙️ <b>Notification settings</b>"
+  },
+  {
+    "key": "notify.status.enabled",
+    "language": "ru",
+    "content": "🔔 Уведомления включены"
+  },
+  {
+    "key": "notify.status.enabled",
+    "language": "en",
+    "content": "🔔 Notifications are enabled"
+  },
+  {
+    "key": "notify.status.disabled",
+    "language": "ru",
+    "content": "🔕 Уведомления выключены"
+  },
+  {
+    "key": "notify.status.disabled",
+    "language": "en",
+    "content": "🔕 Notifications are disabled"
+  },
+  {
+    "key": "notify.status.quiet_on",
+    "language": "ru",
+    "content": "🌙 Тихие часы: {window} (UTC)"
+  },
+  {
+    "key": "notify.status.quiet_on",
+    "language": "en",
+    "content": "🌙 Quiet hours: {window} (UTC)"
+  },
+  {
+    "key": "notify.status.quiet_off",
+    "language": "ru",
+    "content": "🚫 Тихие часы отключены"
+  },
+  {
+    "key": "notify.status.quiet_off",
+    "language": "en",
+    "content": "🚫 Quiet hours are off"
+  },
+  {
+    "key": "notify.changed.on",
+    "language": "ru",
+    "content": "Уведомления включены"
+  },
+  {
+    "key": "notify.changed.on",
+    "language": "en",
+    "content": "Notifications enabled"
+  },
+  {
+    "key": "notify.changed.off",
+    "language": "ru",
+    "content": "Уведомления выключены"
+  },
+  {
+    "key": "notify.changed.off",
+    "language": "en",
+    "content": "Notifications disabled"
+  },
+  {
+    "key": "notify.changed.quiet_on",
+    "language": "ru",
+    "content": "Тихие часы установлены: {window}"
+  },
+  {
+    "key": "notify.changed.quiet_on",
+    "language": "en",
+    "content": "Quiet hours set: {window}"
+  },
+  {
+    "key": "notify.changed.quiet_off",
+    "language": "ru",
+    "content": "Тихие часы выключены"
+  },
+  {
+    "key": "notify.changed.quiet_off",
+    "language": "en",
+    "content": "Quiet hours disabled"
+  }
+]

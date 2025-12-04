@@ -3,6 +3,7 @@
 
 from typing import Any
 
+from ..message_store import get_message
 from .models import CoalescedNotification, NotificationEvent
 
 
@@ -29,115 +30,140 @@ def format_file_id(file_id: str) -> str:
     return f"0x{file_id}"
 
 
-def format_grant_created(event: NotificationEvent) -> str:
+DOWNLOAD_DENIED_REASONS: dict[str, str] = {
+    "not_grantee": "notifications.download_denied.reason.not_grantee",
+    "not_grantee_onchain": "notifications.download_denied.reason.not_grantee_onchain",
+    "revoked": "notifications.download_denied.reason.revoked",
+    "expired": "notifications.download_denied.reason.expired",
+    "exhausted": "notifications.download_denied.reason.exhausted",
+    "quota_exceeded": "notifications.download_denied.reason.quota_exceeded",
+    "pow_required": "notifications.download_denied.reason.pow_required",
+}
+
+EVENT_TYPE_NAME_KEYS: dict[str, str] = {
+    "grant_created": "notifications.type_name.grant_created",
+    "grant_received": "notifications.type_name.grant_received",
+    "grant_revoked": "notifications.type_name.grant_revoked",
+    "download_allowed": "notifications.type_name.download_allowed",
+    "download_denied": "notifications.type_name.download_denied",
+    "anchor_ok": "notifications.type_name.anchor_ok",
+    "relayer_warn": "notifications.type_name.relayer_warn",
+}
+
+
+async def format_grant_created(event: NotificationEvent) -> str:
     """Format grant_created notification."""
-    subject = event.subject or {}
-    data = event.data or {}
+    payload = event.payload or {}
 
-    grantee = format_address(subject.get("grantee", ""))
-    file_id = format_file_id(subject.get("fileId", ""))
+    grantee = format_address(payload.get("grantee", ""))
+    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
 
-    ttl_days = data.get("ttlDays", "?")
-    max_dl = data.get("maxDownloads", "?")
+    ttl_days = payload.get("ttlDays", payload.get("ttl_days", "?"))
+    max_dl = payload.get("maxDownloads", payload.get("max_downloads", "?"))
 
-    return (
-        f"✅ <b>Grant создан</b>\n\n"
-        f"📁 Файл: <code>{file_id}</code>\n"
-        f"👤 Получатель: <code>{grantee}</code>\n"
-        f"⏰ Срок: {ttl_days} дн.\n"
-        f"📥 Лимит скачиваний: {max_dl}"
+    return await get_message(
+        "notifications.grant_created",
+        variables={
+            "file_id": file_id,
+            "grantee": grantee,
+            "ttl_days": ttl_days,
+            "max_downloads": max_dl,
+        },
     )
 
 
-def format_grant_received(event: NotificationEvent) -> str:
+async def format_grant_received(event: NotificationEvent) -> str:
     """Format grant_received notification (same as grant_created for grantee)."""
-    subject = event.subject or {}
-    data = event.data or {}
+    payload = event.payload or {}
 
-    grantor = format_address(subject.get("grantor", ""))
-    file_id = format_file_id(subject.get("fileId", ""))
+    grantor = format_address(payload.get("grantor", ""))
+    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
 
-    ttl_days = data.get("ttlDays", "?")
-    max_dl = data.get("maxDownloads", "?")
+    ttl_days = payload.get("ttlDays", payload.get("ttl_days", "?"))
+    max_dl = payload.get("maxDownloads", payload.get("max_downloads", "?"))
 
-    return (
-        f"🎁 <b>Вы получили доступ</b>\n\n"
-        f"📁 Файл: <code>{file_id}</code>\n"
-        f"👤 От: <code>{grantor}</code>\n"
-        f"⏰ Срок: {ttl_days} дн.\n"
-        f"📥 Лимит скачиваний: {max_dl}"
+    return await get_message(
+        "notifications.grant_received",
+        variables={
+            "file_id": file_id,
+            "grantor": grantor,
+            "ttl_days": ttl_days,
+            "max_downloads": max_dl,
+        },
     )
 
 
-def format_grant_revoked(event: NotificationEvent) -> str:
+async def format_grant_revoked(event: NotificationEvent) -> str:
     """Format grant_revoked notification."""
-    subject = event.subject or {}
-    file_id = format_file_id(subject.get("fileId", ""))
+    payload = event.payload or {}
+    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
 
-    return f"🚫 <b>Доступ отозван</b>\n\n📁 Файл: <code>{file_id}</code>\nДоступ к файлу был отозван."
+    return await get_message("notifications.grant_revoked", variables={"file_id": file_id})
 
 
-def format_download_allowed(event: NotificationEvent) -> str:
+async def format_download_allowed(event: NotificationEvent) -> str:
     """Format download_allowed notification."""
-    subject = event.subject or {}
-    file_id = format_file_id(subject.get("fileId", ""))
+    payload = event.payload or {}
+    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
 
-    return f"✅ <b>Скачивание разрешено</b>\n\n📁 Файл: <code>{file_id}</code>\nВы можете скачать файл."
+    return await get_message("notifications.download_allowed", variables={"file_id": file_id})
 
 
-def format_download_denied(event: NotificationEvent) -> str:
+async def format_download_denied(event: NotificationEvent) -> str:
     """Format download_denied notification."""
-    subject = event.subject or {}
-    data = event.data or {}
-    file_id = format_file_id(subject.get("fileId", ""))
-    reason = data.get("reason", "unknown")
+    payload = event.payload or {}
+    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
+    reason = payload.get("reason", "unknown")
 
-    reason_map: dict[str, str] = {
-        "not_grantee": "Вы не являетесь получателем доступа",
-        "not_grantee_onchain": "Доступ не подтверждён в блокчейне",
-        "revoked": "Доступ отозван",
-        "expired": "Срок действия истёк",
-        "exhausted": "Лимит скачиваний исчерпан",
-        "quota_exceeded": "Превышен дневной лимит",
-        "pow_required": "Требуется подтверждение PoW",
-    }
+    reason_key = DOWNLOAD_DENIED_REASONS.get(reason)
+    reason_text = await get_message(reason_key) if reason_key else reason
 
-    reason_text = reason_map.get(reason, reason)
-
-    return f"❌ <b>Скачивание отклонено</b>\n\n📁 Файл: <code>{file_id}</code>\nПричина: {reason_text}"
+    return await get_message(
+        "notifications.download_denied",
+        variables={
+            "file_id": file_id,
+            "reason": reason_text,
+        },
+    )
 
 
-def format_anchor_ok(event: NotificationEvent) -> str:
+async def format_anchor_ok(event: NotificationEvent) -> str:
     """Format anchor_ok notification."""
-    subject = event.subject or {}
-    data = event.data or {}
+    payload = event.payload or {}
 
-    period_id = subject.get("periodId", "?")
-    tx_hash = subject.get("txHash") or data.get("txHash")
+    period_id = payload.get("periodId", "?")
+    tx_hash = payload.get("txHash")
 
     tx_display = format_address(tx_hash, max_len=8) if tx_hash else "pending"
 
-    return f"🔗 <b>Анкер зафиксирован</b>\n\nПериод: {period_id}\nТранзакция: <code>{tx_display}</code>"
-
-
-def format_relayer_warn(event: NotificationEvent) -> str:
-    """Format relayer_warn notification."""
-    subject = event.subject or {}
-    data = event.data or {}
-
-    request_id = subject.get("requestId", "?")
-    reason = data.get("reason", "unknown")
-    error = data.get("error", "")
-
-    return (
-        f"⚠️ <b>Предупреждение релейера</b>\n\n"
-        f"Запрос: <code>{request_id}</code>\n"
-        f"Причина: {reason}\n"
-        f"Ошибка: {error[:100] if error else 'N/A'}"
+    return await get_message(
+        "notifications.anchor_ok",
+        variables={
+            "period_id": period_id,
+            "tx_display": tx_display,
+        },
     )
 
 
-def format_notification(event: NotificationEvent) -> str:
+async def format_relayer_warn(event: NotificationEvent) -> str:
+    """Format relayer_warn notification."""
+    payload = event.payload or {}
+
+    request_id = payload.get("requestId", "?")
+    reason = payload.get("reason", "unknown")
+    error = payload.get("error", "")
+
+    return await get_message(
+        "notifications.relayer_warn",
+        variables={
+            "request_id": request_id,
+            "reason": reason,
+            "error": error[:100] if error else "N/A",
+        },
+    )
+
+
+async def format_notification(event: NotificationEvent) -> str:
     """Format single notification event."""
     event_type = event.type
 
@@ -153,34 +179,32 @@ def format_notification(event: NotificationEvent) -> str:
 
     formatter = formatters.get(event_type)
     if formatter:
-        return formatter(event)
+        return await formatter(event)
 
     # Fallback for unknown event types
-    return f"📢 <b>{event_type}</b>\n\n{event.data or {}}"
+    return await get_message(
+        "notifications.unknown",
+        variables={"event_type": event_type, "data": event.payload or {}},
+    )
 
 
-def format_coalesced(notification: CoalescedNotification) -> str:
+async def format_coalesced(notification: CoalescedNotification) -> str:
     """Format coalesced notification (multiple events grouped)."""
     event_type = notification.event_type
     count = len(notification.events)
 
     if count == 1:
-        return format_notification(notification.events[0])
+        return await format_notification(notification.events[0])
 
-    # Multiple events - create summary
-    event_type_names: dict[str, str] = {
-        "grant_created": "созданий доступа",
-        "grant_received": "получений доступа",
-        "grant_revoked": "отзывов доступа",
-        "download_allowed": "разрешённых скачиваний",
-        "download_denied": "отклонённых скачиваний",
-        "anchor_ok": "анкеров",
-        "relayer_warn": "предупреждений релейера",
-    }
+    type_name_key = EVENT_TYPE_NAME_KEYS.get(event_type, "notifications.type_name.default")
+    type_name = await get_message(type_name_key, variables={"event_type": event_type})
+    seconds = int((notification.last_ts - notification.first_ts).total_seconds())
 
-    type_name = event_type_names.get(event_type, event_type)
-
-    return (
-        f"📊 <b>Сводка ({count} {type_name})</b>\n\n"
-        f"За последние {int((notification.last_ts - notification.first_ts).total_seconds())} сек."
+    return await get_message(
+        "notifications.coalesced_summary",
+        variables={
+            "count": count,
+            "type_name": type_name,
+            "seconds": seconds,
+        },
     )

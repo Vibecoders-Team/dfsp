@@ -60,6 +60,7 @@ def print_config_diagnostics() -> None:
 
     # Проверка DFSP_API_URL
     logger.info("DFSP_API_URL: %s", settings.DFSP_API_URL)
+    logger.info("BOT_DB_DSN: %s (lang=%s)", settings.BOT_DB_DSN, settings.BOT_DEFAULT_LANGUAGE)
 
     # Пример ссылки для линка
     origin = str(settings.PUBLIC_WEB_ORIGIN).rstrip("/")

@@ -1,22 +1,30 @@
-"""Notification consumer for Redis queue."""
+"""Notification consumer for tg.notifications.* queue."""
+
+from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
+import uuid
+from collections import defaultdict
+from datetime import UTC, datetime
+from typing import Any, Awaitable, Callable, Mapping
 
 from aiogram import Bot
 from redis import asyncio as aioredis
+from redis.exceptions import ResponseError
 
+from ...config import settings
 from ...metrics import tg_notify_dropped_total, tg_notify_sent_total
-from .address_resolver import AddressResolver
 from .antispam import AntiSpam
 from .formatter import format_coalesced, format_notification
 from .models import CoalescedNotification, NotificationEvent
+from .preferences import NotificationPreferences
 from .retry import RetryConfig, send_with_retry
 
 logger = logging.getLogger(__name__)
 
-# Event types we care about
 NOTIFICATION_EVENT_TYPES = {
     "grant_created",
     "grant_received",
@@ -28,202 +36,299 @@ NOTIFICATION_EVENT_TYPES = {
 }
 
 
+class QueueMessage:
+    """Wrapper for queue message with ack callback."""
+
+    def __init__(self, raw_id: str, fields: Mapping[str, Any], ack: Callable[[], Awaitable[None]]) -> None:
+        self.raw_id = raw_id
+        self.fields = fields
+        self.ack = ack
+
+
+class RedisStreamQueue:
+    """Adapter for Redis Streams."""
+
+    def __init__(
+        self,
+        redis_client: aioredis.Redis,
+        stream_key: str,
+        group: str,
+        consumer_name: str,
+    ) -> None:
+        self.redis = redis_client
+        self.stream_key = stream_key
+        self.group = group
+        self.consumer_name = consumer_name
+
+    async def init(self) -> None:
+        try:
+            await self.redis.xgroup_create(self.stream_key, self.group, id="$", mkstream=True)
+            logger.info("Created Redis consumer group %s for %s", self.group, self.stream_key)
+        except ResponseError as exc:
+            # BUSYGROUP means it already exists — fine
+            if "BUSYGROUP" not in str(exc):
+                raise
+
+    async def read_batch(self, count: int = 20, block_ms: int = 1000) -> list[QueueMessage]:
+        try:
+            res = await self.redis.xreadgroup(
+                groupname=self.group,
+                consumername=self.consumer_name,
+                streams={self.stream_key: ">"},
+                count=count,
+                block=block_ms,
+            )
+        except ResponseError as exc:
+            if "NOGROUP" in str(exc):
+                await self.init()
+                res = await self.redis.xreadgroup(
+                    groupname=self.group,
+                    consumername=self.consumer_name,
+                    streams={self.stream_key: ">"},
+                    count=count,
+                    block=block_ms,
+                )
+            else:
+                raise
+        messages: list[QueueMessage] = []
+        for _stream, entries in res:
+            for message_id, fields in entries:
+                ack_fn = functools.partial(self.redis.xack, self.stream_key, self.group, message_id)
+                messages.append(QueueMessage(str(message_id), fields, ack=ack_fn))
+        return messages
+
+    async def close(self) -> None:  # pragma: no cover - nothing to close for aioredis
+        return None
+
+
+class RabbitQueue:
+    """Adapter for RabbitMQ (AMQP). Minimal implementation to satisfy env-driven queue choice."""
+
+    def __init__(self, dsn: str, queue_name: str) -> None:
+        self.dsn = dsn
+        self.queue_name = queue_name
+        self.connection: Any = None
+        self.channel: Any = None
+        self.queue: Any = None
+
+    async def init(self) -> None:
+        import aio_pika  # type: ignore
+
+        self.connection = await aio_pika.connect_robust(self.dsn)
+        self.channel = await self.connection.channel()
+        await self.channel.set_qos(prefetch_count=50)
+        self.queue = await self.channel.declare_queue(self.queue_name, durable=True)
+        logger.info("Connected to RabbitMQ queue %s", self.queue_name)
+
+    async def read_batch(self, count: int = 20, block_ms: int = 1000) -> list[QueueMessage]:
+        import aio_pika  # type: ignore
+
+        messages: list[QueueMessage] = []
+        timeout = block_ms / 1000
+        for _ in range(count):
+            try:
+                try:
+                    msg = await self.queue.get(timeout=timeout, fail=False)  # type: ignore[call-arg]
+                except TypeError:
+                    msg = await self.queue.get(timeout=timeout)
+            except aio_pika.exceptions.QueueEmpty:  # type: ignore[attr-defined]
+                break
+            if msg is None:
+                break
+            try:
+                payload = json.loads(msg.body.decode()) if msg.body else {}
+            except json.JSONDecodeError:
+                payload = {}
+            raw_id = payload.get("id") or msg.message_id or str(uuid.uuid4())
+            messages.append(QueueMessage(raw_id, payload, ack=msg.ack))  # type: ignore[arg-type]
+        return messages
+
+    async def close(self) -> None:
+        try:
+            if self.connection:
+                await self.connection.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("RabbitMQ close failed: %s", exc)
+
+
 class NotificationConsumer:
-    """Consumer for notification events from Redis queue."""
+    """Consumer for notification events."""
 
     def __init__(
         self,
         bot: Bot,
         redis_client: aioredis.Redis,
-        queue_key: str = "events:queue",
+        queue_dsn: str | None = None,
     ) -> None:
         self.bot = bot
         self.redis = redis_client
-        self.queue_key = queue_key
-        self.address_resolver = AddressResolver(redis_client)
-        self.antispam = AntiSpam(redis_client)
+        self.queue_dsn = queue_dsn or settings.QUEUE_DSN or settings.REDIS_DSN
+        self.stream_key = settings.NOTIFY_STREAM_KEY
         self.running = False
-        self.retry_config = RetryConfig(
-            max_retries=3,
-            initial_backoff=1.0,
-            max_backoff=60.0,
-        )
+        self.retry_config = RetryConfig(max_retries=3, initial_backoff=1.0, max_backoff=60.0)
+        self.antispam = AntiSpam(redis_client)
+        self.preferences = NotificationPreferences(redis_client)
+        self.consumer_name = f"bot-{uuid.uuid4().hex[:8]}"
+        self.queue: RedisStreamQueue | RabbitQueue | None = None
+        self.buffers: dict[tuple[int, str], list[NotificationEvent]] = defaultdict(list)
+        self.buffer_tasks: dict[tuple[int, str], asyncio.Task[None]] = {}
+
+    async def _init_queue(self) -> None:
+        if self.queue_dsn and self.queue_dsn.startswith("amqp"):
+            self.queue = RabbitQueue(self.queue_dsn, self.stream_key)
+        else:
+            self.queue = RedisStreamQueue(
+                redis_client=self.redis,
+                stream_key=self.stream_key,
+                group=settings.NOTIFY_CONSUMER_GROUP,
+                consumer_name=self.consumer_name,
+            )
+        await self.queue.init()
 
     async def start(self) -> None:
         """Start consuming notifications."""
         self.running = True
-        logger.info("Starting notification consumer for queue: %s", self.queue_key)
+        await self._init_queue()
+        logger.info("Starting notification consumer (queue=%s)", self.queue_dsn or self.stream_key)
 
         while self.running:
             try:
-                await self._consume_batch()
+                messages = await self.queue.read_batch() if self.queue else []
+                if not messages:
+                    await asyncio.sleep(0.1)
+                    continue
+                for message in messages:
+                    await self._handle_message(message)
             except asyncio.CancelledError:
-                logger.info("Consumer cancelled")
+                logger.info("Notification consumer cancelled")
                 break
-            except Exception as e:
-                logger.error("Error in consumer loop: %s", e, exc_info=True)
-                await asyncio.sleep(5)  # Backoff on error
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Error in consumer loop: %s", exc, exc_info=True)
+                await asyncio.sleep(2)
 
     async def stop(self) -> None:
         """Stop consuming notifications."""
         self.running = False
-        logger.info("Stopping notification consumer")
+        for task in list(self.buffer_tasks.values()):
+            task.cancel()
+        self.buffer_tasks.clear()
+        if self.queue:
+            await self.queue.close()
+        logger.info("Notification consumer stopped")
 
-    async def _consume_batch(self) -> None:
-        """Consume a batch of events from queue."""
+    async def _handle_message(self, message: QueueMessage) -> None:
         try:
-            # Blocking pop with timeout (BLPOP)
-            result = await self.redis.blpop(self.queue_key, timeout=1)
-            if not result:
-                return  # Timeout, no events
+            event = NotificationEvent.from_stream_fields(message.fields, fallback_id=message.raw_id)
+        except Exception as exc:  # noqa: BLE001
+            tg_notify_dropped_total.labels(reason="parse_error").inc()
+            logger.warning("Failed to parse notification message %s: %s", message.raw_id, exc)
+            await message.ack()
+            return
 
-            _, event_json = result
-            event_data = json.loads(event_json.decode())
+        if event.type not in NOTIFICATION_EVENT_TYPES:
+            tg_notify_dropped_total.labels(reason="unsupported_type").inc()
+            logger.debug("Unsupported notification type %s", event.type)
+            await message.ack()
+            return
 
-            # Parse event
-            try:
-                event = NotificationEvent.model_validate(event_data)
-            except Exception as e:
-                logger.warning("Failed to parse event: %s, error: %s", event_data, e)
-                return
+        if not await self.preferences.is_subscribed(event.chat_id):
+            tg_notify_dropped_total.labels(reason="unsubscribed").inc()
+            logger.debug("Chat %s unsubscribed from notifications", event.chat_id)
+            await message.ack()
+            return
 
-            # Filter by event type
-            if event.type not in NOTIFICATION_EVENT_TYPES:
-                return  # Skip unknown event types
-
-            # Process event
-            await self._process_event(event)
-
-        except Exception as e:
-            logger.error("Unexpected error in consume_batch: %s", e, exc_info=True)
-            await asyncio.sleep(1)
-
-    async def _process_event(self, event: NotificationEvent) -> None:
-        """Process a single notification event."""
-        # Deduplication check
-        if await self.antispam.is_duplicate(event.event_id):
-            logger.debug("Skipping duplicate event: %s", event.event_id)
+        if await self.antispam.is_duplicate(event.chat_id, event.event_id):
             tg_notify_dropped_total.labels(reason="duplicate").inc()
+            await message.ack()
             return
 
-        # Resolve chat_id from address
-        chat_id = await self.address_resolver.resolve_from_event(event)
-        if not chat_id:
-            logger.debug(
-                "No chat_id found for event %s (subject: %s)",
-                event.event_id,
-                event.subject,
-            )
-            tg_notify_dropped_total.labels(reason="no_chat_id").inc()
+        if await self.antispam.check_daily_limit(event.chat_id):
+            tg_notify_dropped_total.labels(reason="daily_limit").inc()
+            await message.ack()
             return
 
-        # Check daily limits
-        should_drop, use_digest = await self.antispam.check_daily_limit(chat_id)
-        if should_drop:
-            logger.debug(
-                "Dropping notification for chat %d (daily limit exceeded)",
-                chat_id,
-            )
-            tg_notify_dropped_total.labels(reason="daily_limit_exceeded").inc()
-            return
+        await self._enqueue(event)
+        await message.ack()
 
-        event_ts = event.get_timestamp()
+    async def _enqueue(self, event: NotificationEvent) -> None:
+        key = (event.chat_id, event.type)
+        self.buffers[key].append(event)
+        if key not in self.buffer_tasks:
+            self.buffer_tasks[key] = asyncio.create_task(self._flush_after_delay(key))
 
-        # Check if should coalesce
-        should_coalesce = await self.antispam.should_coalesce(chat_id, event.type, event_ts)
-
-        if should_coalesce and use_digest:
-            # Add to coalesce queue
-            await self.antispam.add_to_coalesce_queue(chat_id, event.type, event.event_id)
-            logger.debug(
-                "Added event %s to coalesce queue for chat %d",
-                event.event_id,
-                chat_id,
-            )
-            return
-
-        # Send immediately or process coalesced
-        if should_coalesce:
-            # Wait a bit and check for more events
-            await asyncio.sleep(2)
-            await self._send_coalesced(chat_id, event.type, event)
-        else:
-            # Send immediately
-            await self._send_single(chat_id, event)
-
-    async def _send_single(self, chat_id: int, event: NotificationEvent) -> None:
-        """Send a single notification."""
+    async def _flush_after_delay(self, key: tuple[int, str]) -> None:
         try:
-            text = format_notification(event)
+            await asyncio.sleep(self.antispam.coalesce_window)
+            await self._flush_now(key)
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to flush coalesced notifications for %s: %s", key, exc, exc_info=True)
+        finally:
+            self.buffer_tasks.pop(key, None)
+
+    async def _flush_now(self, key: tuple[int, str]) -> None:
+        events = self.buffers.pop(key, [])
+        if not events:
+            return
+
+        chat_id, event_type = key
+        quiet_now, delay = await self.preferences.is_quiet_now(chat_id)
+        if quiet_now:
+            # Reschedule after quiet window
+            logger.info("Chat %s is in quiet hours, delaying %d events by %s sec", chat_id, len(events), delay)
+            self.buffers[key] = events
+            self.buffer_tasks[key] = asyncio.create_task(self._delayed_flush(key, max(delay, 5)))
+            return
+
+        first_ts = min((ev.get_timestamp() for ev in events), default=datetime.now(UTC))
+        last_ts = max((ev.get_timestamp() for ev in events), default=first_ts)
+        coalesced = CoalescedNotification(
+            chat_id=chat_id,
+            event_type=event_type,
+            events=events,
+            first_ts=first_ts,
+            last_ts=last_ts,
+        )
+
+        await self._send_coalesced(coalesced)
+
+    async def _delayed_flush(self, key: tuple[int, str], delay: int) -> None:
+        try:
+            await asyncio.sleep(delay)
+            await self._flush_now(key)
+        except asyncio.CancelledError:
+            return
+        finally:
+            self.buffer_tasks.pop(key, None)
+
+    async def _send_coalesced(self, notification: CoalescedNotification) -> None:
+        chat_id = notification.chat_id
+        try:
+            if len(notification.events) == 1:
+                text = await format_notification(notification.events[0])
+                event_type = notification.events[0].type
+            else:
+                text = await format_coalesced(notification)
+                event_type = notification.event_type
+
             success = await send_with_retry(self.bot, chat_id, text, self.retry_config)
             if success:
-                tg_notify_sent_total.labels(type=event.type).inc()
+                tg_notify_sent_total.labels(type=event_type).inc()
                 logger.info(
-                    "Sent notification %s to chat %d (type: %s)",
-                    event.event_id,
+                    "Sent notification to chat %s (type=%s, events=%d)",
                     chat_id,
-                    event.type,
+                    event_type,
+                    len(notification.events),
                 )
             else:
                 tg_notify_dropped_total.labels(reason="send_failed").inc()
                 logger.warning(
-                    "Failed to send notification %s to chat %d",
-                    event.event_id,
+                    "Failed to send notification to chat %s (type=%s, events=%d)",
                     chat_id,
-                )
-        except Exception as e:
-            tg_notify_dropped_total.labels(reason="send_exception").inc()
-            logger.error(
-                "Error sending notification %s to chat %d: %s",
-                event.event_id,
-                chat_id,
-                e,
-                exc_info=True,
-            )
-
-    async def _send_coalesced(self, chat_id: int, event_type: str, latest_event: NotificationEvent) -> None:
-        """Send coalesced notification (multiple events grouped)."""
-        try:
-            # Get coalesced event IDs
-            event_ids = await self.antispam.get_coalesced_events(chat_id, event_type)
-            if not event_ids:
-                # No coalesced events, send single
-                await self._send_single(chat_id, latest_event)
-                return
-
-            # TODO: Fetch full events from Redis/queue by event_id
-            # For now, we'll create a simple coalesced notification
-            # In production, you'd want to store full event data
-
-            # Create coalesced notification
-            coalesced = CoalescedNotification(
-                chat_id=chat_id,
-                event_type=event_type,
-                events=[latest_event],  # Simplified - would include all events
-                first_ts=latest_event.get_timestamp(),
-                last_ts=latest_event.get_timestamp(),
-            )
-
-            text = format_coalesced(coalesced)
-            success = await send_with_retry(self.bot, chat_id, text, self.retry_config)
-
-            if success:
-                tg_notify_sent_total.labels(type=event_type).inc()
-                logger.info(
-                    "Sent coalesced notification to chat %d (%d events, type: %s)",
-                    chat_id,
-                    len(event_ids) + 1,
                     event_type,
+                    len(notification.events),
                 )
-                # Clear coalesce queue
-                await self.antispam.clear_coalesce_queue(chat_id, event_type)
-            else:
-                tg_notify_dropped_total.labels(reason="coalesced_send_failed").inc()
-                logger.warning("Failed to send coalesced notification to chat %d", chat_id)
-        except Exception as e:
-            logger.error(
-                "Error sending coalesced notification to chat %d: %s",
-                chat_id,
-                e,
-                exc_info=True,
-            )
+        except Exception as exc:  # noqa: BLE001
+            tg_notify_dropped_total.labels(reason="send_exception").inc()
+            logger.error("Error sending notification to chat %s: %s", chat_id, exc, exc_info=True)

@@ -9,6 +9,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, Message, Update
 
 from ..utils.format import mask_chat_id
+from ..services.message_store import get_message
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class ErrorHandlerMiddleware(BaseMiddleware):
             if isinstance(exc, TelegramBadRequest) and "chat not found" in str(exc):
                 return None
 
-            text = "Ой, что-то пошло не так 🤕\nМы уже смотрим, попробуйте ещё раз чуть позже."  # noqa: RUF001
+            text = await get_message("errors.fallback")
 
             # старательно, но аккуратно отвечаем пользователю
             if event.message and isinstance(event.message, Message):

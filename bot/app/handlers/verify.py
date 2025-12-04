@@ -9,6 +9,7 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from ..config import settings
+from ..services.message_store import get_message
 
 router = Router(name="verify")
 logger = logging.getLogger(__name__)
@@ -59,50 +60,33 @@ async def cmd_verify(message: Message) -> None:
     command_text = message.text or ""
     parts = command_text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer(
-            "❌ Не указан ID файла.\n\n"
-            "Использование: `/verify <fileId>`\n\n"
-            "Пример:\n"
-            "`/verify 0x1234567890abcdef...`\n"
-            "или\n"
-            "`/verify 1234567890abcdef...`",
-            parse_mode="Markdown",
-        )
+        await message.answer(await get_message("verify.missing_id"), parse_mode="Markdown")
         return
 
     file_id_input = parts[1]
     file_id = validate_file_id(file_id_input)
 
     if not file_id:
-        await message.answer(
-            "❌ Неверный формат ID файла.\n\n"
-            "ID должен быть:\n"
-            "• 64 hex символа с префиксом `0x` (66 символов всего)\n"
-            "• или 64 hex символа без префикса\n\n"
-            "Пример: `0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef`",
-            parse_mode="Markdown",
-        )
+        await message.answer(await get_message("verify.invalid_format"), parse_mode="Markdown")
         return
 
     # Вызываем API для верификации
     try:
         api_url = str(settings.DFSP_API_URL).rstrip("/")
         url = f"{api_url}/bot/verify/{file_id}"
+        headers = {"X-TG-Chat-Id": str(chat_id)}
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(url)
+            resp = await client.get(url, headers=headers)
 
         if resp.status_code == 404:
             await message.answer(
-                f"❌ Файл с ID `{file_id[:20]}...` не найден.",
+                await get_message("verify.not_found", variables={"file_id": file_id[:20]}),
                 parse_mode="Markdown",
             )
             return
 
         if resp.status_code == 400:
-            await message.answer(
-                "❌ Неверный формат ID файла.",
-                parse_mode="Markdown",
-            )
+            await message.answer(await get_message("verify.invalid_format_response"), parse_mode="Markdown")
             return
 
         resp.raise_for_status()
@@ -115,27 +99,35 @@ async def cmd_verify(message: Message) -> None:
 
         # Формируем короткую сводку
         status_icon = "✅" if match else "❌"
-        status_text = "совпадает" if match else "не совпадает"
+        status_text = await get_message("verify.status_match" if match else "verify.status_mismatch")
 
-        summary = (
-            f"{status_icon} *Результат верификации файла*\n\n"
-            f"On-chain: {'✅' if onchain_ok else '❌'}\n"
-            f"Off-chain: {'✅' if offchain_ok else '❌'}\n"
-            f"Совпадение: {status_text}"
+        summary = await get_message(
+            "verify.summary",
+            variables={
+                "status_icon": status_icon,
+                "onchain_icon": "✅" if onchain_ok else "❌",
+                "offchain_icon": "✅" if offchain_ok else "❌",
+                "status_text": status_text,
+            },
         )
 
         if last_anchor_tx:
-            summary += f"\n\nПоследняя транзакция: `{last_anchor_tx[:20]}...`"
+            summary += await get_message(
+                "verify.summary_last_anchor",
+                variables={"tx": last_anchor_tx[:20]},
+            )
 
         # Формируем URL для полной проверки
         origin = str(settings.PUBLIC_WEB_ORIGIN).rstrip("/")
         full_verify_url = f"{origin}/verify/{file_id}"
 
         # Создаем кнопку "Открыть полную проверку" и "Главное меню"
+        full_verify_btn = await get_message("buttons.verify_full")
+        home_btn = await get_message("buttons.home")
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🔍 Открыть полную проверку", url=full_verify_url)],
-                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:home")],
+                [InlineKeyboardButton(text=full_verify_btn, url=full_verify_url)],
+                [InlineKeyboardButton(text=home_btn, callback_data="menu:home")],
             ]
         )
 
@@ -143,13 +135,11 @@ async def cmd_verify(message: Message) -> None:
 
     except httpx.HTTPStatusError as e:
         logger.exception("Failed to verify file: HTTP error")
+        status_code = e.response.status_code if e.response else "unknown"
         await message.answer(
-            f"❌ Ошибка при проверке файла: {e.response.status_code}",
+            await get_message("verify.http_error", variables={"status_code": status_code}),
             parse_mode="Markdown",
         )
     except Exception:
         logger.exception("Failed to verify file")
-        await message.answer(
-            "❌ Не удалось проверить файл.\nПопробуй ещё раз чуть позже.",
-            parse_mode="Markdown",
-        )
+        await message.answer(await get_message("verify.generic_error"), parse_mode="Markdown")

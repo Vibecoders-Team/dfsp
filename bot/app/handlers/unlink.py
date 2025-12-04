@@ -11,9 +11,10 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
-from aiohttp import ClientError, ClientSession
+import httpx
 
 from ..config import settings
+from ..services.message_store import get_message
 
 logger = logging.getLogger(__name__)
 
@@ -24,86 +25,101 @@ class UnlinkBackendError(Exception):
     """Ошибка при вызове DFSP API для unlink."""
 
 
+class NotLinkedError(Exception):
+    """Аккаунт ещё не привязан к Telegram."""
+
+
 async def _request_unlink(chat_id: int) -> None:
     """
-    Вызывает DFSP API: DELETE /tg/link.
-
-    Сейчас бэкенд не принимает chat_id в теле, но мы на будущее можем
-    передавать его, если API расширят под бот.
+    Вызывает DFSP API: удаляет все связи через /bot/links/{address}.
     """
     api_url = str(settings.DFSP_API_URL).rstrip("/")
 
-    headers: dict[str, str] = {}
+    headers: dict[str, str] = {"X-TG-Chat-Id": str(chat_id)}
     if settings.DFSP_API_TOKEN:
         headers["Authorization"] = f"Bearer {settings.DFSP_API_TOKEN}"
 
-    try:
-        async with ClientSession() as session:
-            # Если когда-нибудь API будет принимать chat_id, можно добавить json={"chat_id": chat_id}
-            async with session.delete(
-                f"{api_url}/tg/link",
-                headers=headers,
-                timeout=5,
-            ) as resp:
-                if resp.status == 200:
-                    # По контракту операция идемпотентна:
-                    # даже если привязки уже нет, backend вернёт ok: true.
-                    return
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            links_resp = await client.get(f"{api_url}/bot/links", headers=headers)
+            if links_resp.status_code == 404:
+                raise NotLinkedError()
 
-                text = await resp.text()
-                logger.error("DFSP DELETE /tg/link failed: %s %s", resp.status, text)
-                raise UnlinkBackendError()
+            links_resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            logger.error("DFSP GET /bot/links failed: %s %s", links_resp.status_code, links_resp.text)
+            raise UnlinkBackendError() from exc
+        except httpx.HTTPError as exc:
+            logger.exception("Failed to call DFSP API (unlink list): %s", exc)
+            raise UnlinkBackendError() from exc
 
-    except ClientError as e:
-        logger.exception("Failed to call DFSP API (unlink): %s", e)
-        raise UnlinkBackendError() from e
+        links = links_resp.json().get("links") or []
+        if not links:
+            raise NotLinkedError()
+
+        for link in links:
+            address = link.get("address")
+            if not address:
+                continue
+            try:
+                resp = await client.delete(f"{api_url}/bot/links/{address}", headers=headers)
+            except httpx.HTTPError as exc:
+                logger.exception("Failed to call DFSP API (unlink): %s", exc)
+                raise UnlinkBackendError() from exc
+
+            if resp.status_code in (200, 404):
+                continue
+
+            logger.error("DFSP DELETE /bot/links/%s failed: %s %s", address, resp.status_code, resp.text)
+            raise UnlinkBackendError()
 
 
 async def _perform_unlink(
     chat_id: int,
     send: Callable[[str], Awaitable[None]],
-) -> None:
+) -> bool:
     try:
         await _request_unlink(chat_id)
+    except NotLinkedError:
+        await send(await get_message("profile.not_linked"))
+        return False
     except UnlinkBackendError:
-        await send("😔 Сейчас не получается отвязать этот Telegram от аккаунта DFSP.\nПопробуй ещё раз чуть позже.")
-        return
+        await send(await get_message("unlink.backend_error"))
+        return False
 
-    await send(
-        "🔓 Привязка этого Telegram к аккаунту DFSP отключена.\n\n"
-        "Если захочешь вернуться, используй /link, чтобы привязать аккаунт снова."
-    )
+    await send(await get_message("unlink.success"))
+    return True
 
 
 # --- /unlink командой ----------------------------------------------------------
 
-CONFIRM_TEXT = (
-    "Ты точно хочешь отвязать этот Telegram от своего DFSP аккаунта?\n\n"
-    "Это действие можно будет отменить только новой привязкой через /link."
-)
-
-CONFIRM_KB = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Да, отвязать", callback_data="unlink:confirm"),
-            InlineKeyboardButton(text="↩️ Отмена", callback_data="unlink:cancel"),
+async def build_unlink_confirm_keyboard() -> InlineKeyboardMarkup:
+    yes_btn = await get_message("buttons.unlink_confirm_yes")
+    cancel_btn = await get_message("buttons.cancel")
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text=yes_btn, callback_data="unlink:confirm"),
+                InlineKeyboardButton(text=cancel_btn, callback_data="unlink:cancel"),
+            ]
         ]
-    ]
-)
+    )
 
 
 @router.message(Command("unlink"))
 async def cmd_unlink(message: Message) -> None:
-    await message.answer(CONFIRM_TEXT, reply_markup=CONFIRM_KB)
+    confirm_kb = await build_unlink_confirm_keyboard()
+    await message.answer(await get_message("unlink.confirm"), reply_markup=confirm_kb)
 
 
 @router.callback_query(F.data == "unlink:start")
 async def cb_unlink_start(callback: CallbackQuery) -> None:
     if not callback.message:
-        await callback.answer("Что-то пошло не так, попробуй ещё раз.", show_alert=True)
+        await callback.answer(await get_message("common.retry_later"), show_alert=True)
         return
 
-    await callback.message.answer(CONFIRM_TEXT, reply_markup=CONFIRM_KB)
+    confirm_kb = await build_unlink_confirm_keyboard()
+    await callback.message.answer(await get_message("unlink.confirm"), reply_markup=confirm_kb)
     await callback.answer()
 
 
@@ -113,7 +129,7 @@ async def cb_unlink_start(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "unlink:cancel")
 async def cb_unlink_cancel(callback: CallbackQuery) -> None:
     # Просто закрываем "часики" и убираем клавиатуру
-    await callback.answer("Отмена")
+    await callback.answer(await get_message("unlink.cancelled"))
     if callback.message:
         await callback.message.edit_reply_markup(reply_markup=None)
 
@@ -121,7 +137,7 @@ async def cb_unlink_cancel(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "unlink:confirm")
 async def cb_unlink_confirm(callback: CallbackQuery) -> None:
     if not callback.message:
-        await callback.answer("Что-то пошло не так, попробуй снова.", show_alert=True)
+        await callback.answer(await get_message("common.retry_later"), show_alert=True)
         return
 
     chat_id = callback.message.chat.id
@@ -129,11 +145,16 @@ async def cb_unlink_confirm(callback: CallbackQuery) -> None:
     async def send(text: str) -> None:
         await callback.message.edit_text(text)
 
-    await _perform_unlink(chat_id=chat_id, send=send)
-    await callback.answer("✅ Аккаунт отвязан")
+    success = await _perform_unlink(chat_id=chat_id, send=send)
+    if not success:
+        await callback.answer()
+        return
+
+    await callback.answer(await get_message("unlink.confirmed"))
 
     # Показываем главное меню после отвязки
     from ..handlers import start as start_handlers
 
-    keyboard = start_handlers.get_main_keyboard(is_linked=False)
-    await callback.message.answer(start_handlers.START_TEXT_UNLINKED, reply_markup=keyboard)
+    keyboard = await start_handlers.get_main_keyboard(is_linked=False)
+    start_text = await start_handlers.get_start_text(is_linked=False)
+    await callback.message.answer(start_text, reply_markup=keyboard)
