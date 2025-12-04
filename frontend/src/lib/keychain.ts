@@ -16,6 +16,9 @@ const DB_VERSION = 1;
 const STORE = "kv";
 const HAS_IDB = typeof indexedDB !== 'undefined';
 const MEM_STORE: Map<string, unknown> = new Map();
+const STATUS_BC_NAME = "dfsp_key_status";
+const STATUS_STORAGE_KEY = "dfsp_key_status_ev";
+
 function openDB(): Promise<IDBDatabase> {
   if (!HAS_IDB) {
     // Не используем транзакции — idbGet/idbSet обрабатывают MEM_STORE напрямую.
@@ -43,32 +46,50 @@ async function idbGet<T>(key: string): Promise<T | undefined> {
   });
 }
 async function idbSet<T>(key: string, val: T): Promise<void> {
-  if (!HAS_IDB) {
-    MEM_STORE.set(key, val);
-    return Promise.resolve();
+  try {
+    if (!HAS_IDB) {
+      MEM_STORE.set(key, val);
+      return Promise.resolve();
+    }
+    const db = await openDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.objectStore(STORE).put(val, key);
+    });
+  } catch (err) {
+    mapQuotaError(err);
+    throw err;
   }
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.objectStore(STORE).put(val, key);
-  });
 }
 
 async function idbDel(key: string): Promise<void> {
-  if (!HAS_IDB) {
-    MEM_STORE.delete(key);
-    return Promise.resolve();
+  try {
+    if (!HAS_IDB) {
+      MEM_STORE.delete(key);
+      return Promise.resolve();
+    }
+    const db = await openDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      const st = tx.objectStore(STORE);
+      st.delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    mapQuotaError(err);
+    throw err;
   }
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    const st = tx.objectStore(STORE);
-    st.delete(key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+}
+
+function mapQuotaError(err: unknown): never | void {
+  if (err instanceof DOMException && (err.name === 'QuotaExceededError' || err.code === 22 || /quota/i.test(err.message))) {
+    const e = new Error('Browser storage quota exceeded. Free up space or clear site data in your browser settings, then retry. Your keys remain local.');
+    (e as any).code = 'IDB_QUOTA';
+    throw e;
+  }
 }
 
 // ---- Helpers base64 ----
@@ -85,6 +106,8 @@ let unlockedEOAPriv: string | null = null;
 let autoLockTimer: number | null = null;
 const AUTO_LOCK_MS = 15 * 60 * 1000;
 const AUTOLOCK_KEY = 'dfsp_autolock_enabled';
+let statusChannel: BroadcastChannel | null = null;
+let statusSyncInitialized = false;
 function isAutolockEnabled(): boolean {
   try { return (localStorage.getItem(AUTOLOCK_KEY) ?? '1') === '1'; } catch { return true; }
 }
@@ -94,11 +117,92 @@ function scheduleAutoLock(){
   autoLockTimer = window.setTimeout(()=>lockEOA(), AUTO_LOCK_MS);
 }
 export function isEOAUnlocked(): boolean { return !!unlockedEOAPriv; }
-export function lockEOA(): void { unlockedEOAPriv=null; if(autoLockTimer){clearTimeout(autoLockTimer); autoLockTimer=null;} try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dfsp:locked')); } catch (e) { console.debug('dispatch locked failed', e); } }
+function emitKeyStatus(status: "locked" | "unlocked") {
+  try { window.dispatchEvent(new CustomEvent('dfsp:key-status', { detail: { status } })); } catch { /* ignore */ }
+}
+function lockEOALocal(): void {
+  unlockedEOAPriv=null;
+  if(autoLockTimer){clearTimeout(autoLockTimer); autoLockTimer=null;}
+  try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dfsp:locked')); } catch (e) { console.debug('dispatch locked failed', e); }
+  emitKeyStatus('locked');
+}
+function getStatusChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === 'undefined') return null;
+  if (!statusChannel) {
+    try { statusChannel = new BroadcastChannel(STATUS_BC_NAME); } catch { statusChannel = null; }
+  }
+  return statusChannel;
+}
+function broadcastKeyStatus(status: "locked" | "unlocked") {
+  const payload = { status, ts: Date.now() };
+  try { getStatusChannel()?.postMessage(payload); } catch { /* ignore */ }
+  try { localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(payload)); } catch { /* ignore */ }
+}
+function applyIncomingStatus(status: "locked" | "unlocked") {
+  if (status === 'locked') {
+    lockEOALocal();
+  } else {
+    // Не можем разблокировать без пароля, но обновим индикатор между вкладками
+    emitKeyStatus('unlocked');
+  }
+}
+function initKeyStatusSync() {
+  if (statusSyncInitialized) return;
+  statusSyncInitialized = true;
+  const bc = getStatusChannel();
+  if (bc) {
+    bc.addEventListener('message', (ev: MessageEvent) => {
+      const st = (ev.data as { status?: string } | null)?.status;
+      if (st === 'locked' || st === 'unlocked') applyIncomingStatus(st);
+    });
+  }
+  try {
+    window.addEventListener('storage', (ev: StorageEvent) => {
+      if (ev.key !== STATUS_STORAGE_KEY || !ev.newValue) return;
+      try {
+        const parsed = JSON.parse(ev.newValue);
+        const st = parsed?.status;
+        if (st === 'locked' || st === 'unlocked') applyIncomingStatus(st);
+      } catch { /* ignore */ }
+    });
+  } catch { /* ignore */ }
+}
+export function lockEOA(): void { lockEOALocal(); broadcastKeyStatus('locked'); }
 async function deriveAesKey(pass: string, salt: Uint8Array): Promise<CryptoKey> { const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]); return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:EOA_KDF_ITER,hash:"SHA-256"},material,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]); }
 async function encryptEOA(pass: string, privHex: string){ const salt=crypto.getRandomValues(new Uint8Array(16)); const iv=crypto.getRandomValues(new Uint8Array(12)); const key=await deriveAesKey(pass,salt); const ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(privHex)); await idbSet(KEY_EOA_SALT,ab2b64(salt.buffer)); await idbSet(KEY_EOA_IV,ab2b64(iv.buffer)); await idbSet(KEY_EOA_ENC,ab2b64(ct)); }
 async function decryptEOA(pass: string): Promise<string>{ const saltB64=await idbGet<string>(KEY_EOA_SALT); const ivB64=await idbGet<string>(KEY_EOA_IV); const ctB64=await idbGet<string>(KEY_EOA_ENC); if(!saltB64||!ivB64||!ctB64) throw new Error("EOA encrypted record missing"); const salt=new Uint8Array(b64toAb(saltB64)); const iv=new Uint8Array(b64toAb(ivB64)); const ct=b64toAb(ctB64); const key=await deriveAesKey(pass,salt); const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv},key,ct); const hex=new TextDecoder().decode(plain); if(!/^0x[0-9a-fA-F]{64}$/.test(hex)) throw new Error("Decrypted EOA invalid"); return hex; }
-export async function unlockEOA(password: string): Promise<`0x${string}`>{ if(unlockedEOAPriv) { return unlockedEOAPriv as `0x${string}`; } const enc=await idbGet<string>(KEY_EOA_ENC); const legacy=await idbGet<string>(KEY_EOA_PRIV_LEGACY); if(!enc && legacy && /^0x[0-9a-fA-F]{64}$/.test(legacy)){ await encryptEOA(password, legacy); unlockedEOAPriv=legacy; scheduleAutoLock(); try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dfsp:unlocked')); } catch (e) { console.debug('dispatch unlocked failed', e); } return legacy as `0x${string}`; } if(!enc && !legacy){ const w=Wallet.createRandom(); await encryptEOA(password,w.privateKey); unlockedEOAPriv=w.privateKey; scheduleAutoLock(); try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dfsp:unlocked')); } catch (e) { console.debug('dispatch unlocked failed', e); } return w.privateKey as `0x${string}`; } const hex=await decryptEOA(password); unlockedEOAPriv=hex; scheduleAutoLock(); try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dfsp:unlocked')); } catch (e) { console.debug('dispatch unlocked failed', e); } return hex as `0x${string}`; }
+export async function unlockEOA(password: string): Promise<`0x${string}`>{
+  if(!statusSyncInitialized && typeof window !== 'undefined') initKeyStatusSync();
+  if(unlockedEOAPriv) { return unlockedEOAPriv as `0x${string}`; }
+  const enc=await idbGet<string>(KEY_EOA_ENC);
+  const legacy=await idbGet<string>(KEY_EOA_PRIV_LEGACY);
+  if(!enc && legacy && /^0x[0-9a-fA-F]{64}$/.test(legacy)){
+    await encryptEOA(password, legacy);
+    unlockedEOAPriv=legacy;
+    scheduleAutoLock();
+    try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dfsp:unlocked')); } catch (e) { console.debug('dispatch unlocked failed', e); }
+    emitKeyStatus('unlocked');
+    broadcastKeyStatus('unlocked');
+    return legacy as `0x${string}`;
+  }
+  if(!enc && !legacy){
+    const w=Wallet.createRandom();
+    await encryptEOA(password,w.privateKey);
+    unlockedEOAPriv=w.privateKey;
+    scheduleAutoLock();
+    try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dfsp:unlocked')); } catch (e) { console.debug('dispatch unlocked failed', e); }
+    emitKeyStatus('unlocked');
+    broadcastKeyStatus('unlocked');
+    return w.privateKey as `0x${string}`;
+  }
+  const hex=await decryptEOA(password);
+  unlockedEOAPriv=hex;
+  scheduleAutoLock();
+  try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dfsp:unlocked')); } catch (e) { console.debug('dispatch unlocked failed', e); }
+  emitKeyStatus('unlocked');
+  broadcastKeyStatus('unlocked');
+  return hex as `0x${string}`;
+}
 export async function ensureEOAUnlocked(password?: string): Promise<Wallet>{ if(unlockedEOAPriv) return new Wallet(unlockedEOAPriv); if(!password) { const err = new Error("EOA locked (password required)"); (err as any).code = 'EOA_LOCKED'; throw err; } const hex=await unlockEOA(password); return new Wallet(hex); }
 // backward compat
 export async function ensureEOA(password?: string){ return ensureEOAUnlocked(password); }
@@ -114,6 +218,8 @@ export async function clearLocalEOA(): Promise<void> {
     idbDel(KEY_EOA_PRIV_LEGACY).catch(()=>{}),
   ]);
   try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dfsp:locked')); } catch {/* ignore */}
+  emitKeyStatus('locked');
+  broadcastKeyStatus('locked');
 }
 
 // ---- RSA (updated to RSA-OAEP with migration from legacy RSA-PSS) ----
@@ -355,11 +461,20 @@ export async function restoreFromBackup(file: File, password: string): Promise<R
   }
 }
 
+// Initialize cross-tab sync when running in browser
+try {
+  if (typeof window !== 'undefined') {
+    initKeyStatusSync();
+  }
+} catch { /* ignore */ }
+
 // ---- test-only helpers ----
 export function __resetKeychainForTests() {
   MEM_STORE.clear();
   if (autoLockTimer) { clearTimeout(autoLockTimer); autoLockTimer = null; }
   unlockedEOAPriv = null;
+  statusChannel = null;
+  statusSyncInitialized = false;
 }
 export async function __injectLegacyRsaPkcs8(pkcs8: ArrayBuffer) {
   // Сохраняем как будто старый RSA-PSS ключ

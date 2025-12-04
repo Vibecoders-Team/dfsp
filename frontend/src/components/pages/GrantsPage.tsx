@@ -22,9 +22,10 @@ import { Download, Share2, RefreshCw, Ban } from 'lucide-react';
 import { fetchMyGrants, revokeGrant, type MyGrantItem } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
 import { Alert, AlertDescription } from '../ui/alert';
-import { toast } from 'sonner';
+import { notify } from '@/lib/toast';
 import { Skeleton } from '../ui/skeleton';
 import { useConnectionSpeed } from '@/lib/useConnectionSpeed.ts';
+import { sanitizeFilename } from '@/lib/sanitize.ts';
 
 export default function GrantsPage() {
   const [role, setRole] = useState<'received' | 'granted'>('received');
@@ -101,10 +102,10 @@ export default function GrantsPage() {
     setRevoking((prev) => new Set(prev).add(capId));
     try {
       await revokeGrant(capId);
-      toast.success('Grant revoked');
+      notify.success('Grant revoked', { dedupeId: `revoke-${capId}` });
       setGrants((prev) => prev.map((g) => g.capId === capId ? { ...g, status: 'revoked' } : g));
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Failed to revoke grant'));
+      notify.error(getErrorMessage(e, 'Failed to revoke grant'), { dedupeId: `revoke-err-${capId}` });
     } finally {
       setRevoking((prev) => {
         const next = new Set(prev);
@@ -205,7 +206,7 @@ export default function GrantsPage() {
                       <code className="text-xs bg-gray-100 px-2 py-1 rounded">{truncate((role === 'received' ? g.grantor : g.grantee) || '', 12)}</code>
                     </TableCell>
                     <TableCell>
-                      <Link to={`/files/${g.fileId}`} className="hover:underline">{g.fileName || truncate(g.fileId, 14)}</Link>
+                      <Link to={`/files/${g.fileId}`} className="hover:underline">{sanitizeFilename(g.fileName) || truncate(g.fileId, 14)}</Link>
                     </TableCell>
                     <TableCell>
                       <code className="text-xs bg-gray-100 px-2 py-1 rounded">{truncate(g.capId, 16)}</code>

@@ -1,13 +1,14 @@
 /* eslint-disable react-refresh/only-export-components */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
-import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type LoginMessage, LOGIN_TYPES as KC_LOGIN_TYPES, LOGIN_DOMAIN as KC_LOGIN_DOMAIN, unlockEOA, type RestoreResult } from '@/lib/keychain';
+import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type LoginMessage, LOGIN_TYPES as KC_LOGIN_TYPES, LOGIN_DOMAIN as KC_LOGIN_DOMAIN, unlockEOA, type RestoreResult, lockEOA } from '@/lib/keychain';
 import { postChallenge, postLogin, postRegister, postTonChallenge, postTonLogin, ACCESS_TOKEN_KEY, type RegisterPayload, type TypedLoginData, type TonSignPayload } from '@/lib/api';
 import { ethers, type TypedDataDomain, type TypedDataField } from 'ethers';
 import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
 import { setSelectedAgentKind } from '@/lib/agent/manager';
 import { deriveEthFromTonPub, getTonConnect, hexToBytes, toBase64 } from '@/lib/tonconnect';
+import { clearAllFileKeys } from '@/lib/fileKey';
 
 const LOGIN_DOMAIN: TypedDataDomain = KC_LOGIN_DOMAIN;
 const LOGIN_TYPES: Record<string, TypedDataField[]> = KC_LOGIN_TYPES;
@@ -38,6 +39,7 @@ interface AuthContextType {
   logout: () => void;
   restoreAccount: (file: File, password: string) => Promise<RestoreResult>;
   updateBackupStatus: (hasBackup: boolean) => void;
+  updateDisplayName: (displayName: string) => void;
 }
 
 export type { AuthContextType };
@@ -315,7 +317,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await login({ unlockPassword: password });
     setUser(prev => prev ? { ...prev, hasBackup: true } : null);
     return res;
-   };
+  };
 
   const logout = () => {
      // soft logout: leave wallet session intact, just clear auth tokens
@@ -326,7 +328,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
      // Do not clear address/display name so UI can prefill
      // localStorage.removeItem(ADDRESS_KEY);
      // localStorage.removeItem('dfsp_display_name');
+    clearAllFileKeys();
     bumpSessionGen();
+    try { lockEOA(); } catch { /* ignore */ }
     try { window.dispatchEvent(new CustomEvent('dfsp:logout')); } catch { /* ignore */ }
      setUser(null);
      // Force Local agent after leaving auth or switching forms
@@ -335,6 +339,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateBackupStatus = (hasBackup: boolean) => {
     setUser(prev => prev ? { ...prev, hasBackup } : prev);
+  };
+
+  const updateDisplayName = (displayName: string) => {
+    setUser(prev => prev ? { ...prev, displayName } : prev);
   };
 
   return (
@@ -348,6 +356,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       restoreAccount,
       updateBackupStatus,
+      updateDisplayName,
     }}>
       {children}
     </AuthContext.Provider>

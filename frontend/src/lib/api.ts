@@ -5,6 +5,8 @@ import { ensureEOA, ensureRSA } from "./keychain";
 import { findKey } from "./pubkeys";
 import { saveKey } from "./pubkeys";
 import { getAgent } from "./agent/manager"; // normalized quotes
+import { notify } from "./toast";
+import { enqueueRequest } from "./offlineQueue";
 
 
 // export const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE });
@@ -29,7 +31,7 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 /** ---- 401/403 handler ---- */
 api.interceptors.response.use(
     (r: AxiosResponse) => r,
-    (err: unknown) => {
+    async (err: unknown) => {
         if (isAxiosError(err)) {
             const status = err.response?.status;
             const url = err.config?.url || '';
@@ -39,10 +41,48 @@ api.interceptors.response.use(
                 try { localStorage.removeItem(ACCESS_TOKEN_KEY); } catch {/* ignore */}
                 window.location.href = "/login";
             }
+            // offline queue for network errors
+            if (!err.response && err.code === 'ERR_NETWORK') {
+              const cfg = err.config;
+              const method = (cfg?.method || '').toUpperCase();
+              if (cfg?.url && ['POST','PUT','PATCH','DELETE'].includes(method) && navigator && navigator.onLine === false) {
+                enqueueRequest({ url: cfg.url, method, data: cfg.data, createdAt: Date.now() });
+                return Promise.resolve({ data: { queued: true }, status: 202, statusText: 'queued', headers: {}, config: cfg } as AxiosResponse);
+              }
+            }
         }
         return Promise.reject(err);
     }
 );
+
+// ---- Retry with exponential backoff for 429/5xx ----
+const RETRY_HEADER = 'x-retry-attempt';
+api.interceptors.response.use(undefined, async (error) => {
+  if (!isAxiosError(error) || !error.config) {
+    return Promise.reject(error);
+  }
+  const status = error.response?.status;
+  const cfg = error.config as InternalAxiosRequestConfig & { _retryCount?: number; _retryToastId?: string };
+  const shouldRetry = status === 429 || (status !== undefined && status >= 500 && status < 600);
+  if (!shouldRetry) return Promise.reject(error);
+  const maxRetries = 3;
+  const attempt = (cfg._retryCount ?? 0) + 1;
+  if (attempt > maxRetries) return Promise.reject(error);
+
+  const retryAfter = Number(error.response?.headers?.['retry-after']) || 0;
+  const delayBase = retryAfter > 0 ? retryAfter * 1000 : 500;
+  const delay = delayBase * Math.pow(2, attempt - 1);
+  const toastId = cfg._retryToastId || `retry-${cfg.url}-${cfg.method}`;
+  cfg._retryCount = attempt;
+  cfg._retryToastId = toastId;
+
+  notify.info(`Retrying (${attempt}/${maxRetries})…`, { dedupeId: toastId, description: cfg.url });
+
+  await new Promise((resolve) => setTimeout(resolve, delay));
+  cfg.headers = cfg.headers || {};
+  (cfg.headers as AxiosHeaders).set(RETRY_HEADER, String(attempt));
+  return api(cfg);
+});
 
 /** ---- Types ---- */
 export type ChallengeOut = { challenge_id: string; nonce: `0x${string}`; exp_sec: number };
@@ -367,6 +407,11 @@ export type FileListItem = {
 
 export async function fetchMyFiles(): Promise<FileListItem[]> {
   const { data } = await api.get<FileListItem[]>("/files");
+  return data;
+}
+
+export async function updateProfile(displayName: string): Promise<{ display_name: string }> {
+  const { data } = await api.patch<{ display_name: string }>("/users/me", { display_name: displayName });
   return data;
 }
 

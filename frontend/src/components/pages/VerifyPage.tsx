@@ -10,6 +10,7 @@ import { fetchMeta } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
 import { keccak256 } from 'ethers';
 import type * as React from "react";
+import { sanitizeFilename, safeText } from '@/lib/sanitize.ts';
 
 type VerifyState = 'idle' | 'loading' | 'match' | 'mismatch' | 'not_found' | 'error';
 
@@ -174,7 +175,7 @@ export default function VerifyPage() {
                 {onChainData.name && (
                   <div>
                     <div className="text-sm text-gray-500 mb-1">File Name</div>
-                    <div>{onChainData.name}</div>
+                    <div>{safeText(onChainData.name)}</div>
                   </div>
                 )}
                 <div>
@@ -225,7 +226,7 @@ export default function VerifyPage() {
               <div className="p-4 bg-gray-50 rounded-lg space-y-3">
                 <div>
                   <div className="text-sm text-gray-500 mb-1">File Name</div>
-                  <div>{localCheckData.fileName}</div>
+                  <div>{sanitizeFilename(localCheckData.fileName)}</div>
                 </div>
                 <div>
                   <div className="text-sm text-gray-500 mb-1">Size</div>

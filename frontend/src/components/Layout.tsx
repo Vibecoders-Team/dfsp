@@ -24,7 +24,14 @@ export default function Layout({ children, publicDoc }: LayoutProps) {
   const location = useLocation();
 
   const isActive = (path: string) => {
-    return location.pathname === path || location.pathname.startsWith(path + '/');
+    const p = location.pathname;
+    if (path === '/files') {
+      return p === '/files' || p.startsWith('/files/') || p === '/upload' || p.startsWith('/verify/');
+    }
+    if (path === '/grants') {
+      return p === '/grants' || p.startsWith('/download/');
+    }
+    return p === path || p.startsWith(path + '/');
   };
 
   if (publicDoc) {

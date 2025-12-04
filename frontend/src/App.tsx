@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './components/AuthContext';
 import { Toaster } from './components/ui/sonner';
+import UpdateNotification from './components/UpdateNotification';
+import ABICompatibilityCheck from './components/ABICompatibilityCheck';
 import LoginPage from './components/pages/LoginPage';
 import RegisterPage from './components/pages/RegisterPage';
 import FilesPage from './components/pages/FilesPage';
@@ -197,7 +199,9 @@ function AppRoutes() {
         <Route path="/public/:token" element={<PublicPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
-      <Toaster />
+      <Toaster richColors position="top-right" closeButton duration={3500} />
+      <ABICompatibilityCheck />
+      <UpdateNotification />
       <UnlockPortal />
     </>
   );

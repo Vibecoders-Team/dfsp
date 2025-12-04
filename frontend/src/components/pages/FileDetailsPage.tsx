@@ -23,7 +23,7 @@ import {
   AlertDialogTitle,
 } from '../ui/alert-dialog';
 import { ArrowLeft, Copy, Share2, CheckCircle2, XCircle, AlertCircle, Download, Edit2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { notify } from '@/lib/toast';
 import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx, type ForwardTyped, fetchMyFiles, createPublicLink, listPublicLinks, revokePublicLink, type PublicLinkItem, renameFile } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
 import { getAgent } from '@/lib/agent/manager';
@@ -32,6 +32,7 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { sanitizeFilename, parseContentDisposition } from '@/lib/sanitize.ts';
 
 interface VersionRow {
   cid: string;
@@ -101,7 +102,7 @@ export default function FileDetailsPage() {
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
-    toast.success(`${label} copied to clipboard`);
+    notify.success(`${label} copied to clipboard`, { dedupeId: `copy-${label}-${text}` });
   };
 
   const formatSize = (bytes?: number) => {
@@ -138,17 +139,23 @@ export default function FileDetailsPage() {
       const url = gw.replace(/\/+$/, '') + `/ipfs/${file.cid}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
+
+      // Try to get filename from Content-Disposition header
+      const contentDisposition = res.headers.get('Content-Disposition');
+      const headerFilename = parseContentDisposition(contentDisposition);
+      const finalFilename = headerFilename || file.name;
+
       const blob = await res.blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = file.name || file.id;
+      a.download = sanitizeFilename(finalFilename) || file.id;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
-      toast.success('Download started');
+      notify.success('Download started', { dedupeId: `download-${file?.id ?? 'unknown'}` });
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Download failed'));
+      notify.error(getErrorMessage(e, 'Download failed'), { dedupeId: `download-err-${file?.id ?? 'unknown'}` });
     }
   };
 
@@ -170,7 +177,7 @@ export default function FileDetailsPage() {
 
   const handleRename = async () => {
     if (!newName.trim()) {
-      toast.error('File name cannot be empty');
+      notify.error('File name cannot be empty', { dedupeId: 'rename-empty' });
       return;
     }
 
@@ -192,7 +199,7 @@ export default function FileDetailsPage() {
       }
 
       await renameFile(id, newName);
-      toast.success('File renamed successfully');
+      notify.success('File renamed successfully', { dedupeId: `rename-${file?.id}` });
       setRenameDialogOpen(false);
       setExtensionWarning(false);
 
@@ -203,7 +210,7 @@ export default function FileDetailsPage() {
       if (file && oldName !== undefined) {
         setFile({ ...file, name: oldName });
       }
-      toast.error(getErrorMessage(e, 'Failed to rename file'));
+      notify.error(getErrorMessage(e, 'Failed to rename file'), { dedupeId: 'rename-error' });
     } finally {
       setRenaming(false);
     }
@@ -219,12 +226,12 @@ export default function FileDetailsPage() {
       }
       const sig = await agent.signTypedData((prep.typedData as ForwardTyped).domain, (prep.typedData as ForwardTyped).types, (prep.typedData as ForwardTyped).message);
       await submitMetaTx(prep.requestId, prep.typedData as ForwardTyped, sig);
-      toast.success('Revoke submitted');
+      notify.success('Revoke submitted', { dedupeId: `revoke-${selectedCapId}` });
       setRevokeDialogOpen(false);
       setSelectedCapId(null);
       await load();
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Failed to revoke grant'));
+      notify.error(getErrorMessage(e, 'Failed to revoke grant'), { dedupeId: 'revoke-error' });
     }
   };
 
@@ -353,7 +360,7 @@ export default function FileDetailsPage() {
               Back to Files
             </Button>
             <div className="flex items-center gap-2">
-              <h1>{file.name || file.id}</h1>
+              <h1>{sanitizeFilename(file.name) || file.id}</h1>
               <Button variant="ghost" size="sm" onClick={handleRenameOpen} className="gap-1">
                 <Edit2 className="h-3.5 w-3.5" />
                 Rename
@@ -589,7 +596,7 @@ export default function FileDetailsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={async () => { try { await revokePublicLink(pl.token); toast.success('Revoked'); await loadPublicLinks(); } catch(e){ toast.error(getErrorMessage(e,'Failed to revoke link')); } }}
+                          onClick={async () => { try { await revokePublicLink(pl.token); notify.success('Revoked', { dedupeId: `pub-revoke-${pl.token}` }); await loadPublicLinks(); } catch(e){ notify.error(getErrorMessage(e,'Failed to revoke link'), { dedupeId: 'pub-revoke-err' }); } }}
                           className="gap-1.5 text-red-600 hover:text-red-700"
                         >
                           <XCircle className="h-3.5 w-3.5" /> Revoke
@@ -642,8 +649,8 @@ export default function FileDetailsPage() {
             </div>
             <div className="grid gap-1">
               <Label>Name override</Label>
-              <Input value={nameOverride} onChange={e=>setNameOverride(e.target.value)} placeholder={file.name || ''} />
-            </div>
+            <Input value={nameOverride} onChange={e=>setNameOverride(e.target.value)} placeholder={sanitizeFilename(file.name) || ''} />
+          </div>
             <div className="grid gap-1">
               <Label>MIME override</Label>
               <Input value={mimeOverride} onChange={e=>setMimeOverride(e.target.value)} placeholder={file.mimeType || ''} />
@@ -666,11 +673,11 @@ export default function FileDetailsPage() {
                 const pubUrl = origin.replace(/\/$/, '') + `/public/${resp.token}`;
                 // copy with #k=… (simulating key reference)
                 copyToClipboard(pubUrl + (nameOverride? `#k=${encodeURIComponent(nameOverride)}`: ''), 'Public link');
-                toast.success('Public link created');
+                notify.success('Public link created', { dedupeId: 'pub-created' });
                 setPubModalOpen(false);
                 await loadPublicLinks();
               } catch(e) {
-                toast.error(getErrorMessage(e, 'Failed to create public link'));
+                notify.error(getErrorMessage(e, 'Failed to create public link'), { dedupeId: 'pub-create-err' });
               } finally {
                 setCreating(false);
               }

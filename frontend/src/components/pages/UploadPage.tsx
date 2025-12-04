@@ -9,12 +9,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui
 import { Alert, AlertDescription } from '../ui/alert';
 import { Progress } from '../ui/progress';
 import { Upload, File, X, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { notify } from '@/lib/toast';
 import { getErrorMessage } from '@/lib/errors.ts';
 import { encryptFile, keccak } from '@/lib/cryptoClient.ts';
 import { storeEncrypted } from '@/lib/api.ts';
 import { getOrCreateFileKey, renameFileKey } from '@/lib/fileKey.ts';
 import type * as React from "react";
+import { sanitizeFilename } from '@/lib/sanitize.ts';
 
 type UploadState = 'empty' | 'encrypting' | 'uploading' | 'registering' | 'done' | 'error';
 
@@ -41,8 +42,14 @@ export default function UploadPage() {
 
   const handleFileSelect = (file: File) => {
     if (file.size > MAX_FILE_SIZE) {
-      setError(`File size exceeds the maximum limit of ${formatBytes(MAX_FILE_SIZE)}`);
+      setUploadedFile(null);
+      setDescription('');
+      setProgress(0);
       setState('error');
+      setError(`File size exceeds the maximum limit of ${formatBytes(MAX_FILE_SIZE)}`);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       return;
     }
 
@@ -119,14 +126,14 @@ export default function UploadPage() {
       setUploadSpeed(speed);
 
       setState('done');
-      toast.success('File uploaded successfully!', { description: `File ID: ${res.id_hex.slice(0,10)}...` });
+      notify.success('File uploaded successfully!', { description: `File ID: ${res.id_hex.slice(0,10)}...`, dedupeId: `upload-${res.id_hex}` });
 
       setTimeout(() => { navigate('/files'); }, 1500);
     } catch (err) {
       setState('error');
       const errorMsg = getErrorMessage(err, 'Upload failed');
       setError(errorMsg);
-      toast.error('Upload failed', { description: errorMsg });
+      notify.error('Upload failed', { description: errorMsg, dedupeId: 'upload-error' });
     }
   };
 
@@ -191,6 +198,7 @@ export default function UploadPage() {
                 <Button
                   onClick={() => fileInputRef.current?.click()}
                   variant="outline"
+                  aria-label="Choose file to upload"
                 >
                   Choose File
                 </Button>
@@ -208,16 +216,16 @@ export default function UploadPage() {
               <CardTitle>File Information</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <File className="h-8 w-8 text-blue-600" />
-                  <div>
-                    <div>{uploadedFile.name}</div>
-                    <div className="text-sm text-gray-500">
-                      {formatBytes(uploadedFile.size)}
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <File className="h-8 w-8 text-blue-600" />
+                    <div>
+                      <div>{sanitizeFilename(uploadedFile.name)}</div>
+                      <div className="text-sm text-gray-500">
+                        {formatBytes(uploadedFile.size)}
+                      </div>
                     </div>
                   </div>
-                </div>
                 {!isProcessing && (
                   <Button
                     variant="ghost"
@@ -233,7 +241,7 @@ export default function UploadPage() {
                 <div className="space-y-2">
                   <Label>File Name</Label>
                   <Input
-                    value={uploadedFile.name}
+                    value={sanitizeFilename(uploadedFile.name)}
                     disabled
                   />
                 </div>
@@ -326,7 +334,23 @@ export default function UploadPage() {
         {state === 'error' && error && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription className="flex items-start justify-between gap-3">
+              <span>{error}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setUploadedFile(null);
+                  setDescription('');
+                  setError('');
+                  setState('empty');
+                  setProgress(0);
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+                }}
+              >
+                Choose another file
+              </Button>
+            </AlertDescription>
           </Alert>
         )}
 
