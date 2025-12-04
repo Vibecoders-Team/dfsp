@@ -32,9 +32,11 @@ api.interceptors.response.use(
     (err: unknown) => {
         if (isAxiosError(err)) {
             const status = err.response?.status;
-            if (status === 401 || status === 403) {
-                // например, редирект или логаут
-                localStorage.removeItem(ACCESS_TOKEN_KEY);
+            const url = err.config?.url || '';
+            // Do not redirect for public endpoints (we need to show TTL/limit/revoked errors)
+            const isPublic = /\/public\//.test(url || '') || url.startsWith('/public/');
+            if ((status === 401 || status === 403) && !isPublic) {
+                try { localStorage.removeItem(ACCESS_TOKEN_KEY); } catch {/* ignore */}
                 window.location.href = "/login";
             }
         }
@@ -409,4 +411,63 @@ export type IntentConsumeOut = { ok: boolean; action: string | null; payload: Re
 export async function consumeIntent(intentId: string): Promise<IntentConsumeOut> {
   const { data } = await api.post<IntentConsumeOut>(`/intents/${intentId}/consume`);
   return data;
+}
+
+// === Public Links API ===
+export type PublicLinkPolicy = { max_downloads?: number; pow_difficulty?: number; one_time: boolean };
+export type CreatePublicLinkResp = { token: string; expires_at: string; policy: PublicLinkPolicy };
+export type CreatePublicLinkPayload = {
+  version?: number;
+  ttl_sec?: number;
+  max_downloads?: number;
+  pow?: { enabled: boolean; difficulty?: number };
+  name_override?: string;
+  mime_override?: string;
+};
+
+export async function createPublicLink(fileIdHex: string, payload: CreatePublicLinkPayload): Promise<CreatePublicLinkResp> {
+  const { data } = await api.post<CreatePublicLinkResp>(`/files/${fileIdHex}/public-links`, payload);
+  return data;
+}
+
+export type PublicMetaResp = {
+  name: string;
+  size?: number;
+  mime?: string;
+  cid?: string;
+  fileId: string;
+  version?: number;
+  expires_at?: string;
+  policy: Record<string, unknown>;
+};
+
+export async function fetchPublicMeta(token: string): Promise<PublicMetaResp> {
+  const { data } = await api.get<PublicMetaResp>(`/public/${token}/meta`);
+  return data;
+}
+
+export async function submitPow(token: string, nonce: string, solution: string): Promise<{ ok: true }>{
+  const { data } = await api.post<{ ok: true }>(`/public/${token}/pow`, { nonce, solution });
+  return data;
+}
+
+export async function fetchPublicContent(token: string): Promise<Blob> {
+  const res = await api.get(`/public/${token}/content`, { responseType: 'blob' });
+  return res.data as Blob;
+}
+
+export async function revokePublicLink(token: string): Promise<{ revoked: true }>{
+  const { data } = await api.delete<{ revoked: true }>(`/public-links/${token}`);
+  return data;
+}
+
+export type PublicLinkItem = { token: string; expires_at?: string; policy?: PublicLinkPolicy; downloads_count?: number };
+export async function listPublicLinks(fileIdHex: string): Promise<PublicLinkItem[]>{
+  try {
+    const { data } = await api.get<{ items: PublicLinkItem[] }>(`/files/${fileIdHex}/public-links`);
+    return data.items || [];
+  } catch (e) {
+    if (isAxiosError(e) && (e.response?.status === 404 || e.response?.status === 401)) return [];
+    throw e;
+  }
 }

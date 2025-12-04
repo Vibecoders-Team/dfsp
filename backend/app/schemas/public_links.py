@@ -47,3 +47,14 @@ class PublicMetaOut(BaseModel):
 
 class RevokeOut(BaseModel):
     revoked: bool = True
+
+
+class PublicLinkItemOut(BaseModel):
+    token: str
+    expires_at: datetime | None = None
+    policy: PublicLinkPolicyOut
+    downloads_count: int = 0
+
+
+class PublicLinksListOut(BaseModel):
+    items: list[PublicLinkItemOut]

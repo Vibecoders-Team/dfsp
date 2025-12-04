@@ -25,6 +25,7 @@ import RestorePage from './components/pages/RestorePage';
 import PrivacyPage from './components/pages/PrivacyPage';
 import TelegramLinkPage from './components/pages/TelegramLinkPage';
 import { MainLandingPage } from './pages/MainLandingPage/MainLandingPage';
+import PublicPage from './components/pages/PublicPage.tsx';
 
 const LANDING_ENABLED = (import.meta as any).env?.VITE_LANDING_ENABLED !== 'false';
 
@@ -192,6 +193,7 @@ function AppRoutes() {
           }
         />
         <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/public/:token" element={<PublicPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
       <Toaster />

@@ -24,11 +24,14 @@ import {
 } from '../ui/alert-dialog';
 import { ArrowLeft, Copy, Share2, CheckCircle2, XCircle, AlertCircle, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx, type ForwardTyped, fetchMyFiles } from '@/lib/api.ts';
+import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx, type ForwardTyped, fetchMyFiles, createPublicLink, listPublicLinks, revokePublicLink, type PublicLinkItem } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
 import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
 import { Alert, AlertDescription } from '../ui/alert';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 
 interface VersionRow {
   cid: string;
@@ -69,6 +72,15 @@ export default function FileDetailsPage() {
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [selectedCapId, setSelectedCapId] = useState<string | null>(null);
   const [intentAutoOpened, setIntentAutoOpened] = useState(false);
+  const [pubModalOpen, setPubModalOpen] = useState(false);
+  const [publicLinks, setPublicLinks] = useState<PublicLinkItem[]>([]);
+  const [ttlSec, setTtlSec] = useState<string>('86400');
+  const [maxDownloads, setMaxDownloads] = useState<string>('0');
+  const [powEnabled, setPowEnabled] = useState<boolean>(false);
+  const [powDiff, setPowDiff] = useState<string>('0');
+  const [nameOverride, setNameOverride] = useState<string>('');
+  const [mimeOverride, setMimeOverride] = useState<string>('');
+  const [creating, setCreating] = useState(false);
   const intentId = searchParams.get('intent');
   const revokeCapParam = searchParams.get('revoke');
 
@@ -219,8 +231,12 @@ export default function FileDetailsPage() {
     }
   };
 
+  const loadPublicLinks = async () => {
+    try { const items = await listPublicLinks(file!.id); setPublicLinks(items); } catch {/* ignore */}
+  };
+
   useEffect(() => {
-    if (id) load();
+    if (id) { load(); loadPublicLinks(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -464,6 +480,65 @@ export default function FileDetailsPage() {
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Public Links</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {publicLinks.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">No public links</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Token</TableHead>
+                    <TableHead>Expires</TableHead>
+                    <TableHead>Policy</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {publicLinks.map((pl) => (
+                    <TableRow key={pl.token}>
+                      <TableCell>
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">{pl.token}</code>
+                      </TableCell>
+                      <TableCell>{pl.expires_at ? formatDate(new Date(pl.expires_at)) : '-'}</TableCell>
+                      <TableCell>
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                          {JSON.stringify(pl.policy || {})}
+                        </code>
+                      </TableCell>
+                      <TableCell className="text-right flex gap-2 justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const origin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || window.location.origin;
+                            const pubUrl = origin.replace(/\/$/, '') + `/public/${pl.token}`;
+                            copyToClipboard(pubUrl + (nameOverride ? `#k=${encodeURIComponent(nameOverride)}` : ''), 'Public link');
+                          }}
+                          className="gap-1.5"
+                        >
+                          <Copy className="h-3.5 w-3.5" /> Copy
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={async () => { try { await revokePublicLink(pl.token); toast.success('Revoked'); await loadPublicLinks(); } catch(e){ toast.error(getErrorMessage(e,'Failed to revoke link')); } }}
+                          className="gap-1.5 text-red-600 hover:text-red-700"
+                        >
+                          <XCircle className="h-3.5 w-3.5" /> Revoke
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <AlertDialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
@@ -482,6 +557,66 @@ export default function FileDetailsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={pubModalOpen} onOpenChange={setPubModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share public link</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1">
+              <Label>TTL (seconds)</Label>
+              <Input value={ttlSec} onChange={e=>setTtlSec(e.target.value)} placeholder="86400" />
+            </div>
+            <div className="grid gap-1">
+              <Label>Max downloads (0 for unlimited)</Label>
+              <Input value={maxDownloads} onChange={e=>setMaxDownloads(e.target.value)} placeholder="0" />
+            </div>
+            <div className="flex items-center gap-2">
+              <input id="powEnabled" type="checkbox" checked={powEnabled} onChange={e=>setPowEnabled(e.target.checked)} />
+              <Label htmlFor="powEnabled">Enable PoW</Label>
+              <Input className="ml-2 w-24" value={powDiff} onChange={e=>setPowDiff(e.target.value)} placeholder="difficulty" />
+            </div>
+            <div className="grid gap-1">
+              <Label>Name override</Label>
+              <Input value={nameOverride} onChange={e=>setNameOverride(e.target.value)} placeholder={file.name || ''} />
+            </div>
+            <div className="grid gap-1">
+              <Label>MIME override</Label>
+              <Input value={mimeOverride} onChange={e=>setMimeOverride(e.target.value)} placeholder={file.mimeType || ''} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={()=>setPubModalOpen(false)}>Cancel</Button>
+            <Button onClick={async ()=>{
+              try {
+                setCreating(true);
+                const payload = {
+                  ttl_sec: ttlSec? Number(ttlSec): undefined,
+                  max_downloads: maxDownloads? Number(maxDownloads): undefined,
+                  pow: powEnabled? { enabled: true, difficulty: powDiff? Number(powDiff): undefined }: undefined,
+                  name_override: nameOverride || undefined,
+                  mime_override: mimeOverride || undefined,
+                };
+                const resp = await createPublicLink(file.id, payload);
+                const origin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || window.location.origin;
+                const pubUrl = origin.replace(/\/$/, '') + `/public/${resp.token}`;
+                // copy with #k=… (simulating key reference)
+                copyToClipboard(pubUrl + (nameOverride? `#k=${encodeURIComponent(nameOverride)}`: ''), 'Public link');
+                toast.success('Public link created');
+                setPubModalOpen(false);
+                await loadPublicLinks();
+              } catch(e) {
+                toast.error(getErrorMessage(e, 'Failed to create public link'));
+              } finally {
+                setCreating(false);
+              }
+            }} disabled={creating}>
+              {creating? 'Creating…' : 'Create & Copy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

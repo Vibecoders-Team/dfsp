@@ -8,15 +8,17 @@ from typing import Annotated, cast
 
 import redis
 from eth_typing import HexStr
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from web3 import Web3
 
+from app.blockchain.web3_client import Chain
 from app.config import settings
 from app.deps import get_chain, get_db, get_ipfs, get_redis
+from app.ipfs.client import IpfsClient
 from app.models.files import File
 from app.models.public_links import PublicLink
 from app.models.users import User
@@ -25,7 +27,9 @@ from app.schemas.public_links import (
     PowIn,
     PublicLinkCreateIn,
     PublicLinkCreateOut,
+    PublicLinkItemOut,
     PublicLinkPolicyOut,
+    PublicLinksListOut,
     PublicMetaOut,
     RevokeOut,
 )
@@ -100,9 +104,9 @@ def create_public_link(
     db.add(pl)
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as err:
         db.rollback()
-        raise HTTPException(500, "token_generation_failed")
+        raise HTTPException(500, "token_generation_failed") from err
 
     return PublicLinkCreateOut(token=token, expires_at=expires_at, policy=policy)
 
@@ -131,27 +135,39 @@ def public_meta(token: str, db: Annotated[Session, Depends(get_db)]) -> PublicMe
 
 
 @router.post("/public/{token}/pow", response_model=OkOut)
-def public_pow(token: str, body: PowIn, rds: Annotated[redis.Redis, Depends(get_redis)]) -> OkOut:
+def public_pow(token: str, body: PowIn, rds: Annotated[redis.Redis, Depends(get_redis)], db: Annotated[Session, Depends(get_db)]) -> OkOut:
+    pl: PublicLink | None = db.scalar(select(PublicLink).where(PublicLink.token == token))
+    if pl is None:
+        raise HTTPException(404, "not_found")
     key = f"pow:challenge:{body.nonce}"
     if rds.get(key) is None:
         raise HTTPException(400, "bad_solution")
-    h = hashlib.sha256((body.nonce + body.solution).encode("utf-8")).hexdigest()
-    difficulty = int(settings.pow_difficulty_base)
-    nibbles = int((difficulty + 3) // 4)
+    # choose difficulty: per-link if set and >0, else global
+    try:
+        diff = int(pl.pow_difficulty or 0)
+    except Exception:
+        diff = 0
+    if diff <= 0:
+        diff = int(settings.pow_difficulty_base)
+    nibbles = int((diff + 3) // 4)
     prefix = "0" * nibbles
+    h = hashlib.sha256((body.nonce + body.solution).encode("utf-8")).hexdigest()
+    logger.info(f"public_pow: token={token}, diff={diff}, prefix={prefix}, computed_hash={h[:16]}..., valid={h.startswith(prefix)}")
     if not h.startswith(prefix):
         raise HTTPException(400, "bad_solution")
     # consume challenge
     try:
-        rds.delete(key)
-    except Exception:
-        logger.debug("Failed to delete pow challenge %s", key, exc_info=True)
+        deleted = rds.delete(key)
+        logger.info(f"public_pow: deleted challenge key={key}, result={deleted}")
+    except Exception as e:
+        logger.debug("Failed to delete pow challenge %s: %s", key, e, exc_info=True)
     # grant short-lived access token for content retrieval
     access_key = f"public:access:{token}"
     try:
-        rds.set(access_key, "1", ex=60)
-    except Exception:
-        logger.debug("Failed to set access key %s", access_key, exc_info=True)
+        set_result = rds.set(access_key, "1", ex=60)
+        logger.info(f"public_pow: set access_key={access_key}, ex=60, result={set_result}")
+    except Exception as e:
+        logger.warning("Failed to set access key %s: %s", access_key, e, exc_info=True)
     try:
         rds.incr("metrics:public_pow_ok")
     except Exception:
@@ -164,8 +180,8 @@ def public_content(
     token: str,
     db: Annotated[Session, Depends(get_db)],
     rds: Annotated[redis.Redis, Depends(get_redis)],
-    chain=Depends(get_chain),
-    ipfs=Depends(get_ipfs),
+    chain: Annotated[Chain, Depends(get_chain)],
+    ipfs: Annotated[IpfsClient, Depends(get_ipfs)],
 ) -> StreamingResponse:
     pl: PublicLink | None = db.scalar(select(PublicLink).where(PublicLink.token == token))
     if pl is None:
@@ -174,13 +190,22 @@ def public_content(
     if pl.revoked_at is not None or (pl.expires_at is not None and now > pl.expires_at):
         raise HTTPException(410, "expired|revoked")
 
-    # PoW check: if pow_difficulty set, require redis access flag
-    if pl.pow_difficulty:
-        if rds.get(f"public:access:{token}") is None:
+    # PoW check: require access only when difficulty > 0
+    try:
+        diff_val = int(pl.pow_difficulty or 0)
+    except Exception:
+        diff_val = 0
+    logger.info(f"public_content: token={token}, pow_difficulty={pl.pow_difficulty}, computed_diff={diff_val}")
+    if diff_val > 0:
+        access_key = f"public:access:{token}"
+        access_exists = rds.get(access_key)
+        logger.info(f"public_content: checking access_key={access_key}, exists={access_exists is not None}")
+        if access_exists is None:
             raise HTTPException(403, "denied")
 
-    # check downloads limit
-    if pl.max_downloads is not None and pl.downloads_count >= pl.max_downloads:
+    # check downloads limit (0 means unlimited)
+    if pl.max_downloads is not None and pl.max_downloads > 0 and pl.downloads_count >= pl.max_downloads:
+        logger.info(f"public_content: downloads limit exceeded: {pl.downloads_count} >= {pl.max_downloads}")
         raise HTTPException(403, "limit")
 
     # get cid from chain first
@@ -192,7 +217,10 @@ def public_content(
     if not cid:
         cid = pl.snapshot_cid
     if not cid:
+        logger.warning(f"public_content: no CID found for token={token}, file_id={pl.file_id.hex()}")
         raise HTTPException(502, "registry_unavailable")
+
+    logger.info(f"public_content: proceeding to fetch from IPFS, cid={cid}")
 
     # increment downloads_count
     try:
@@ -238,3 +266,39 @@ def revoke_public_link(
     db.add(pl)
     db.commit()
     return RevokeOut(revoked=True)
+
+
+@router.get("/files/{file_id_hex}/public-links", response_model=PublicLinksListOut)
+def list_public_links(
+    file_id_hex: str,
+    creds: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> PublicLinksListOut:
+    if not (isinstance(file_id_hex, str) and file_id_hex.startswith("0x") and len(file_id_hex) == 66):
+        raise HTTPException(400, "bad_file_id")
+    try:
+        file_id = Web3.to_bytes(hexstr=cast(HexStr, file_id_hex))
+    except Exception as err:
+        raise HTTPException(400, "bad_file_id") from err
+    file_row: File | None = db.get(File, file_id)
+    if file_row is None:
+        raise HTTPException(404, "file_not_found")
+    if file_row.owner_id != creds.id:
+        raise HTTPException(403, "not_owner")
+
+    rows = db.scalars(select(PublicLink).where(PublicLink.file_id == file_id)).all()
+    items: list[PublicLinkItemOut] = []
+    for pl in rows:
+        items.append(
+            PublicLinkItemOut(
+                token=pl.token,
+                expires_at=pl.expires_at,
+                policy=PublicLinkPolicyOut(
+                    max_downloads=pl.max_downloads,
+                    pow_difficulty=pl.pow_difficulty,
+                    one_time=pl.one_time,
+                ),
+                downloads_count=pl.downloads_count or 0,
+            )
+        )
+    return PublicLinksListOut(items=items)

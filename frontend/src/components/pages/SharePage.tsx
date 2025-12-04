@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { ArrowLeft, X, Plus, AlertCircle, CheckCircle2, Info } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchGranteePubKey, shareFile, type ShareItem, submitMetaTx, type ForwardTyped, listGrants } from '@/lib/api.ts';
+import { fetchGranteePubKey, shareFile, type ShareItem, submitMetaTx, type ForwardTyped, listGrants, createPublicLink, listPublicLinks, revokePublicLink, type PublicLinkItem } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
 import { getOrCreateFileKey } from '@/lib/fileKey.ts';
 import { pemToArrayBuffer, arrayBufferToBase64 } from '@/lib/keychain.ts';
@@ -23,6 +23,7 @@ import { signForwardTyped } from '@/lib/signing.ts';
 import { NetworkStatus } from '../NetworkStatus';
 import type { SignerAgent } from '@/lib/agent';
 import type * as React from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
 
 interface Recipient {
   address: string;
@@ -68,6 +69,16 @@ export default function SharePage() {
   const [debugMode] = useState<boolean>(() => localStorage.getItem('dfsp_debug_meta') === '1');
   const [rawTypedData, setRawTypedData] = useState<ForwardTyped[] | null>(null);
   const [metaSubmitted, setMetaSubmitted] = useState(false);
+
+  const [pubModalOpen, setPubModalOpen] = useState(false);
+  const [publicLinks, setPublicLinks] = useState<PublicLinkItem[]>([]);
+  const [ttlSec, setTtlSec] = useState<string>('86400');
+  const [maxPublicDownloads, setMaxPublicDownloads] = useState<string>('0');
+  const [powEnabled, setPowEnabled] = useState<boolean>(false);
+  const [powDiff, setPowDiff] = useState<string>('0');
+  const [nameOverride, setNameOverride] = useState<string>('');
+  const [mimeOverride, setMimeOverride] = useState<string>('');
+  const [creatingPublic, setCreatingPublic] = useState(false);
 
   const validateAddress = (address: string): boolean => isAddr(address);
 
@@ -421,6 +432,8 @@ export default function SharePage() {
     return ()=> window.removeEventListener('dfsp:logout', onLogout);
   },[]);
 
+  useEffect(()=>{ (async()=>{ try { const items = await listPublicLinks(fileId); setPublicLinks(items); } catch{} })(); }, [fileId]);
+
   if (results.length > 0) {
     return (
       <Layout>
@@ -468,6 +481,9 @@ export default function SharePage() {
             Back
           </Button>
           <h1>Share File</h1>
+          <div className="ml-auto">
+            <Button variant="outline" size="sm" onClick={()=>setPubModalOpen(true)}>Share public link</Button>
+          </div>
         </div>
 
         <Alert>
@@ -573,6 +589,47 @@ export default function SharePage() {
           </CardContent>
         </Card>
 
+        <Card>
+          <CardHeader>
+            <CardTitle>Public Links</CardTitle>
+            <CardDescription>Active public links for this file</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {publicLinks.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">No public links</div>
+            ) : (
+              <div className="space-y-3">
+                {publicLinks.map(pl=> (
+                  <div key={pl.token} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <div className="text-sm break-all">Token: <code className="bg-gray-100 px-1 py-0.5 rounded">{pl.token}</code></div>
+                      <div className="text-xs text-gray-500">Expires: {pl.expires_at || '-'}</div>
+                      <div className="text-xs text-gray-500">
+                        Downloads: {pl.downloads_count ?? 0}
+                        {pl.policy?.max_downloads && pl.policy.max_downloads > 0
+                          ? ` / ${pl.policy.max_downloads} (${Math.max(0, pl.policy.max_downloads - (pl.downloads_count ?? 0))} left)`
+                          : ' / ∞ (unlimited)'}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => {
+                        const origin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || window.location.origin;
+                        const pubUrl = origin.replace(/\/$/, '') + `/public/${pl.token}`;
+                        const K_file = getOrCreateFileKey(fileId);
+                        const keyB64 = btoa(String.fromCharCode(...K_file));
+                        const full = pubUrl + `#k=${encodeURIComponent(keyB64)}`;
+                        navigator.clipboard.writeText(full);
+                        toast.success('Public link copied');
+                      }}>Copy</Button>
+                      <Button variant="ghost" size="sm" onClick={async()=>{ try { await revokePublicLink(pl.token); toast.success('Revoked'); const items = await listPublicLinks(fileId); setPublicLinks(items); } catch(e){ toast.error(getErrorMessage(e,'Failed to revoke')); } }}>Revoke</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {error && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -654,6 +711,69 @@ export default function SharePage() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={pubModalOpen} onOpenChange={setPubModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share public link</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1">
+              <Label>TTL (seconds)</Label>
+              <Input value={ttlSec} onChange={e=>setTtlSec(e.target.value)} placeholder="86400" />
+            </div>
+            <div className="grid gap-1">
+              <Label>Max downloads (0 for unlimited)</Label>
+              <Input value={maxPublicDownloads} onChange={e=>setMaxPublicDownloads(e.target.value)} placeholder="0" />
+            </div>
+            <div className="flex items-center gap-2">
+              <input id="powEnabled" type="checkbox" checked={powEnabled} onChange={e=>setPowEnabled(e.target.checked)} />
+              <Label htmlFor="powEnabled">Enable PoW</Label>
+              <Input className="ml-2 w-24" value={powDiff} onChange={e=>setPowDiff(e.target.value)} placeholder="difficulty" disabled={!powEnabled} />
+            </div>
+            <div className="grid gap-1">
+              <Label>Name override</Label>
+              <Input value={nameOverride} onChange={e=>setNameOverride(e.target.value)} placeholder="" />
+            </div>
+            <div className="grid gap-1">
+              <Label>MIME override</Label>
+              <Input value={mimeOverride} onChange={e=>setMimeOverride(e.target.value)} placeholder="" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={()=>setPubModalOpen(false)}>Cancel</Button>
+            <Button onClick={async ()=>{
+              try {
+                setCreatingPublic(true);
+                const payload = {
+                  ttl_sec: ttlSec? Number(ttlSec): undefined,
+                  max_downloads: maxPublicDownloads? Number(maxPublicDownloads): undefined,
+                  pow: powEnabled? { enabled: true, difficulty: powDiff? Number(powDiff): undefined }: undefined,
+                  name_override: nameOverride || undefined,
+                  mime_override: mimeOverride || undefined,
+                };
+                const resp = await createPublicLink(fileId, payload);
+                const origin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || window.location.origin;
+                const pubUrl = origin.replace(/\/$/, '') + `/public/${resp.token}`;
+                // Get encryption key and encode to base64
+                const K_file = getOrCreateFileKey(fileId);
+                const keyB64 = btoa(String.fromCharCode(...K_file));
+                const full = pubUrl + `#k=${encodeURIComponent(keyB64)}`;
+                navigator.clipboard.writeText(full);
+                toast.success('Public link created & copied');
+                setPubModalOpen(false);
+                const items = await listPublicLinks(fileId); setPublicLinks(items);
+              } catch(e) {
+                toast.error(getErrorMessage(e, 'Failed to create public link'));
+              } finally {
+                setCreatingPublic(false);
+              }
+            }} disabled={creatingPublic}>
+              {creatingPublic? 'Creating…' : 'Create & Copy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
