@@ -242,8 +242,12 @@ export function KeysSettings() {
     setError('');
 
     try {
-      await restoreAccount(selectedFile, restorePassword);
-      toast.success('Keys restored successfully');
+      const res = await restoreAccount(selectedFile, restorePassword);
+      if (res.mode === 'RSA-only') {
+        toast.success('RSA key restored. Use your external wallet on next login.');
+      } else {
+        toast.success('Keys restored successfully');
+      }
       setShowPasswordPrompt(false);
       setRestorePassword('');
       setSelectedFile(null);

@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
-import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type LoginMessage, LOGIN_TYPES as KC_LOGIN_TYPES, LOGIN_DOMAIN as KC_LOGIN_DOMAIN } from '@/lib/keychain';
+import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type LoginMessage, LOGIN_TYPES as KC_LOGIN_TYPES, LOGIN_DOMAIN as KC_LOGIN_DOMAIN, unlockEOA, type RestoreResult } from '@/lib/keychain';
 import { postChallenge, postLogin, postRegister, postTonChallenge, postTonLogin, ACCESS_TOKEN_KEY, type RegisterPayload, type TypedLoginData, type TonSignPayload } from '@/lib/api';
 import { ethers, type TypedDataDomain, type TypedDataField } from 'ethers';
 import { getAgent } from '@/lib/agent/manager';
@@ -32,11 +32,11 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: () => Promise<void>;
+  login: (opts?: { unlockPassword?: string }) => Promise<void>;
   loginWithTon: () => Promise<void>;
   register: (password: string, confirmPassword: string, displayName?: string) => Promise<{ backupData: Blob }>;
   logout: () => void;
-  restoreAccount: (file: File, password: string) => Promise<void>;
+  restoreAccount: (file: File, password: string) => Promise<RestoreResult>;
   updateBackupStatus: (hasBackup: boolean) => void;
 }
 
@@ -82,9 +82,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth();
   }, []);
 
-  const login = async () => {
+  const login = async (opts?: { unlockPassword?: string }) => {
        const challenge = await postChallenge();
        const agent = await getAgent();
+       if (agent.kind === 'local') {
+         const hasLocal = await hasEOA();
+         if (!hasLocal) {
+           throw new Error('Local key not found. Switch to MetaMask/WalletConnect or restore a full backup.');
+         }
+         if (opts?.unlockPassword) {
+           try { await unlockEOA(opts.unlockPassword); } catch {/* fallback to dialog */}
+         }
+       }
        // For local agent: prompt unlock dialog and wait before proceeding
        if (agent.kind === 'local') {
          try { await ensureUnlockedOrThrow(); } catch { throw new Error('Unlock cancelled'); }
@@ -285,9 +294,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    };
 
   const restoreAccount = async (file: File, password: string) => {
-    await restoreFromBackup(file, password);
-    await login();
+    // clear stale tokens/session before restore to avoid redirect loops when coming from logged-out state
+    if (!user) {
+      try {
+        localStorage.removeItem(ACCESS_TOKEN_KEY);
+        localStorage.removeItem('REFRESH_TOKEN');
+        bumpSessionGen();
+      } catch { /* ignore */ }
+    }
+    const res = await restoreFromBackup(file, password);
+    // RSA-only backups do not carry an EOA, so skip auto-login and let user choose external wallet
+    if (res.mode === 'RSA-only') {
+      if (user) {
+        setUser({ ...user, hasBackup: true });
+      } else {
+        setUser(null);
+      }
+      return res;
+    }
+    await login({ unlockPassword: password });
     setUser(prev => prev ? { ...prev, hasBackup: true } : null);
+    return res;
    };
 
   const logout = () => {

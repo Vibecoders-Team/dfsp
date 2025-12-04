@@ -26,6 +26,7 @@ import { getErrorMessage } from '@/lib/errors.ts';
 import { toast } from 'sonner';
 import { getFileKey } from '@/lib/fileKey.ts';
 import { decryptStream } from '@/lib/cryptoClient.ts';
+import { useConnectionSpeed } from '@/lib/useConnectionSpeed.ts';
 
 interface FileItem {
   id: string;
@@ -43,6 +44,7 @@ export default function FilesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [files, setFiles] = useState<FileItem[]>([]);
+  const { isSlowConnection, effectiveType } = useConnectionSpeed();
 
   // Load files from API
   useEffect(() => {
@@ -187,6 +189,12 @@ export default function FilesPage() {
         <div className="space-y-6">
           <Skeleton className="h-10 w-64" />
           <Skeleton className="h-12 w-full" />
+          {isSlowConnection && (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="h-4 w-4 border-2 border-gray-300 border-b-transparent rounded-full animate-spin" />
+              <span>Slow connection {effectiveType || '3G/2G'} — loading may take a bit longer</span>
+            </div>
+          )}
           <div className="space-y-2">
             {[...Array(5)].map((_, i) => (
               <Skeleton key={i} className="h-16 w-full" />
@@ -202,8 +210,8 @@ export default function FilesPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1>My Files</h1>
-          <Link to="/upload">
-            <Button className="gap-2">
+          <Link to="/upload" className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
+            <Button className="gap-2" disabled={isLoading && isSlowConnection}>
               <Upload className="h-4 w-4" />
               Upload File
             </Button>
@@ -290,26 +298,26 @@ export default function FilesPage() {
                     </TableCell>
                     <TableCell>{formatDate(file.created)}</TableCell>
                     <TableCell>
-                      <div className="flex items-center justify-end gap-2">
-                        <Link to={`/files/${file.id}`}>
-                          <Button variant="ghost" size="sm" className="gap-1.5">
+                  <div className="flex items-center justify-end gap-2">
+                        <Link to={`/files/${file.id}`} className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
+                          <Button variant="ghost" size="sm" className="gap-1.5" disabled={isLoading && isSlowConnection}>
                             <Eye className="h-3.5 w-3.5" />
                             View
                           </Button>
                         </Link>
-                        <Link to={`/files/${file.id}/share`}>
-                          <Button variant="ghost" size="sm" className="gap-1.5">
+                        <Link to={`/files/${file.id}/share`} className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
+                          <Button variant="ghost" size="sm" className="gap-1.5" disabled={isLoading && isSlowConnection}>
                             <Share2 className="h-3.5 w-3.5" />
                             Share
                           </Button>
                         </Link>
-                        <Link to={`/verify/${file.id}`}>
-                          <Button variant="ghost" size="sm" className="gap-1.5">
+                        <Link to={`/verify/${file.id}`} className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
+                          <Button variant="ghost" size="sm" className="gap-1.5" disabled={isLoading && isSlowConnection}>
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             Verify
                           </Button>
                         </Link>
-                        <Button variant="ghost" size="sm" className="gap-1.5" onClick={()=>handleDownloadOwn(file)}>
+                        <Button variant="ghost" size="sm" className="gap-1.5" onClick={()=>handleDownloadOwn(file)} disabled={isLoading && isSlowConnection}>
                           <Download className="h-3.5 w-3.5" />
                           Download
                         </Button>

@@ -31,10 +31,15 @@ export default function RestorePage() {
     if (!password) { setError('Please enter password'); return; }
     setBusy(true); setError(''); setSuccess(false);
     try {
-      await restoreAccount(file, password);
-      toast.success('Keys restored, signing in...');
+      const res = await restoreAccount(file, password);
       setSuccess(true);
-      navigate('/files');
+      if (res.mode === 'RSA-only') {
+        toast.success('Keys restored. Login with your wallet to continue.');
+        navigate('/login');
+      } else {
+        toast.success('Keys restored, signing in...');
+        navigate('/files');
+      }
     } catch (e) {
       const err = e as Error;
       setError(err?.message || 'Failed to restore from backup');

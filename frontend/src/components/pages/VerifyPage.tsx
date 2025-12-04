@@ -55,6 +55,7 @@ export default function VerifyPage() {
   const [localCheckData, setLocalCheckData] = useState<LocalCheckData | null>(null);
   const [error, setError] = useState('');
   const [isCalculating, setIsCalculating] = useState(false);
+  const [showMismatchDetails, setShowMismatchDetails] = useState(false);
 
   const checkOnChain = async () => {
     setState('loading');
@@ -78,6 +79,7 @@ export default function VerifyPage() {
       if (localCheckData && oc.checksum) {
         const match = localCheckData.checksumKeccak.toLowerCase() === oc.checksum.replace(/^0x/, '').toLowerCase();
         setState(match ? 'match' : 'mismatch');
+        setShowMismatchDetails(false);
       } else {
         setState('idle');
       }
@@ -112,6 +114,7 @@ export default function VerifyPage() {
       if (onChainData?.checksum) {
         const match = s2.toLowerCase() === onChainData.checksum.replace(/^0x/, '').toLowerCase();
         setState(match ? 'match' : 'mismatch');
+        setShowMismatchDetails(false);
       }
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to calculate checksum'));
@@ -261,10 +264,36 @@ export default function VerifyPage() {
           <Alert variant="destructive">
             <XCircle className="h-4 w-4" />
             <AlertDescription>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <span>Verification failed! Checksums do not match.</span>
                 <Badge variant="destructive">Mismatch</Badge>
               </div>
+              {onChainData?.checksum && localCheckData?.checksumKeccak && (
+                <div className="mt-3 space-y-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => setShowMismatchDetails((v) => !v)}
+                  >
+                    {showMismatchDetails ? 'Hide details' : 'Show details'}
+                  </Button>
+                  {showMismatchDetails && (
+                    <div className="space-y-2 rounded-md border border-destructive/30 bg-white p-3 text-sm text-gray-700">
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">On-chain checksum</div>
+                        <code className="block break-all bg-gray-100 p-2 rounded">{onChainData.checksum}</code>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">Local keccak256</div>
+                        <code className="block break-all bg-gray-100 p-2 rounded">
+                          {localCheckData.checksumKeccak}
+                        </code>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </AlertDescription>
           </Alert>
         )}
@@ -276,7 +305,7 @@ export default function VerifyPage() {
           </Alert>
         )}
 
-        {onChainData && localCheckData && (
+        {state === 'match' && onChainData && localCheckData && (
           <Card>
             <CardHeader>
               <CardTitle>Comparison</CardTitle>

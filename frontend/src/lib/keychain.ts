@@ -56,6 +56,21 @@ async function idbSet<T>(key: string, val: T): Promise<void> {
   });
 }
 
+async function idbDel(key: string): Promise<void> {
+  if (!HAS_IDB) {
+    MEM_STORE.delete(key);
+    return Promise.resolve();
+  }
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const st = tx.objectStore(STORE);
+    st.delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 // ---- Helpers base64 ----
 function ab2b64(ab: ArrayBuffer): string { const u8 = new Uint8Array(ab); let s=""; for (let i=0;i<u8.length;i++) s+=String.fromCharCode(u8[i]); return btoa(s); }
 function b64toAb(b64: string): ArrayBuffer { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); return u8.buffer; }
@@ -88,6 +103,18 @@ export async function ensureEOAUnlocked(password?: string): Promise<Wallet>{ if(
 // backward compat
 export async function ensureEOA(password?: string){ return ensureEOAUnlocked(password); }
 export async function reencryptEOA(oldPass: string, newPass: string){ const hex=await decryptEOA(oldPass); await encryptEOA(newPass, hex); unlockedEOAPriv=hex; scheduleAutoLock(); }
+
+export async function clearLocalEOA(): Promise<void> {
+  unlockedEOAPriv = null;
+  if (autoLockTimer) { clearTimeout(autoLockTimer); autoLockTimer = null; }
+  await Promise.all([
+    idbDel(KEY_EOA_ENC).catch(()=>{}),
+    idbDel(KEY_EOA_IV).catch(()=>{}),
+    idbDel(KEY_EOA_SALT).catch(()=>{}),
+    idbDel(KEY_EOA_PRIV_LEGACY).catch(()=>{}),
+  ]);
+  try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dfsp:locked')); } catch {/* ignore */}
+}
 
 // ---- RSA (updated to RSA-OAEP with migration from legacy RSA-PSS) ----
 const KEY_RSA_PRIV_PKCS8 = "rsaPrivPkcs8";
@@ -209,11 +236,11 @@ export async function createBackupBlobRSAOnly(password:string):Promise<Blob>{
 
 // ---- Restore legacy v1 (.dfspkey) ----
 interface LegacyBackupV1 { version:1; eoaPrivHex:`0x${string}`; rsaPrivPkcs8_b64:string; createdAt:number; }
-export async function restoreFromBackupLegacy(file:File,password:string):Promise<{address:string}>{ const txt=await file.text(); const j=JSON.parse(txt) as any; if(j.version!==1) throw new Error("Not legacy v1"); const salt=b64toAb(j.kdf?.salt_b64||""); const iv=b64toAb(j.cipher?.iv_b64||""); const data=b64toAb(j.cipher?.data_b64||""); const material=await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]); const key=await crypto.subtle.deriveKey({name:"PBKDF2",salt:new Uint8Array(salt),iterations:j.kdf?.iterations||200000,hash:"SHA-256"},material,{name:"AES-GCM",length:256},true,["decrypt"]); const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:new Uint8Array(iv)},key,data); const payload=JSON.parse(new TextDecoder().decode(plain)) as LegacyBackupV1; if(!/^0x[0-9a-fA-F]{64}$/.test(payload.eoaPrivHex)) throw new Error("Invalid EOA in legacy backup"); await idbSet(KEY_EOA_PRIV_LEGACY,payload.eoaPrivHex); const rsaBuf=b64toAb(payload.rsaPrivPkcs8_b64); await idbSet(KEY_RSA_PRIV_PKCS8,rsaBuf); const priv=await crypto.subtle.importKey("pkcs8",rsaBuf,{name:"RSA-PSS",hash:"SHA-256"},true,["sign"]); const pubPem=await exportRsaPublicPemFromPrivate(priv); await idbSet(KEY_RSA_PUB_PEM,pubPem); await unlockEOA(password); return {address:new Wallet(payload.eoaPrivHex).address}; }
+export async function restoreFromBackupLegacy(file:File,password:string):Promise<{address:string; mode:"EOA+RSA"}>{ const txt=await file.text(); const j=JSON.parse(txt) as any; if(j.version!==1) throw new Error("Not legacy v1"); const salt=b64toAb(j.kdf?.salt_b64||""); const iv=b64toAb(j.cipher?.iv_b64||""); const data=b64toAb(j.cipher?.data_b64||""); const material=await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]); const key=await crypto.subtle.deriveKey({name:"PBKDF2",salt:new Uint8Array(salt),iterations:j.kdf?.iterations||200000,hash:"SHA-256"},material,{name:"AES-GCM",length:256},true,["decrypt"]); const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:new Uint8Array(iv)},key,data); const payload=JSON.parse(new TextDecoder().decode(plain)) as LegacyBackupV1; if(!/^0x[0-9a-fA-F]{64}$/.test(payload.eoaPrivHex)) throw new Error("Invalid EOA in legacy backup"); await clearLocalEOA(); const rsaBuf=b64toAb(payload.rsaPrivPkcs8_b64); await idbSet(KEY_RSA_PRIV_PKCS8,rsaBuf); const priv=await crypto.subtle.importKey("pkcs8",rsaBuf,{name:"RSA-PSS",hash:"SHA-256"},true,["sign"]); const pubPem=await exportRsaPublicPemFromPrivate(priv); await idbSet(KEY_RSA_PUB_PEM,pubPem); await unlockEOA(password); return {address:new Wallet(payload.eoaPrivHex).address, mode:"EOA+RSA"}; }
 
 // ---- Restore v2 (.dfspkey) ----
 interface BackupV2Envelope { version:2; mode:"EOA+RSA"|"RSA-only"; kdf:{name:string; iterations:number; hash:string; salt_b64:string}; cipher:{name:string; iv_b64:string; data_b64:string}; }
-async function restoreFromBackupV2(file: File, password: string): Promise<{address?:string}> {
+async function restoreFromBackupV2(file: File, password: string): Promise<{address?:string; mode:"EOA+RSA"|"RSA-only"}> {
   const txt = await file.text();
   const env = JSON.parse(txt) as BackupV2Envelope;
   if (env?.version !== 2) throw new Error('Not v2');
@@ -229,6 +256,7 @@ async function restoreFromBackupV2(file: File, password: string): Promise<{addre
     const rsaB64: string | undefined = payload.rsaPrivPkcs8_b64;
     if (!eoa || !/^0x[0-9a-fA-F]{64}$/.test(eoa)) throw new Error('Invalid EOA in backup');
     if (!rsaB64) throw new Error('RSA private missing in backup');
+    await clearLocalEOA();
     await idbSet(KEY_EOA_PRIV_LEGACY, eoa);
     const rsaBuf = b64toAb(rsaB64);
     await idbSet(KEY_RSA_PRIV_PKCS8, rsaBuf);
@@ -237,16 +265,17 @@ async function restoreFromBackupV2(file: File, password: string): Promise<{addre
     await idbSet(KEY_RSA_PUB_PEM, pubPem);
     // Also set unlocked + encrypt with provided password
     await unlockEOA(password);
-    return { address: new Wallet(eoa).address };
+    return { address: new Wallet(eoa).address, mode:"EOA+RSA" };
   } else if (payload.mode === 'RSA-only') {
     const rsaB64: string | undefined = payload.rsaPrivPkcs8_b64;
     if (!rsaB64) throw new Error('RSA private missing in backup');
     const rsaBuf = b64toAb(rsaB64);
+    await clearLocalEOA();
     await idbSet(KEY_RSA_PRIV_PKCS8, rsaBuf);
     const priv = await crypto.subtle.importKey('pkcs8', rsaBuf, { name:'RSA-PSS', hash:'SHA-256' }, true, ['sign']);
     const pubPem = await exportRsaPublicPemFromPrivate(priv);
     await idbSet(KEY_RSA_PUB_PEM, pubPem);
-    return { address: undefined };
+    return { address: undefined, mode:"RSA-only" };
   } else {
     throw new Error('Unknown backup mode');
   }
@@ -254,7 +283,7 @@ async function restoreFromBackupV2(file: File, password: string): Promise<{addre
 
 // ---- Restore v3 (.dfspkey) ----
 interface BackupV3Envelope { version:3; mode:"EOA+RSA"|"RSA-only"; rsa_algo?:string; kdf:{name:string; iterations:number; hash:string; salt_b64:string}; cipher:{name:string; iv_b64:string; data_b64:string}; }
-async function restoreFromBackupV3(file: File, password: string): Promise<{address?:string}> {
+async function restoreFromBackupV3(file: File, password: string): Promise<{address?:string; mode:"EOA+RSA"|"RSA-only"}> {
   const txt = await file.text();
   const env = JSON.parse(txt) as BackupV3Envelope;
   if (env.version !== 3) throw new Error('Not v3');
@@ -285,11 +314,13 @@ async function restoreFromBackupV3(file: File, password: string): Promise<{addre
   if (payload.mode === 'EOA+RSA') {
     const eoa: string | undefined = payload.eoaPrivHex;
     if (!eoa || !/^0x[0-9a-fA-F]{64}$/.test(eoa)) throw new Error('Invalid EOA in backup');
+    await clearLocalEOA();
     await idbSet(KEY_EOA_PRIV_LEGACY, eoa);
     await unlockEOA(password);
-    return { address: new Wallet(eoa).address };
+    return { address: new Wallet(eoa).address, mode:"EOA+RSA" };
   }
-  return { address: undefined };
+  await clearLocalEOA();
+  return { address: undefined, mode:"RSA-only" };
 }
 
 // ---- Login signing ----
@@ -307,15 +338,17 @@ export async function hasEOA(): Promise<boolean> {
   return !!(enc || legacy);
 }
 
-export async function restoreFromBackup(file: File, password: string): Promise<{address:string}> {
+export type RestoreResult = { address?: string; mode: "EOA+RSA" | "RSA-only" };
+
+export async function restoreFromBackup(file: File, password: string): Promise<RestoreResult> {
   // Try v3, then v2, then legacy v1
   try {
     const res3 = await restoreFromBackupV3(file, password);
-    return { address: res3.address || '' };
+    return { address: res3.address || '', mode: res3.mode };
   } catch {
     try {
       const res2 = await restoreFromBackupV2(file, password);
-      return { address: res2.address || '' };
+      return { address: res2.address || '', mode: res2.mode };
     } catch {
       return restoreFromBackupLegacy(file, password);
     }
