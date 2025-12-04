@@ -16,7 +16,7 @@ import HealthPage from './components/pages/HealthPage';
 import NotFoundPage from './components/pages/NotFoundPage';
 import ForbiddenPage from './components/pages/ForbiddenPage';
 import ServerErrorPage from './components/pages/ServerErrorPage';
-import { MiniApp, MiniFilesPage, MiniGrantsPage, MiniHomePage, MiniVerifyPage } from './mini/MiniApp';
+import { MiniApp, MiniFilesPage, MiniGrantsPage, MiniHomePage, MiniVerifyPage, MiniPublicLinkPage } from './mini/MiniApp';
 import IntentPage from './components/pages/IntentPage';
 import UnlockPortal from './components/UnlockPortal';
 import { useAuth } from './components/useAuth';
@@ -184,6 +184,7 @@ function AppRoutes() {
           <Route path="files" element={<MiniFilesPage />} />
           <Route path="grants" element={<MiniGrantsPage />} />
           <Route path="verify" element={<MiniVerifyPage />} />
+          <Route path="public/:token" element={<MiniPublicLinkPage />} />
           <Route path="*" element={<Navigate to="/mini" replace />} />
         </Route>
         <Route

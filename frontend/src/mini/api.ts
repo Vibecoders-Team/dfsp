@@ -179,3 +179,87 @@ export type MiniVerifyResponse = {
 export async function miniVerify(fileId: string): Promise<MiniVerifyResponse> {
   return miniGet<MiniVerifyResponse>(`/verify/${fileId}`);
 }
+
+// === Public Links API ===
+export type MiniPublicLinkPolicy = { max_downloads?: number; pow_difficulty?: number; one_time: boolean };
+export type MiniCreatePublicLinkPayload = {
+  version?: number;
+  ttl_sec?: number;
+  max_downloads?: number;
+  pow?: { enabled: boolean; difficulty?: number };
+  name_override?: string;
+  mime_override?: string;
+};
+export type MiniPublicLinkItem = {
+  token: string;
+  expires_at?: string;
+  policy?: MiniPublicLinkPolicy;
+  downloads_count?: number;
+};
+export type MiniPublicLinkCreateResp = { token: string; expires_at: string | null; policy: MiniPublicLinkPolicy };
+
+export async function miniCreatePublicLink(fileId: string, payload: MiniCreatePublicLinkPayload): Promise<MiniPublicLinkCreateResp> {
+  return miniPost<MiniPublicLinkCreateResp>(`/files/${fileId}/public-links`, payload);
+}
+
+export async function miniListPublicLinks(fileId: string): Promise<MiniPublicLinkItem[]> {
+  try {
+    const data = await miniGet<{ items: MiniPublicLinkItem[] }>(`/files/${fileId}/public-links`);
+    return data.items || [];
+  } catch (e) {
+    if ((e as MiniApiError).status === 404) return [];
+    throw e;
+  }
+}
+
+export async function miniRevokePublicLink(token: string): Promise<{ revoked: boolean }> {
+  return miniApi.delete<{ revoked: boolean }>(`/public-links/${token}`).then(r => r.data);
+}
+
+export type MiniPublicMetaResp = {
+  name: string;
+  size?: number;
+  mime?: string;
+  cid?: string;
+  fileId: string;
+  version?: number;
+  expires_at?: string;
+  policy: Record<string, unknown>;
+};
+
+export async function miniGetPublicMeta(token: string): Promise<MiniPublicMetaResp> {
+  const { data } = await miniApi.get<MiniPublicMetaResp>(`/public/${token}/meta`);
+  return data;
+}
+
+export async function miniGetPublicContent(token: string): Promise<Blob> {
+  const res = await miniApi.get(`/public/${token}/content`, { responseType: 'blob' });
+  return res.data as Blob;
+}
+
+export async function miniSubmitPow(token: string, nonce: string, solution: string): Promise<{ ok: boolean }> {
+  const { data } = await miniApi.post<{ ok: boolean }>(`/public/${token}/pow`, { nonce, solution });
+  return data;
+}
+
+export type MiniPowChallenge = { challenge: string; difficulty: number; ttl: number };
+
+export async function miniRequestPowChallenge(): Promise<MiniPowChallenge> {
+  const { data } = await miniApi.post<MiniPowChallenge>("/pow/challenge");
+  return data;
+}
+
+// === Rename API ===
+export type MiniRenameFileResp = {
+  idHex: string;
+  name: string;
+  size: number;
+  mime?: string;
+  cid: string;
+  checksum: string;
+  createdAt: number;
+};
+
+export async function miniRenameFile(fileId: string, newName: string): Promise<MiniRenameFileResp> {
+  return miniApi.patch<MiniRenameFileResp>(`/files/${fileId}`, { name: newName }).then(r => r.data);
+}

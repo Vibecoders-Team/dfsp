@@ -6,9 +6,15 @@ import {
   normalizeMiniError,
   type MiniFileListItem,
   type MiniGrantItem,
+  miniCreatePublicLink,
+  miniListPublicLinks,
+  miniRevokePublicLink,
+  type MiniPublicLinkItem,
+  miniRenameFile,
 } from "../api";
 import { useMiniAuth } from "../auth";
 import { openWebAppLink } from "../telegram";
+import { getOrCreateFileKey } from "@/lib/fileKey";
 
 type GrantsState = Record<string, { loading: boolean; error: string | null; items: MiniGrantItem[] }>;
 type IntentPreview = {
@@ -30,6 +36,16 @@ export function MiniFilesPage() {
   const [intent, setIntent] = useState<IntentPreview | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Public links state
+  const [publicLinks, setPublicLinks] = useState<MiniPublicLinkItem[]>([]);
+  const [showPublicModal, setShowPublicModal] = useState(false);
+  const [creatingPublic, setCreatingPublic] = useState(false);
+
+  // Rename state
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!session) return;
@@ -55,6 +71,7 @@ export function MiniFilesPage() {
   useEffect(() => {
     if (!selectedId) return;
     void loadGrants(selectedId);
+    void loadPublicLinks(selectedId);
   }, [selectedId]);
 
   const selectedFile = useMemo(() => files.find((f) => f.id === selectedId) || null, [files, selectedId]);
@@ -79,6 +96,67 @@ export function MiniFilesPage() {
         ...prev,
         [fileId]: { loading: false, error: resolveError(err), items: prev[fileId]?.items || [] },
       }));
+    }
+  };
+
+  const loadPublicLinks = async (fileId: string) => {
+    try {
+      const items = await miniListPublicLinks(fileId);
+      setPublicLinks(items);
+    } catch {
+      setPublicLinks([]);
+    }
+  };
+
+  const handleCreatePublicLink = async () => {
+    if (!selectedFile) return;
+    setCreatingPublic(true);
+    try {
+      await miniCreatePublicLink(selectedFile.id, { max_downloads: 0 });
+      await loadPublicLinks(selectedFile.id);
+      setShowPublicModal(false);
+    } catch (err) {
+      setActionError(resolveError(err));
+    } finally {
+      setCreatingPublic(false);
+    }
+  };
+
+  const handleRevokePublicLink = async (token: string) => {
+    if (!selectedFile) return;
+    try {
+      await miniRevokePublicLink(token);
+      await loadPublicLinks(selectedFile.id);
+    } catch (err) {
+      setActionError(resolveError(err));
+    }
+  };
+
+  const handleStartRename = (file: MiniFileListItem) => {
+    setRenamingId(file.id);
+    setRenameValue(file.name || "");
+    setRenameError(null);
+  };
+
+  const handleCancelRename = () => {
+    setRenamingId(null);
+    setRenameValue("");
+    setRenameError(null);
+  };
+
+  const handleSaveRename = async () => {
+    if (!renamingId || !renameValue.trim()) {
+      setRenameError("Name cannot be empty");
+      return;
+    }
+    try {
+      await miniRenameFile(renamingId, renameValue.trim());
+      setFiles((prev) => prev.map((f) => (f.id === renamingId ? { ...f, name: renameValue.trim() } : f)));
+      setRenamingId(null);
+      setRenameValue("");
+      setRenameError(null);
+    } catch (err) {
+      setRenameError(resolveError(err));
     }
   };
 
@@ -205,21 +283,68 @@ export function MiniFilesPage() {
             <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
               {files.map((f) => {
                 const active = f.id === selectedId;
+                const isRenaming = renamingId === f.id;
                 return (
-                  <button
+                  <div
                     key={f.id}
-                    onClick={() => setSelectedId(f.id)}
-                    className={`w-full text-left rounded border px-3 py-2 transition ${
+                    className={`rounded border px-3 py-2 transition ${
                       active
                         ? "bg-sky-600/20 border-sky-500 text-sky-50"
                         : "bg-slate-900/50 border-slate-700 hover:border-slate-500"
                     }`}
                   >
-                    <p className="font-semibold text-sm">{f.name || "Без имени"}</p>
-                    <p className="text-xs text-slate-400">
-                      {truncate(f.id, 14)} · {formatBytes(f.size)}
-                    </p>
-                  </button>
+                    {isRenaming ? (
+                      <div className="space-y-1">
+                        <input
+                          type="text"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          className="w-full px-2 py-1 rounded bg-slate-800 border border-slate-600 text-sm text-slate-100"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveRename();
+                            if (e.key === "Escape") handleCancelRename();
+                          }}
+                          autoFocus
+                        />
+                        {renameError && <p className="text-xs text-red-300">{renameError}</p>}
+                        <div className="flex gap-1">
+                          <button
+                            onClick={handleSaveRename}
+                            className="px-2 py-1 rounded bg-green-600 text-xs text-white"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={handleCancelRename}
+                            className="px-2 py-1 rounded bg-slate-600 text-xs text-white"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setSelectedId(f.id)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex justify-between items-start">
+                          <p className="font-semibold text-sm flex-1">{f.name || "Без имени"}</p>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStartRename(f);
+                            }}
+                            className="text-xs text-slate-400 hover:text-slate-200 ml-2"
+                          >
+                            ✏️
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                          {truncate(f.id, 14)} · {formatBytes(f.size)}
+                        </p>
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -270,6 +395,84 @@ export function MiniFilesPage() {
 
           {activeIntent && <IntentCallout intent={activeIntent} openLink={openWebAppLink} />}
         </div>
+
+        <div className="bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="font-semibold text-sm text-slate-100">Публичные ссылки</p>
+            <button
+              onClick={() => setShowPublicModal(true)}
+              className="px-2 py-1 rounded bg-blue-600 text-xs text-white hover:bg-blue-700"
+            >
+              + Создать
+            </button>
+          </div>
+          {!selectedFile ? (
+            <p className="text-sm text-slate-400">Выберите файл слева.</p>
+          ) : publicLinks.length === 0 ? (
+            <p className="text-sm text-slate-400">Нет публичных ссылок.</p>
+          ) : (
+            <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+              {publicLinks.map((pl) => (
+                <div key={pl.token} className="border border-slate-700 rounded p-2 bg-slate-900/40">
+                  <p className="text-xs text-slate-400 break-all">Token: {truncate(pl.token, 20)}</p>
+                  <p className="text-xs text-slate-400">
+                    Downloads: {pl.downloads_count ?? 0}
+                    {pl.policy?.max_downloads && pl.policy.max_downloads > 0
+                      ? ` / ${pl.policy.max_downloads}`
+                      : " / ∞"}
+                  </p>
+                  <div className="flex gap-1 mt-1">
+                    <button
+                      onClick={() => {
+                        if (!selectedFile) return;
+                        const K_file = getOrCreateFileKey(selectedFile.id);
+                        const keyB64 = btoa(String.fromCharCode(...K_file));
+                        const origin = window.location.origin;
+                        const url = `${origin}/mini/public/${pl.token}#k=${encodeURIComponent(keyB64)}`;
+                        navigator.clipboard.writeText(url);
+                      }}
+                      className="px-2 py-1 rounded bg-slate-600 text-xs text-white hover:bg-slate-500"
+                    >
+                      Copy
+                    </button>
+                    <button
+                      onClick={() => handleRevokePublicLink(pl.token)}
+                      className="px-2 py-1 rounded bg-red-600 text-xs text-white hover:bg-red-700"
+                    >
+                      Revoke
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {showPublicModal && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+            <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 max-w-sm w-full mx-4 space-y-3">
+              <p className="font-semibold text-slate-100">Создать публичную ссылку</p>
+              <p className="text-xs text-slate-400">
+                Будет создана ссылка с безлимитными скачиваниями для файла {selectedFile?.name || ""}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCreatePublicLink}
+                  disabled={creatingPublic}
+                  className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {creatingPublic ? "Создаём…" : "Создать"}
+                </button>
+                <button
+                  onClick={() => setShowPublicModal(false)}
+                  className="px-3 py-2 rounded bg-slate-600 text-white hover:bg-slate-500"
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between">
