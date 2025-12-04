@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,9 +24,8 @@ from app.routers.auth import router as auth_router
 from app.routers.bot import router as bot_router
 from app.routers.health import router as health_router
 from app.routers.intents import router as intents_router
+from app.routers.public_links import router as public_links_router
 from app.routers.storage import router as storage_router
-
-# NEW: telemetry
 from app.telemetry.logging import init_logging
 from app.telemetry.metrics import router as metrics_router
 
@@ -36,9 +37,9 @@ from .routers.grants import router as grants_router
 from .routers.meta_tx import router as mtx_router
 from .routers.one_time import router as one_time_router
 from .routers.telegram import router as telegram_router
+from .routers.tonconnect import router as tonconnect_router
 from .routers.users import router as users_router
 from .routers.verify import router as verify_router
-from .routers.tonconnect import router as tonconnect_router
 
 # Initialize structured logging
 init_logging()
@@ -114,3 +115,4 @@ app.include_router(chain_info_router)
 app.include_router(telegram_router)
 app.include_router(tonconnect_router)
 app.include_router(bot_router)
+app.include_router(public_links_router)
