@@ -471,3 +471,19 @@ export async function listPublicLinks(fileIdHex: string): Promise<PublicLinkItem
     throw e;
   }
 }
+
+export type RenameFilePayload = { name: string };
+export type RenameFileResp = {
+  idHex: string;
+  name: string;
+  size: number;
+  mime?: string;
+  cid: string;
+  checksum: string;
+  createdAt: number;
+};
+
+export async function renameFile(fileIdHex: string, newName: string): Promise<RenameFileResp> {
+  const { data } = await api.patch<RenameFileResp>(`/files/${fileIdHex}`, { name: newName });
+  return data;
+}

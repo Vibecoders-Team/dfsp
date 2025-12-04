@@ -22,9 +22,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { ArrowLeft, Copy, Share2, CheckCircle2, XCircle, AlertCircle, Download } from 'lucide-react';
+import { ArrowLeft, Copy, Share2, CheckCircle2, XCircle, AlertCircle, Download, Edit2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx, type ForwardTyped, fetchMyFiles, createPublicLink, listPublicLinks, revokePublicLink, type PublicLinkItem } from '@/lib/api.ts';
+import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx, type ForwardTyped, fetchMyFiles, createPublicLink, listPublicLinks, revokePublicLink, type PublicLinkItem, renameFile } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
 import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
@@ -83,6 +83,11 @@ export default function FileDetailsPage() {
   const [creating, setCreating] = useState(false);
   const intentId = searchParams.get('intent');
   const revokeCapParam = searchParams.get('revoke');
+
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [extensionWarning, setExtensionWarning] = useState(false);
+  const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
     const onLogout = () => {
@@ -150,6 +155,58 @@ export default function FileDetailsPage() {
   const handleRevokeAsk = (capId: string) => {
     setSelectedCapId(capId);
     setRevokeDialogOpen(true);
+  };
+
+  const handleRenameOpen = () => {
+    setNewName(file?.name || '');
+    setExtensionWarning(false);
+    setRenameDialogOpen(true);
+  };
+
+  const getFileExtension = (filename: string) => {
+    const parts = filename.split('.');
+    return parts.length > 1 ? parts[parts.length - 1] : '';
+  };
+
+  const handleRename = async () => {
+    if (!newName.trim()) {
+      toast.error('File name cannot be empty');
+      return;
+    }
+
+    // Check if extension was removed
+    const oldExt = getFileExtension(file?.name || '');
+    const newExt = getFileExtension(newName);
+    if (oldExt && oldExt !== newExt && !extensionWarning) {
+      setExtensionWarning(true);
+      return;
+    }
+
+    const oldName = file?.name;
+    try {
+      setRenaming(true);
+
+      // Optimistic update
+      if (file) {
+        setFile({ ...file, name: newName });
+      }
+
+      await renameFile(id, newName);
+      toast.success('File renamed successfully');
+      setRenameDialogOpen(false);
+      setExtensionWarning(false);
+
+      // Reload to confirm server state
+      await load();
+    } catch (e) {
+      // Rollback on error
+      if (file && oldName !== undefined) {
+        setFile({ ...file, name: oldName });
+      }
+      toast.error(getErrorMessage(e, 'Failed to rename file'));
+    } finally {
+      setRenaming(false);
+    }
   };
 
   const confirmRevoke = async () => {
@@ -295,7 +352,13 @@ export default function FileDetailsPage() {
               <ArrowLeft className="h-4 w-4" />
               Back to Files
             </Button>
-            <h1>{file.name || file.id}</h1>
+            <div className="flex items-center gap-2">
+              <h1>{file.name || file.id}</h1>
+              <Button variant="ghost" size="sm" onClick={handleRenameOpen} className="gap-1">
+                <Edit2 className="h-3.5 w-3.5" />
+                Rename
+              </Button>
+            </div>
           </div>
           <div className="flex gap-2">
             <Link to={`/verify/${file.id}`}>
@@ -613,6 +676,52 @@ export default function FileDetailsPage() {
               }
             }} disabled={creating}>
               {creating? 'Creating…' : 'Create & Copy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename File</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1">
+              <Label htmlFor="newName">New name</Label>
+              <Input
+                id="newName"
+                value={newName}
+                onChange={e => {
+                  setNewName(e.target.value);
+                  setExtensionWarning(false);
+                }}
+                placeholder="Enter new file name"
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    handleRename();
+                  }
+                }}
+              />
+            </div>
+            {extensionWarning && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Warning: You are removing or changing the file extension. Click Rename again to confirm.
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setRenameDialogOpen(false);
+              setExtensionWarning(false);
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={handleRename} disabled={renaming || !newName.trim()}>
+              {renaming ? 'Renaming...' : 'Rename'}
             </Button>
           </DialogFooter>
         </DialogContent>
