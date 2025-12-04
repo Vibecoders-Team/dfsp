@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './components/AuthContext';
 import { Toaster } from './components/ui/sonner';
+import UpdateNotification from './components/UpdateNotification';
+import ABICompatibilityCheck from './components/ABICompatibilityCheck';
 import LoginPage from './components/pages/LoginPage';
 import RegisterPage from './components/pages/RegisterPage';
 import FilesPage from './components/pages/FilesPage';
@@ -16,7 +18,7 @@ import HealthPage from './components/pages/HealthPage';
 import NotFoundPage from './components/pages/NotFoundPage';
 import ForbiddenPage from './components/pages/ForbiddenPage';
 import ServerErrorPage from './components/pages/ServerErrorPage';
-import { MiniApp, MiniFilesPage, MiniGrantsPage, MiniHomePage, MiniVerifyPage } from './mini/MiniApp';
+import { MiniApp, MiniFilesPage, MiniGrantsPage, MiniHomePage, MiniVerifyPage, MiniPublicLinkPage } from './mini/MiniApp';
 import IntentPage from './components/pages/IntentPage';
 import UnlockPortal from './components/UnlockPortal';
 import { useAuth } from './components/useAuth';
@@ -25,6 +27,7 @@ import RestorePage from './components/pages/RestorePage';
 import PrivacyPage from './components/pages/PrivacyPage';
 import TelegramLinkPage from './components/pages/TelegramLinkPage';
 import { MainLandingPage } from './pages/MainLandingPage/MainLandingPage';
+import PublicPage from './components/pages/PublicPage.tsx';
 
 const LANDING_ENABLED = (import.meta as any).env?.VITE_LANDING_ENABLED !== 'false';
 
@@ -183,6 +186,7 @@ function AppRoutes() {
           <Route path="files" element={<MiniFilesPage />} />
           <Route path="grants" element={<MiniGrantsPage />} />
           <Route path="verify" element={<MiniVerifyPage />} />
+          <Route path="public/:token" element={<MiniPublicLinkPage />} />
           <Route path="*" element={<Navigate to="/mini" replace />} />
         </Route>
         <Route
@@ -192,9 +196,12 @@ function AppRoutes() {
           }
         />
         <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/public/:token" element={<PublicPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
-      <Toaster />
+      <Toaster richColors position="top-right" closeButton duration={3500} />
+      <ABICompatibilityCheck />
+      <UpdateNotification />
       <UnlockPortal />
     </>
   );

@@ -5,6 +5,8 @@ import { ensureEOA, ensureRSA } from "./keychain";
 import { findKey } from "./pubkeys";
 import { saveKey } from "./pubkeys";
 import { getAgent } from "./agent/manager"; // normalized quotes
+import { notify } from "./toast";
+import { enqueueRequest } from "./offlineQueue";
 
 
 // export const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE });
@@ -29,18 +31,58 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 /** ---- 401/403 handler ---- */
 api.interceptors.response.use(
     (r: AxiosResponse) => r,
-    (err: unknown) => {
+    async (err: unknown) => {
         if (isAxiosError(err)) {
             const status = err.response?.status;
-            if (status === 401 || status === 403) {
-                // например, редирект или логаут
-                localStorage.removeItem(ACCESS_TOKEN_KEY);
+            const url = err.config?.url || '';
+            // Do not redirect for public endpoints (we need to show TTL/limit/revoked errors)
+            const isPublic = /\/public\//.test(url || '') || url.startsWith('/public/');
+            if ((status === 401 || status === 403) && !isPublic) {
+                try { localStorage.removeItem(ACCESS_TOKEN_KEY); } catch {/* ignore */}
                 window.location.href = "/login";
+            }
+            // offline queue for network errors
+            if (!err.response && err.code === 'ERR_NETWORK') {
+              const cfg = err.config;
+              const method = (cfg?.method || '').toUpperCase();
+              if (cfg?.url && ['POST','PUT','PATCH','DELETE'].includes(method) && navigator && navigator.onLine === false) {
+                enqueueRequest({ url: cfg.url, method, data: cfg.data, createdAt: Date.now() });
+                return Promise.resolve({ data: { queued: true }, status: 202, statusText: 'queued', headers: {}, config: cfg } as AxiosResponse);
+              }
             }
         }
         return Promise.reject(err);
     }
 );
+
+// ---- Retry with exponential backoff for 429/5xx ----
+const RETRY_HEADER = 'x-retry-attempt';
+api.interceptors.response.use(undefined, async (error) => {
+  if (!isAxiosError(error) || !error.config) {
+    return Promise.reject(error);
+  }
+  const status = error.response?.status;
+  const cfg = error.config as InternalAxiosRequestConfig & { _retryCount?: number; _retryToastId?: string };
+  const shouldRetry = status === 429 || (status !== undefined && status >= 500 && status < 600);
+  if (!shouldRetry) return Promise.reject(error);
+  const maxRetries = 3;
+  const attempt = (cfg._retryCount ?? 0) + 1;
+  if (attempt > maxRetries) return Promise.reject(error);
+
+  const retryAfter = Number(error.response?.headers?.['retry-after']) || 0;
+  const delayBase = retryAfter > 0 ? retryAfter * 1000 : 500;
+  const delay = delayBase * Math.pow(2, attempt - 1);
+  const toastId = cfg._retryToastId || `retry-${cfg.url}-${cfg.method}`;
+  cfg._retryCount = attempt;
+  cfg._retryToastId = toastId;
+
+  notify.info(`Retrying (${attempt}/${maxRetries})…`, { dedupeId: toastId, description: cfg.url });
+
+  await new Promise((resolve) => setTimeout(resolve, delay));
+  cfg.headers = cfg.headers || {};
+  (cfg.headers as AxiosHeaders).set(RETRY_HEADER, String(attempt));
+  return api(cfg);
+});
 
 /** ---- Types ---- */
 export type ChallengeOut = { challenge_id: string; nonce: `0x${string}`; exp_sec: number };
@@ -368,6 +410,11 @@ export async function fetchMyFiles(): Promise<FileListItem[]> {
   return data;
 }
 
+export async function updateProfile(displayName: string): Promise<{ display_name: string }> {
+  const { data } = await api.patch<{ display_name: string }>("/users/me", { display_name: displayName });
+  return data;
+}
+
 // === Grants list (current user) ===
 export type MyGrantItem = {
   fileId: string;
@@ -408,5 +455,80 @@ export type IntentConsumeOut = { ok: boolean; action: string | null; payload: Re
 
 export async function consumeIntent(intentId: string): Promise<IntentConsumeOut> {
   const { data } = await api.post<IntentConsumeOut>(`/intents/${intentId}/consume`);
+  return data;
+}
+
+// === Public Links API ===
+export type PublicLinkPolicy = { max_downloads?: number; pow_difficulty?: number; one_time: boolean };
+export type CreatePublicLinkResp = { token: string; expires_at: string; policy: PublicLinkPolicy };
+export type CreatePublicLinkPayload = {
+  version?: number;
+  ttl_sec?: number;
+  max_downloads?: number;
+  pow?: { enabled: boolean; difficulty?: number };
+  name_override?: string;
+  mime_override?: string;
+};
+
+export async function createPublicLink(fileIdHex: string, payload: CreatePublicLinkPayload): Promise<CreatePublicLinkResp> {
+  const { data } = await api.post<CreatePublicLinkResp>(`/files/${fileIdHex}/public-links`, payload);
+  return data;
+}
+
+export type PublicMetaResp = {
+  name: string;
+  size?: number;
+  mime?: string;
+  cid?: string;
+  fileId: string;
+  version?: number;
+  expires_at?: string;
+  policy: Record<string, unknown>;
+};
+
+export async function fetchPublicMeta(token: string): Promise<PublicMetaResp> {
+  const { data } = await api.get<PublicMetaResp>(`/public/${token}/meta`);
+  return data;
+}
+
+export async function submitPow(token: string, nonce: string, solution: string): Promise<{ ok: true }>{
+  const { data } = await api.post<{ ok: true }>(`/public/${token}/pow`, { nonce, solution });
+  return data;
+}
+
+export async function fetchPublicContent(token: string): Promise<Blob> {
+  const res = await api.get(`/public/${token}/content`, { responseType: 'blob' });
+  return res.data as Blob;
+}
+
+export async function revokePublicLink(token: string): Promise<{ revoked: true }>{
+  const { data } = await api.delete<{ revoked: true }>(`/public-links/${token}`);
+  return data;
+}
+
+export type PublicLinkItem = { token: string; expires_at?: string; policy?: PublicLinkPolicy; downloads_count?: number };
+export async function listPublicLinks(fileIdHex: string): Promise<PublicLinkItem[]>{
+  try {
+    const { data } = await api.get<{ items: PublicLinkItem[] }>(`/files/${fileIdHex}/public-links`);
+    return data.items || [];
+  } catch (e) {
+    if (isAxiosError(e) && (e.response?.status === 404 || e.response?.status === 401)) return [];
+    throw e;
+  }
+}
+
+export type RenameFilePayload = { name: string };
+export type RenameFileResp = {
+  idHex: string;
+  name: string;
+  size: number;
+  mime?: string;
+  cid: string;
+  checksum: string;
+  createdAt: number;
+};
+
+export async function renameFile(fileIdHex: string, newName: string): Promise<RenameFileResp> {
+  const { data } = await api.patch<RenameFileResp>(`/files/${fileIdHex}`, { name: newName });
   return data;
 }

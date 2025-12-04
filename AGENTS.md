@@ -16,9 +16,35 @@
 - Backend: `make -C backend test` runs pytest (async-friendly), some tests requires full stack, ignore it. Add tests under `backend/tests` with `test_*.py` naming; prefer fixture-driven integration tests for routers/services and keep side effects isolated (use test DB/containers).
 - Frontend: Place unit tests under `src/**/__tests__` with `*.test.ts`/`*.test.tsx`. Use Vitest + happy-dom for components and crypto/helpers; mock network/storage boundaries and cover error paths, not just happy cases.
 
-## Commit & Pull Request Guidelines
-- Commits follow Conventional Commit flavor seen in history (`feat(frontend): ...`, `fix: ...`, `chore(dev): ...`, `test(backend): ...`). Keep commits small, focused, and rebased before opening a PR.
-- PRs should include: brief summary of behavior change, linked issue/Notion ticket if applicable, before/after screenshots or curl examples for API/UX tweaks, and a checklist of commands run (`make -C backend check`, `pnpm test`, etc.). Note any required env vars or migrations and update `deploy/.env.*` references when needed.
+## Commit & Pull Request Guidelines- Commits follow Conventional Commit flavor seen in history
+Don't commit by yourself.
+We use **Conventional Commits** for a clear history and automatic generation of releases/CHANGELOG.
+
+## Format
+
+```
+
+<type>(<scope>): <summary>
+
+\[body]
+
+\[footer]
+
+```
+
+- **type**: `feat` | `fix` | `docs` | `refactor` | `perf` | `test` | `build` | `ci` | `chore` | `revert`
+- **scope** (optional): the scope of the change - `api`, `web`, `contracts`, `infra`, `docs`, `devops`, `db`, etc.
+- **summary**: short and to the point (imperative mood).
+
+### Examples
+
+```
+feat(api): add rate limiting for POST /orders
+fix(contracts): correct role check in withdraw()
+docs: clarify local setup with uv
+ci: run solidity tests on PR to main
+refactor(web): extract useAuth() hook
+```
 
 ## Security & Configuration Tips
 - Never commit secrets; keep `.env` files local (`deploy/.env.local` / `.env.dev` / `.env.prod` are ignored). Rotate keys stored in deploy buckets when sharing with teammates.

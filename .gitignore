@@ -23,6 +23,8 @@ pytest-report
 .ipynb_checkpoints
 recordings
 .env*
+*.tsbuildinfo
+.cache
 
 *.log
 *.zip

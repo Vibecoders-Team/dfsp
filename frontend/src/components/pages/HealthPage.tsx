@@ -232,7 +232,7 @@ export default function HealthPage() {
               </div>
               <div className="flex justify-between py-2">
                 <span className="text-gray-600">API Status</span>
-                <a href="https://status.example.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                <a href={window.location.origin + '/health'} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                   View Details
                 </a>
               </div>

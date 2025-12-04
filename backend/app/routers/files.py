@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import base64
 import logging
-import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, cast
 
 from eth_typing import HexStr
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -24,10 +23,11 @@ from app.repos.user_repo import get_by_eth_address
 from app.schemas.auth import FileCreateIn, TypedDataOut
 from app.schemas.common import OkResponse
 from app.schemas.grants import DuplicateOut, ShareIn, ShareItemOut, ShareOut
-from app.security import parse_token
+from app.security import get_current_user
 from app.services.event_logger import EventLogger
 from app.services.event_publisher import EventPublisher
 from app.services.notification_publisher import NotificationPublisher
+from app.validators import sanitize_filename
 
 router = APIRouter(prefix="/files", tags=["files"])
 logger = logging.getLogger(__name__)
@@ -36,20 +36,8 @@ AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 
 
 # ---- auth helper: достаём текущего пользователя из Bearer-токена ----
-def require_user(authorization: AuthorizationHeader, db: Annotated[Session, Depends(get_db)]) -> User:
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(401, "auth_required")
-    try:
-        payload = parse_token(token)
-        sub = getattr(payload, "sub", None) or payload.get("sub")
-        user_id = uuid.UUID(str(sub))
-    except Exception as e:
-        raise HTTPException(401, "bad_token") from e
-    user_obj: User | None = db.get(User, user_id)
-    if user_obj is None:
-        raise HTTPException(401, "user_not_found")
-    return user_obj
+def require_user(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+    return current_user
 
 
 # ---- NEW: Schema for file list response ----
@@ -329,7 +317,7 @@ def share_file(
                 capIds = []
         else:
             capIds = []
-        return {"status": "duplicate", "capIds": capIds}
+        return DuplicateOut(status="duplicate", capIds=capIds)
 
     addr_lower_to_input = {a.lower(): a for a in body.users}
     enc_map = {k.lower(): v for k, v in (body.encK_map or {}).items()}
@@ -632,3 +620,72 @@ def list_file_grants(
         )
 
     return {"items": items}
+
+
+class FileRenameIn(BaseModel):
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def _v_name(cls, v: str) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("bad_name")
+        return sanitize_filename(v)
+
+
+@router.patch("/{id}")
+def rename_file(
+    id: str,
+    body: FileRenameIn,
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, object]:
+    """Allow file owner to rename a file's display name.
+
+    Does not modify history/versions or public link snapshots.
+    """
+    if not (isinstance(id, str) and id.startswith("0x") and len(id) == 66):
+        raise HTTPException(400, "bad_file_id")
+    try:
+        file_id = Web3.to_bytes(hexstr=cast(HexStr, id))
+    except Exception as e:
+        raise HTTPException(400, "bad_file_id") from e
+
+    file_row: File | None = db.get(File, file_id)
+    if file_row is None:
+        raise HTTPException(404, "file_not_found")
+    if file_row.owner_id != user.id:
+        raise HTTPException(403, "forbidden")
+
+    old_name = file_row.name
+    new_name = body.name
+    # Update only display name
+    file_row.name = new_name
+    db.add(file_row)
+    db.commit()
+
+    # Audit log
+    try:
+        ev = EventLogger(db)
+        ev.log_event(
+            event_type="file_renamed",
+            payload={
+                "file_id": file_row.id.hex(),
+                "old_name": str(old_name),
+                "new_name": str(new_name),
+                "user_id": str(user.id),
+            },
+            user_id=user.id,
+        )
+    except Exception:
+        logger.debug("rename_file: failed to log event", exc_info=True)
+
+    return {
+        "idHex": "0x" + file_row.id.hex(),
+        "name": file_row.name,
+        "size": file_row.size,
+        "mime": file_row.mime,
+        "cid": file_row.cid,
+        "checksum": "0x" + (file_row.checksum.hex() if file_row.checksum else ""),
+        "createdAt": int(file_row.created_at.timestamp()) if file_row.created_at else 0,
+    }

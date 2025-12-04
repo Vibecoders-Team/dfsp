@@ -6,6 +6,7 @@ export { MiniHomePage } from "./pages/HomePage";
 export { MiniFilesPage } from "./pages/FilesPage";
 export { MiniGrantsPage } from "./pages/GrantsPage";
 export { MiniVerifyPage } from "./pages/VerifyPage";
+export { MiniPublicLinkPage } from "./pages/PublicLinkPage";
 
 export function MiniApp() {
   return (

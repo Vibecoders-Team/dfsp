@@ -17,3 +17,6 @@ No wallets in the UI: users sign actions with an invisible key (ERC-2771), and a
 * Auditability without bloat: hourly Merkle anchoring of off-chain event logs to the chain.
 * Polished web app: RU/EN, dark mode, PWA; 1-VPS deployment.
 
+## Browser support
+
+See `docs/browser-support.md` for baseline versions and polyfills used by the frontend.

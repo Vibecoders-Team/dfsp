@@ -74,7 +74,8 @@ export class WalletConnectAgent implements SignerAgent {
     }
     if (this.provider) return this.provider;
     if (this.wc && !this.provider) {
-      this.provider = new BrowserProvider(this.wc as any); (window as any)[WalletConnectAgent.GLOBAL_KEY] = { wc: this.wc, provider: this.provider }; return this.provider;
+      this.provider = new BrowserProvider(this.wc as any); //(window as any)[WalletConnectAgent.GLOBAL_KEY] = { wc: this.wc, provider: this.provider };
+      return this.provider;
     }
     if (this.initializationPromise) return await this.initializationPromise;
     this.initializationPromise = (async () => {
@@ -87,18 +88,13 @@ export class WalletConnectAgent implements SignerAgent {
       if (this.httpsRpc && this.expectedChain) baseConfig.rpcMap = { [this.expectedChain]: this.httpsRpc };
       this.wc = await EthereumProvider.init(baseConfig); this.displayUriCount = 0;
       try { this.wc?.on?.('display_uri', () => { this.displayUriCount += 1; if (!withModal || this.displayUriCount > 1 || this.enabled || wasConnectedSession || wasConnectedLocal) setTimeout(() => { try { (this.wc as any).modal?.close?.(); } catch { /* ignore */ } }, 50); }); } catch { /* ignore */ }
-      // после init всегда прикрепляемся к сессии через enable (без QR, если сессия есть)
-      if (this.wc && this.wc.enable && !this.enabled) {
-        await this.wc.enable(); this.enabled = true; try { sessionStorage.setItem('dfsp_wc_connected','1'); localStorage.setItem('dfsp_wc_inited','1'); } catch { /* ignore */ }
-        // Принудительный свитч сети на ожидаемую при наличии HTTPS RPC
-        try { await this.ensureExpectedChain(false); } catch { /* ignore */ }
-        // Получаем аккаунты
-        try { const acc: string[] = await (this.wc as any).request?.({ method: 'eth_accounts', params: [] }) || []; this.accounts = acc; this.connected = acc.length > 0; if (this.connected) { try { window.dispatchEvent(new CustomEvent('dfsp:wc-accounts', { detail: { accounts: acc } })); } catch { /* ignore */ } } } catch { /* ignore */ }
-        // Сообщаем текущую сеть
-        try { const cid = await this.getChainId(); try { window.dispatchEvent(new CustomEvent('dfsp:wc-chain', { detail: { chainId: cid } })); } catch { /* ignore */ } } catch { /* ignore */ }
-        setTimeout(()=>{ try { (this.wc as any).modal?.close?.(); } catch { /* ignore */ } },150);
-      } else { this.enabled = true; }
-      this.qrShown = true; const browserProv = new BrowserProvider(this.wc as any); this.provider = browserProv; (window as any)[WalletConnectAgent.GLOBAL_KEY] = { wc: this.wc, provider: this.provider };
+      // NOTE: Do not auto-enable here to avoid background RPC polling. Enable only in connect().
+      this.enabled = !!this.wc;
+      this.qrShown = withModal;
+      const browserProv = new BrowserProvider(this.wc as any);
+      this.provider = browserProv;
+      // Avoid persisting provider globally to reduce unintended reuse/polling
+      //(window as any)[WalletConnectAgent.GLOBAL_KEY] = { wc: this.wc, provider: this.provider };
       if (this.wc && this.wc.on) {
         this.wc.on('disconnect', () => { this.provider = undefined; this.wc = undefined; this.qrShown = false; this.enabled = false; this.displayUriCount = 0; this.accounts = []; this.connected = false; (window as any)[WalletConnectAgent.GLOBAL_KEY] = null; try { sessionStorage.removeItem('dfsp_wc_connected'); localStorage.removeItem('dfsp_wc_inited'); } catch { /* ignore */ } try { (this.wc as any)?.modal?.close?.(); } catch { /* ignore */ } });
         try { this.wc.on('accountsChanged', (...args: unknown[]) => { const acc = Array.isArray(args[0]) ? args[0] as string[] : []; this.accounts = acc; this.connected = acc.length > 0; try { window.dispatchEvent(new CustomEvent('dfsp:wc-accounts', { detail: { accounts: acc } })); } catch { /* ignore */ } }); } catch { /* ignore */ }
@@ -216,15 +212,12 @@ export class WalletConnectAgent implements SignerAgent {
     await this.ensureWcProvider(true);
     // Если уже подключено — выходим
     if (this.connected) {
-      // Строго убедимся, что сеть соответствует
       try { await this.ensureExpectedChain(false); } catch { /* ignore */ }
       return;
     }
-    // Вызов enable повторно (на случай если предыдущий не завершил сессию)
-    try { await this.wc?.enable?.(); } catch { /* ignore */ }
-    // Требуем нужную сеть
+    // Explicitly enable session only on user connect
+    try { await this.wc?.enable?.(); this.enabled = true; try { sessionStorage.setItem('dfsp_wc_connected','1'); localStorage.setItem('dfsp_wc_inited','1'); } catch { /* ignore */ } } catch { /* ignore */ }
     await this.ensureExpectedChain(true);
-    // Поллинг аккаунтов до получения или таймаут
     const start = Date.now();
     while (!this.connected && Date.now() - start < 15000) {
       try {

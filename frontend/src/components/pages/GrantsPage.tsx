@@ -18,10 +18,14 @@ import {
   SelectValue,
 } from '../ui/select';
 import { Badge } from '../ui/badge';
-import { Download, Share2, RefreshCw } from 'lucide-react';
-import { fetchMyGrants, type MyGrantItem } from '@/lib/api.ts';
+import { Download, Share2, RefreshCw, Ban } from 'lucide-react';
+import { fetchMyGrants, revokeGrant, type MyGrantItem } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
 import { Alert, AlertDescription } from '../ui/alert';
+import { notify } from '@/lib/toast';
+import { Skeleton } from '../ui/skeleton';
+import { useConnectionSpeed } from '@/lib/useConnectionSpeed.ts';
+import { sanitizeFilename } from '@/lib/sanitize.ts';
 
 export default function GrantsPage() {
   const [role, setRole] = useState<'received' | 'granted'>('received');
@@ -29,6 +33,9 @@ export default function GrantsPage() {
   const [grants, setGrants] = useState<MyGrantItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<Set<string>>(new Set());
+  const { isSlowConnection, effectiveType } = useConnectionSpeed();
+  const disableActions = loading || (isSlowConnection && loading);
 
   async function load() {
     try {
@@ -85,6 +92,29 @@ export default function GrantsPage() {
 
   const isDownloadable = (g: MyGrantItem) => g.status === 'confirmed' && g.usedDownloads < g.maxDownloads;
 
+  const canRevoke = (g: MyGrantItem) => {
+    if (role !== 'granted') return false;
+    return g.status === 'confirmed' || g.status === 'pending' || g.status === 'queued';
+  };
+
+  const handleRevoke = async (capId: string) => {
+    if (revoking.has(capId)) return;
+    setRevoking((prev) => new Set(prev).add(capId));
+    try {
+      await revokeGrant(capId);
+      notify.success('Grant revoked', { dedupeId: `revoke-${capId}` });
+      setGrants((prev) => prev.map((g) => g.capId === capId ? { ...g, status: 'revoked' } : g));
+    } catch (e) {
+      notify.error(getErrorMessage(e, 'Failed to revoke grant'), { dedupeId: `revoke-err-${capId}` });
+    } finally {
+      setRevoking((prev) => {
+        const next = new Set(prev);
+        next.delete(capId);
+        return next;
+      });
+    }
+  };
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -92,24 +122,24 @@ export default function GrantsPage() {
           <h1>{role === 'received' ? 'Received Grants' : 'My Shared Grants'}</h1>
           <div className="flex items-center gap-2">
             <Select value={role} onValueChange={(v: 'received' | 'granted') => setRole(v)}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-40" disabled={disableActions}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="received">Received</SelectItem>
                 <SelectItem value="granted">Granted</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="sm" onClick={load} className="gap-2">
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </Button>
-          </div>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" onClick={load} className="gap-2" disabled={disableActions}>
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
         </div>
 
         <div className="flex items-center gap-4">
           <Select value={statusFilter} onValueChange={(v: 'all' | 'active' | 'pending' | 'expired' | 'revoked' | 'exhausted') => setStatusFilter(v)}>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-48" disabled={disableActions}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -133,7 +163,22 @@ export default function GrantsPage() {
         )}
 
         {loading ? (
-          <div className="text-center py-12 bg-white rounded-lg border border-gray-200">Loading…</div>
+          <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+            <div className="flex items-center gap-3 text-sm text-gray-700">
+              <div className="h-5 w-5 border-2 border-gray-300 border-b-transparent rounded-full animate-spin" />
+              <div>
+                <div>Loading grants…</div>
+                {isSlowConnection && (
+                  <div className="text-xs text-gray-500">Slow connection {effectiveType || '3G/2G'} detected, please wait.</div>
+                )}
+              </div>
+            </div>
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
+            </div>
+          </div>
         ) : filteredGrants.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
             <Share2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -161,7 +206,7 @@ export default function GrantsPage() {
                       <code className="text-xs bg-gray-100 px-2 py-1 rounded">{truncate((role === 'received' ? g.grantor : g.grantee) || '', 12)}</code>
                     </TableCell>
                     <TableCell>
-                      <Link to={`/files/${g.fileId}`} className="hover:underline">{g.fileName || truncate(g.fileId, 14)}</Link>
+                      <Link to={`/files/${g.fileId}`} className="hover:underline">{sanitizeFilename(g.fileName) || truncate(g.fileId, 14)}</Link>
                     </TableCell>
                     <TableCell>
                       <code className="text-xs bg-gray-100 px-2 py-1 rounded">{truncate(g.capId, 16)}</code>
@@ -174,13 +219,30 @@ export default function GrantsPage() {
                     </TableCell>
                     <TableCell>{getStatusBadge(g.status)}</TableCell>
                     <TableCell className="text-right">
-                      {role === 'received' && isDownloadable(g) ? (
-                        <Link to={`/download/${g.capId}`}>
-                          <Button variant="ghost" size="sm" className="gap-1.5">
-                            <Download className="h-3.5 w-3.5" />
-                            Download
+                      {role === 'received' ? (
+                        isDownloadable(g) ? (
+                          <Link to={`/download/${g.capId}`} className={disableActions ? 'pointer-events-none' : ''}>
+                            <Button variant="ghost" size="sm" className="gap-1.5" disabled={disableActions}>
+                              <Download className="h-3.5 w-3.5" />
+                              Download
+                            </Button>
+                          </Link>
+                        ) : (
+                          <Button variant="ghost" size="sm" disabled>
+                            —
                           </Button>
-                        </Link>
+                        )
+                      ) : canRevoke(g) ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5 text-red-600"
+                          onClick={() => handleRevoke(g.capId)}
+                          disabled={revoking.has(g.capId) || disableActions}
+                        >
+                          <Ban className="h-3.5 w-3.5" />
+                          {revoking.has(g.capId) ? 'Revoking…' : 'Revoke'}
+                        </Button>
                       ) : (
                         <Button variant="ghost" size="sm" disabled>
                           —

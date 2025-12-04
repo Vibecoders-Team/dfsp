@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
+import { TableVirtuoso } from 'react-virtuoso';
 import {
   Select,
   SelectContent,
@@ -23,9 +24,11 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Upload, Search, Eye, Share2, CheckCircle2, AlertCircle, Download } from 'lucide-react';
 import { fetchMyFiles, type FileListItem } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
-import { toast } from 'sonner';
+import { notify } from '@/lib/toast';
 import { getFileKey } from '@/lib/fileKey.ts';
 import { decryptStream } from '@/lib/cryptoClient.ts';
+import { sanitizeFilename, parseContentDisposition } from '@/lib/sanitize.ts';
+import { useConnectionSpeed } from '@/lib/useConnectionSpeed.ts';
 
 interface FileItem {
   id: string;
@@ -35,6 +38,7 @@ interface FileItem {
   checksum: string;
   created: Date;
   mimeType: string;
+  safeName: string;
 }
 
 export default function FilesPage() {
@@ -43,6 +47,7 @@ export default function FilesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [files, setFiles] = useState<FileItem[]>([]);
+  const { isSlowConnection, effectiveType } = useConnectionSpeed();
 
   // Load files from API
   useEffect(() => {
@@ -56,6 +61,7 @@ export default function FilesPage() {
         const converted: FileItem[] = data.map((f: FileListItem) => {
           const d = f.created_at ? new Date(f.created_at) : new Date(0);
           const created = isNaN(d.getTime()) ? new Date(0) : d;
+          const safeName = sanitizeFilename(f.name);
           return {
             id: f.id,
             name: f.name,
@@ -64,6 +70,7 @@ export default function FilesPage() {
             checksum: f.checksum,
             created,
             mimeType: f.mime,
+            safeName,
           };
         });
         setFiles(converted);
@@ -140,7 +147,7 @@ export default function FilesPage() {
   const copyValue = (value: string, label: string) => {
     if (!value) return;
     navigator.clipboard.writeText(value);
-    toast.success(`${label} copied to clipboard`);
+    notify.success(`${label} copied to clipboard`, { dedupeId: `copy-${label}-${value}` });
   };
 
   const handleDownloadOwn = async (file: FileItem) => {
@@ -153,6 +160,11 @@ export default function FilesPage() {
       const url = gw.replace(/\/+$/, '') + path;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
+
+      // Try to get filename from Content-Disposition header
+      const contentDisposition = res.headers.get('Content-Disposition');
+      const headerFilename = parseContentDisposition(contentDisposition);
+      const finalFilename = headerFilename || file.name;
 
       // Попробуем расшифровать, если есть K_file
       const k = getFileKey(file.id);
@@ -170,14 +182,14 @@ export default function FilesPage() {
 
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = file.name || file.id;
+      a.download = sanitizeFilename(finalFilename) || file.id;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
-      toast.success('Download started');
+      notify.success('Download started', { dedupeId: `dl-${file.id}` });
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Download failed'));
+      notify.error(getErrorMessage(e, 'Download failed'), { dedupeId: `dl-err-${file.id}` });
     }
   };
 
@@ -187,6 +199,12 @@ export default function FilesPage() {
         <div className="space-y-6">
           <Skeleton className="h-10 w-64" />
           <Skeleton className="h-12 w-full" />
+          {isSlowConnection && (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="h-4 w-4 border-2 border-gray-300 border-b-transparent rounded-full animate-spin" />
+              <span>Slow connection {effectiveType || '3G/2G'} — loading may take a bit longer</span>
+            </div>
+          )}
           <div className="space-y-2">
             {[...Array(5)].map((_, i) => (
               <Skeleton key={i} className="h-16 w-full" />
@@ -202,8 +220,8 @@ export default function FilesPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1>My Files</h1>
-          <Link to="/upload">
-            <Button className="gap-2">
+          <Link to="/upload" className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
+            <Button className="gap-2" disabled={isLoading && isSlowConnection}>
               <Upload className="h-4 w-4" />
               Upload File
             </Button>
@@ -218,6 +236,7 @@ export default function FilesPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
+              aria-label="Search files"
             />
           </div>
           <Select value={sortBy} onValueChange={setSortBy}>
@@ -253,8 +272,16 @@ export default function FilesPage() {
           </div>
         ) : (
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <Table>
-              <TableHeader>
+            <TableVirtuoso
+              data={filteredFiles}
+              style={{ height: '70vh' }}
+              components={{
+                Table: (props: any) => <Table {...props} className="border-collapse" aria-label="Files table" />,
+                TableHead: TableHeader,
+                TableRow,
+                TableBody,
+              }}
+              fixedHeaderContent={() => (
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Size</TableHead>
@@ -263,62 +290,60 @@ export default function FilesPage() {
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredFiles.map((file) => (
-                  <TableRow key={file.id}>
-                    <TableCell>
-                      <div className="max-w-xs">
-                        <div className="truncate">{file.name}</div>
-                        <div className="text-xs text-gray-500">{file.mimeType}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{formatSize(file.size)}</TableCell>
-                    <TableCell>
-                      <button type="button" onClick={()=>copyValue(file.cid,'CID')} className="group">
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
-                          {truncate(file.cid, 16)}
-                        </code>
-                      </button>
-                    </TableCell>
-                    <TableCell>
-                      <button type="button" onClick={()=>copyValue(file.checksum,'Checksum')} className="group">
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
-                          {truncate(file.checksum, 20)}
-                        </code>
-                      </button>
-                    </TableCell>
-                    <TableCell>{formatDate(file.created)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-2">
-                        <Link to={`/files/${file.id}`}>
-                          <Button variant="ghost" size="sm" className="gap-1.5">
-                            <Eye className="h-3.5 w-3.5" />
-                            View
-                          </Button>
-                        </Link>
-                        <Link to={`/files/${file.id}/share`}>
-                          <Button variant="ghost" size="sm" className="gap-1.5">
-                            <Share2 className="h-3.5 w-3.5" />
-                            Share
-                          </Button>
-                        </Link>
-                        <Link to={`/verify/${file.id}`}>
-                          <Button variant="ghost" size="sm" className="gap-1.5">
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            Verify
-                          </Button>
-                        </Link>
-                        <Button variant="ghost" size="sm" className="gap-1.5" onClick={()=>handleDownloadOwn(file)}>
-                          <Download className="h-3.5 w-3.5" />
-                          Download
+              )}
+              itemContent={(index: number, file: FileItem) => (
+                <>
+                  <TableCell>
+                    <div className="max-w-xs">
+                      <div className="truncate">{file.safeName}</div>
+                      <div className="text-xs text-gray-500">{file.mimeType}</div>
+                    </div>
+                  </TableCell>
+                  <TableCell>{formatSize(file.size)}</TableCell>
+                  <TableCell>
+                    <button type="button" onClick={()=>copyValue(file.cid,'CID')} className="group" aria-label="Copy CID">
+                      <code className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
+                        {truncate(file.cid, 16)}
+                      </code>
+                    </button>
+                  </TableCell>
+                  <TableCell>
+                    <button type="button" onClick={()=>copyValue(file.checksum,'Checksum')} className="group" aria-label="Copy checksum">
+                      <code className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
+                        {truncate(file.checksum, 20)}
+                      </code>
+                    </button>
+                  </TableCell>
+                  <TableCell>{formatDate(file.created)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center justify-end gap-2">
+                      <Link to={`/files/${file.id}`} className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
+                        <Button variant="ghost" size="sm" className="gap-1.5" disabled={isLoading && isSlowConnection} aria-label={`View ${file.safeName}`}>
+                          <Eye className="h-3.5 w-3.5" />
+                          View
                         </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                      </Link>
+                      <Link to={`/files/${file.id}/share`} className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
+                        <Button variant="ghost" size="sm" className="gap-1.5" disabled={isLoading && isSlowConnection} aria-label={`Share ${file.safeName}`}>
+                          <Share2 className="h-3.5 w-3.5" />
+                          Share
+                        </Button>
+                      </Link>
+                      <Link to={`/verify/${file.id}`} className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
+                        <Button variant="ghost" size="sm" className="gap-1.5" disabled={isLoading && isSlowConnection} aria-label={`Verify ${file.safeName}`}>
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Verify
+                        </Button>
+                      </Link>
+                      <Button variant="ghost" size="sm" className="gap-1.5" onClick={()=>handleDownloadOwn(file)} disabled={isLoading && isSlowConnection} aria-label={`Download ${file.safeName}`}>
+                        <Download className="h-3.5 w-3.5" />
+                        Download
+                      </Button>
+                    </div>
+                  </TableCell>
+                </>
+              )}
+            />
           </div>
         )}
       </div>

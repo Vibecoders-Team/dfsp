@@ -1,13 +1,14 @@
 /* eslint-disable react-refresh/only-export-components */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
-import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type LoginMessage, LOGIN_TYPES as KC_LOGIN_TYPES, LOGIN_DOMAIN as KC_LOGIN_DOMAIN } from '@/lib/keychain';
+import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type LoginMessage, LOGIN_TYPES as KC_LOGIN_TYPES, LOGIN_DOMAIN as KC_LOGIN_DOMAIN, unlockEOA, type RestoreResult, lockEOA } from '@/lib/keychain';
 import { postChallenge, postLogin, postRegister, postTonChallenge, postTonLogin, ACCESS_TOKEN_KEY, type RegisterPayload, type TypedLoginData, type TonSignPayload } from '@/lib/api';
 import { ethers, type TypedDataDomain, type TypedDataField } from 'ethers';
 import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
 import { setSelectedAgentKind } from '@/lib/agent/manager';
 import { deriveEthFromTonPub, getTonConnect, hexToBytes, toBase64 } from '@/lib/tonconnect';
+import { clearAllFileKeys } from '@/lib/fileKey';
 
 const LOGIN_DOMAIN: TypedDataDomain = KC_LOGIN_DOMAIN;
 const LOGIN_TYPES: Record<string, TypedDataField[]> = KC_LOGIN_TYPES;
@@ -32,12 +33,13 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: () => Promise<void>;
+  login: (opts?: { unlockPassword?: string }) => Promise<void>;
   loginWithTon: () => Promise<void>;
   register: (password: string, confirmPassword: string, displayName?: string) => Promise<{ backupData: Blob }>;
   logout: () => void;
-  restoreAccount: (file: File, password: string) => Promise<void>;
+  restoreAccount: (file: File, password: string) => Promise<RestoreResult>;
   updateBackupStatus: (hasBackup: boolean) => void;
+  updateDisplayName: (displayName: string) => void;
 }
 
 export type { AuthContextType };
@@ -82,9 +84,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth();
   }, []);
 
-  const login = async () => {
+  const login = async (opts?: { unlockPassword?: string }) => {
        const challenge = await postChallenge();
        const agent = await getAgent();
+       if (agent.kind === 'local') {
+         const hasLocal = await hasEOA();
+         if (!hasLocal) {
+           throw new Error('Local key not found. Switch to MetaMask/WalletConnect or restore a full backup.');
+         }
+         if (opts?.unlockPassword) {
+           try { await unlockEOA(opts.unlockPassword); } catch {/* fallback to dialog */}
+         }
+       }
        // For local agent: prompt unlock dialog and wait before proceeding
        if (agent.kind === 'local') {
          try { await ensureUnlockedOrThrow(); } catch { throw new Error('Unlock cancelled'); }
@@ -285,10 +296,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    };
 
   const restoreAccount = async (file: File, password: string) => {
-    await restoreFromBackup(file, password);
-    await login();
+    // clear stale tokens/session before restore to avoid redirect loops when coming from logged-out state
+    if (!user) {
+      try {
+        localStorage.removeItem(ACCESS_TOKEN_KEY);
+        localStorage.removeItem('REFRESH_TOKEN');
+        bumpSessionGen();
+      } catch { /* ignore */ }
+    }
+    const res = await restoreFromBackup(file, password);
+    // RSA-only backups do not carry an EOA, so skip auto-login and let user choose external wallet
+    if (res.mode === 'RSA-only') {
+      if (user) {
+        setUser({ ...user, hasBackup: true });
+      } else {
+        setUser(null);
+      }
+      return res;
+    }
+    await login({ unlockPassword: password });
     setUser(prev => prev ? { ...prev, hasBackup: true } : null);
-   };
+    return res;
+  };
 
   const logout = () => {
      // soft logout: leave wallet session intact, just clear auth tokens
@@ -299,7 +328,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
      // Do not clear address/display name so UI can prefill
      // localStorage.removeItem(ADDRESS_KEY);
      // localStorage.removeItem('dfsp_display_name');
+    clearAllFileKeys();
     bumpSessionGen();
+    try { lockEOA(); } catch { /* ignore */ }
     try { window.dispatchEvent(new CustomEvent('dfsp:logout')); } catch { /* ignore */ }
      setUser(null);
      // Force Local agent after leaving auth or switching forms
@@ -308,6 +339,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateBackupStatus = (hasBackup: boolean) => {
     setUser(prev => prev ? { ...prev, hasBackup } : prev);
+  };
+
+  const updateDisplayName = (displayName: string) => {
+    setUser(prev => prev ? { ...prev, displayName } : prev);
   };
 
   return (
@@ -321,6 +356,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       restoreAccount,
       updateBackupStatus,
+      updateDisplayName,
     }}>
       {children}
     </AuthContext.Provider>

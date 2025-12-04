@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
-import { toast } from 'sonner';
+import { notify } from '@/lib/toast';
 import { isEOAUnlocked, unlockEOA } from '@/lib/keychain';
 import { getErrorMessage } from '@/lib/errors';
 import { rememberLastUnlockPassword } from '@/lib/unlock';
@@ -19,25 +19,28 @@ export default function UnlockPortal() {
   }, []);
 
   const handleUnlock = async () => {
-    if (!pwd) { toast.error('Enter password'); return; }
+    if (!pwd) { notify.error('Enter password', { dedupeId: 'unlock-empty' }); return; }
     setBusy(true);
     try {
       await unlockEOA(pwd);
       rememberLastUnlockPassword(pwd);
       try { window.dispatchEvent(new CustomEvent('dfsp:unlocked')); } catch (e) { console.debug('dispatch unlocked failed', e); }
-      toast.success('Key unlocked');
+      notify.success('Key unlocked', { dedupeId: 'unlock-ok' });
       setOpen(false);
       setPwd('');
     } catch (e) {
       // Map common WebCrypto/AES-GCM failure messages to user-friendly text
       let msg = getErrorMessage(e, 'Unlock error');
+      if ((e as { code?: string }).code === 'IDB_QUOTA' || /quota/i.test((e as Error)?.message || '')) {
+        msg = 'Browser storage is full. Clear site data or free disk space, then try unlocking again.';
+      }
       if (e instanceof DOMException && /Operation failed|decrypt/.test(e.message)) {
         msg = 'Incorrect password. Please try again.';
       }
       if (msg === 'Unlock error' && e instanceof Error && !e.message) {
         msg = 'Failed to unlock key. Check your password.';
       }
-      toast.error(msg);
+      notify.error(msg, { dedupeId: 'unlock-error' });
     } finally {
       setBusy(false);
     }
