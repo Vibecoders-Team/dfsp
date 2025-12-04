@@ -9,6 +9,8 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from ..handlers import files as files_handlers
 from ..handlers import me as me_handlers
+from ..handlers import notifications as notify_handlers
+from ..handlers import switch as switch_handlers
 from ..handlers import start as start_handlers
 from ..services.message_store import get_message
 
@@ -25,7 +27,7 @@ async def cb_menu_profile(callback: CallbackQuery) -> None:
 
     # Переиспользуем логику /me на исходном сообщении, чтобы не терять bot-инстанс
     await me_handlers.cmd_me(callback.message)
-    await callback.answer(await get_message("menu.profile_loaded"))
+    await callback.answer()
 
 
 @router.callback_query(F.data == "menu:files")
@@ -37,7 +39,29 @@ async def cb_menu_files(callback: CallbackQuery) -> None:
 
     # Переиспользуем логику /files на исходном сообщении, чтобы не терять bot-инстанс
     await files_handlers.cmd_files(callback.message)
-    await callback.answer(await get_message("menu.files_loaded"))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "menu:switch")
+async def cb_menu_switch(callback: CallbackQuery) -> None:
+    """Обработчик кнопки 'Сменить адрес' из меню."""
+    if not callback.message:
+        await callback.answer(await get_message("common.missing_message"), show_alert=True)
+        return
+
+    await switch_handlers.cmd_switch(callback.message)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "menu:notify")
+async def cb_menu_notify(callback: CallbackQuery) -> None:
+    """Обработчик кнопки 'Уведомления' из меню."""
+    if not callback.message:
+        await callback.answer(await get_message("common.missing_message"), show_alert=True)
+        return
+
+    await notify_handlers.cmd_notify(callback.message)
+    await callback.answer()
 
 
 @router.callback_query(F.data == "menu:verify")
@@ -89,4 +113,4 @@ async def cb_menu_home(callback: CallbackQuery) -> None:
     keyboard = await start_handlers.get_main_keyboard(is_linked=is_linked)
     start_text = await start_handlers.get_start_text(is_linked=is_linked)
     await callback.message.answer(start_text, reply_markup=keyboard)
-    await callback.answer(await get_message("menu.home_ack"))
+    await callback.answer()

@@ -9,6 +9,8 @@ from aiogram import Bot
 from redis import asyncio as aioredis
 
 from app.services.notifications.consumer import NotificationConsumer, QueueMessage
+from app.services.notifications.formatter import format_grant_created
+from app.services.notifications.models import NotificationEvent
 
 
 @pytest.fixture(autouse=True)
@@ -90,3 +92,24 @@ async def test_daily_limit_blocks_delivery(mock_redis, mock_bot):
 
     mock_bot.send_message.assert_not_called()
     msg.ack.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_grant_created_uses_top_level_fields():
+    event = NotificationEvent.from_stream_fields(
+        {
+            "id": "evt-top-level",
+            "type": "grant_created",
+            "chat_id": 1,
+            "ts": datetime.now(UTC).isoformat(),
+            "fileId": "0x" + "12" * 4,
+            "grantee": "0x" + "ab" * 6,
+            "ttl_days": 3,
+            "max_downloads": 7,
+        }
+    )
+
+    text = await format_grant_created(event)
+
+    assert "0x" in text  # formatted address/file id present
+    assert "ttl_days" in text or "max_downloads" in text

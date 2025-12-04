@@ -14,6 +14,7 @@ from app.handlers import link_callback as link_callback_handlers
 from app.handlers import me as me_handlers
 from app.handlers import menu as menu_handlers
 from app.handlers import notifications as notifications_handlers
+from app.handlers import switch as switch_handlers
 from app.handlers import start as start_handlers
 from app.handlers import unlink as unlink_handlers
 from app.handlers import verify as verify_handlers
@@ -52,6 +53,7 @@ async def setup_bot_commands(bot_: Bot) -> None:
             BotCommand(command="verify", description=await message_store.get_message("commands.verify", language=language)),
             BotCommand(command="lang", description=await message_store.get_message("commands.lang", language=language)),
             BotCommand(command="notify", description=await message_store.get_message("commands.notify", language=language)),
+            BotCommand(command="switch", description=await message_store.get_message("commands.switch", language=language)),
         ]
 
     languages = ("ru", "en")
@@ -92,6 +94,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     dp_.include_router(verify_handlers.router)
     dp_.include_router(lang_handlers.router)
     dp_.include_router(notifications_handlers.router)
+    dp_.include_router(switch_handlers.router)
     # остальные роутеры: grants, callbacks
 
     return bot_, dp_

@@ -288,14 +288,50 @@ async def handle_files_callback(callback: CallbackQuery) -> None:
         if not file_id.startswith("0x"):
             file_id = f"0x{file_id}"
 
-        # Формируем URL для открытия файла
-        origin = str(settings.PUBLIC_WEB_ORIGIN).rstrip("/")
-        file_url = f"{origin}/files/{file_id}"
+        # Запрашиваем одноразовую ссылку на скачивание
+        try:
+            from ..services.dfsp_api import prepare_download
 
-        await callback.answer(await get_message("files.opening", variables={"file_prefix": file_id[:8]}))
+            resp = await prepare_download(chat_id, file_id=file_id)
+            file_url = resp.get("url")
+            ttl = resp.get("ttl", 0)
+            file_name = resp.get("fileName") or file_id
+        except Exception:
+            logger.exception("Failed to prepare download link")
+            # Fallback: если нет гранта или эндпоинт недоступен, даём обычную ссылку
+            origin = str(settings.PUBLIC_WEB_ORIGIN).rstrip("/")
+            file_url = f"{origin}/files/{file_id}"
+            await callback.answer(await get_message("files.download_prepare_failed"), show_alert=False)
+            if callback.message:
+                await callback.message.answer(
+                    await get_message("files.open_link", variables={"file_url": file_url}),
+                    reply_markup=InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text=await get_message("buttons.open_in_browser"),
+                                    url=file_url,
+                                )
+                            ]
+                        ]
+                    ),
+                )
+            return
+
+        if not file_url:
+            await callback.answer(await get_message("files.download_prepare_failed"), show_alert=True)
+            return
+
+        await callback.answer()
         if callback.message:
             await callback.message.answer(
-                await get_message("files.open_link", variables={"file_url": file_url}),
+                await get_message(
+                    "files.download_link",
+                    variables={
+                        "file_name": file_name,
+                        "ttl": ttl,
+                    },
+                ),
                 reply_markup=InlineKeyboardMarkup(
                     inline_keyboard=[
                         [

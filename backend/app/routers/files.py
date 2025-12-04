@@ -433,7 +433,15 @@ def share_file(
                 publisher.publish(
                     "grant_created",
                     chat_id=grantor_chat,
-                    payload={"capId": cap_hex, "fileId": id},
+                    payload={
+                        "capId": cap_hex,
+                        "fileId": id,
+                        "grantor": user.eth_address,
+                        "grantee": grantee_addr,
+                        "ttlDays": int(body.ttl_days),
+                        "maxDownloads": int(body.max_dl),
+                        "expiresAt": expires_at.isoformat(),
+                    },
                     event_id=f"grant_created:{cap_hex}:{grantor_chat}",
                 )
             grantee_chat = addr_map.get(grantee_addr.lower())
@@ -441,7 +449,15 @@ def share_file(
                 publisher.publish(
                     "grant_received",
                     chat_id=grantee_chat,
-                    payload={"capId": cap_hex, "fileId": id},
+                    payload={
+                        "capId": cap_hex,
+                        "fileId": id,
+                        "grantor": user.eth_address,
+                        "grantee": grantee_addr,
+                        "ttlDays": int(body.ttl_days),
+                        "maxDownloads": int(body.max_dl),
+                        "expiresAt": expires_at.isoformat(),
+                    },
                     event_id=f"grant_received:{cap_hex}:{grantee_chat}",
                 )
     except Exception as e:

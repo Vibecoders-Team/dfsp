@@ -22,12 +22,12 @@
   {
     "key": "start.help",
     "language": "ru",
-    "content": "📖 <b>Справка по командам DFSP бота</b>\n\n🔹 <b>Основные команды:</b>\n• /start — главное меню\n• /me — мой профиль\n• /files — список моих файлов\n• /verify <fileId> — проверить файл\n• /link — привязать аккаунт\n• /unlink — отвязать аккаунт\n• /notify — уведомления и тихие часы\n\n💡 <b>Совет:</b> Используй кнопки меню для быстрого доступа к функциям!"
+    "content": "📖 <b>Справка по командам DFSP бота</b>\n\n🔹 <b>Основные команды:</b>\n• /start — главное меню\n• /me — мой профиль\n• /files — список моих файлов\n• /verify <fileId> — проверить файл\n• /link — привязать аккаунт\n• /unlink — отвязать аккаунт\n• /notify — уведомления и тихие часы\n• /switch — переключить активный адрес\n\n💡 <b>Совет:</b> Используй кнопки меню для быстрого доступа к функциям!"
   },
   {
     "key": "start.help",
     "language": "en",
-    "content": "📖 <b>DFSP bot commands</b>\n\n🔹 <b>Main commands:</b>\n• /start — main menu\n• /me — my profile\n• /files — my files\n• /verify <fileId> — verify file\n• /link — link account\n• /unlink — unlink account\n• /notify — notifications & quiet hours\n\n💡 <b>Tip:</b> Use menu buttons for quick access!"
+    "content": "📖 <b>DFSP bot commands</b>\n\n🔹 <b>Main commands:</b>\n• /start — main menu\n• /me — my profile\n• /files — my files\n• /verify <fileId> — verify file\n• /link — link account\n• /unlink — unlink account\n• /notify — notifications & quiet hours\n• /switch — switch active address\n\n💡 <b>Tip:</b> Use menu buttons for quick access!"
   },
   {
     "key": "common.missing_message",
@@ -182,12 +182,12 @@
   {
     "key": "link.success_menu_prompt",
     "language": "ru",
-    "content": "✅ <b>Отлично! Теперь ты можешь использовать все функции бота!</b>\n\nВыбери действие из меню ниже:"
+    "content": "✅ <b>Отлично! Теперь ты можешь использовать все функции бота!</b>\n\nВыбери действие из меню ниже:\n\nМожно привязать несколько адресов: проходи /link с новым кошельком и переключай через /switch."
   },
   {
     "key": "link.success_menu_prompt",
     "language": "en",
-    "content": "✅ <b>Great! You can use all bot features now.</b>\n\nChoose an action below:"
+    "content": "✅ <b>Great! You can use all bot features now.</b>\n\nChoose an action below:\n\nYou can link multiple wallets: run /link with a new one and switch via /switch."
   },
   {
     "key": "unlink.backend_error",
@@ -1188,5 +1188,135 @@
     "key": "notify.changed.quiet_off",
     "language": "en",
     "content": "Quiet hours disabled"
+  },
+  {
+    "key": "buttons.notify",
+    "language": "ru",
+    "content": "🔔 Уведомления"
+  },
+  {
+    "key": "buttons.notify",
+    "language": "en",
+    "content": "🔔 Notifications"
+  },
+  {
+    "key": "link.deep_link_button",
+    "language": "ru",
+    "content": "Вот кнопка для привязки аккаунта DFSP к этому Telegram.\n\nСсылка одноразовая и действует ограниченное время. Если она истечёт, просто вызови /link ещё раз.{diagnostic}"
+  },
+  {
+    "key": "link.deep_link_button",
+    "language": "en",
+    "content": "Use the button below to link DFSP to this Telegram.\n\nThe link is one-time and expires. If it does, just run /link again.{diagnostic}"
+  },
+  {
+    "key": "commands.switch",
+    "language": "ru",
+    "content": "Переключить активный адрес"
+  },
+  {
+    "key": "commands.switch",
+    "language": "en",
+    "content": "Switch active address"
+  },
+  {
+    "key": "switch.choose",
+    "language": "ru",
+    "content": "Выбери активный адрес (сейчас {summary}):"
+  },
+  {
+    "key": "switch.choose",
+    "language": "en",
+    "content": "Choose the active address (now {summary}):"
+  },
+  {
+    "key": "switch.success",
+    "language": "ru",
+    "content": "Активный адрес обновлён"
+  },
+  {
+    "key": "switch.success",
+    "language": "en",
+    "content": "Active address updated"
+  },
+  {
+    "key": "switch.fetch_error",
+    "language": "ru",
+    "content": "Не удалось загрузить список привязок. Попробуй позже."
+  },
+  {
+    "key": "switch.fetch_error",
+    "language": "en",
+    "content": "Could not load linked addresses. Please try again later."
+  },
+  {
+    "key": "switch.switch_error",
+    "language": "ru",
+    "content": "Не получилось переключить адрес. Попробуй позже."
+  },
+  {
+    "key": "switch.switch_error",
+    "language": "en",
+    "content": "Failed to switch address. Please try again later."
+  },
+  {
+    "key": "switch.not_found",
+    "language": "ru",
+    "content": "Такой адрес не найден среди привязок."
+  },
+  {
+    "key": "switch.not_found",
+    "language": "en",
+    "content": "This address was not found among linked wallets."
+  },
+  {
+    "key": "switch.only_one",
+    "language": "ru",
+    "content": "У тебя только один адрес: {address}"
+  },
+  {
+    "key": "switch.only_one",
+    "language": "en",
+    "content": "You only have one address: {address}"
+  },
+  {
+    "key": "switch.switch_info",
+    "language": "ru",
+    "content": "Активный адрес переключён на {address}."
+  },
+  {
+    "key": "switch.switch_info",
+    "language": "en",
+    "content": "Active address switched to {address}."
+  },
+  {
+    "key": "files.download_prepare_failed",
+    "language": "ru",
+    "content": "Не удалось подготовить ссылку. Попробуй позже."
+  },
+  {
+    "key": "files.download_prepare_failed",
+    "language": "en",
+    "content": "Could not prepare the download link. Please try again later."
+  },
+  {
+    "key": "files.download_link",
+    "language": "ru",
+    "content": "🔗 Одноразовая ссылка на расшифровку\n📄 Файл: {file_name}\n⏳ TTL: {ttl} сек\nСсылка сгорит после открытия."
+  },
+  {
+    "key": "files.download_link",
+    "language": "en",
+    "content": "🔗 One-time decrypt link\n📄 File: {file_name}\n⏳ TTL: {ttl} sec\nThe link will expire after first open."
+  },
+  {
+    "key": "buttons.switch",
+    "language": "ru",
+    "content": "🔄 Сменить адрес"
+  },
+  {
+    "key": "buttons.switch",
+    "language": "en",
+    "content": "🔄 Switch address"
   }
 ]

@@ -1,7 +1,8 @@
 """Format notification messages for Telegram."""
 # ruff: noqa: RUF001
 
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Mapping
 
 from ..message_store import get_message
 from .models import CoalescedNotification, NotificationEvent
@@ -30,6 +31,61 @@ def format_file_id(file_id: str) -> str:
     return f"0x{file_id}"
 
 
+def _pick_from_sources(payload: Mapping[str, Any], keys: list[str]) -> Any:
+    """Берет первое непустое значение из payload или вложенного grant."""
+    grant = payload.get("grant") if isinstance(payload.get("grant"), Mapping) else None
+    for source in (payload, grant or {}):
+        for key in keys:
+            if key in source and source.get(key) not in (None, ""):
+                return source.get(key)
+    return None
+
+
+def _pick_address(payload: Mapping[str, Any], role: str) -> str:
+    """Возвращает адрес grantor/grantee с запасными ключами."""
+    keys = {
+        "grantee": ["grantee", "grantee_address", "granteeAddress", "recipient", "to"],
+        "grantor": ["grantor", "grantor_address", "grantorAddress", "owner", "from"],
+    }.get(role, [])
+    return _pick_from_sources(payload, keys) or ""
+
+
+def _pick_file_id(payload: Mapping[str, Any]) -> str:
+    """Возвращает идентификатор файла или capability id."""
+    return _pick_from_sources(payload, ["fileId", "file_id", "capId", "cap_id", "cid", "file"]) or ""
+
+
+def _parse_ttl_from_expiry(expiry: Any) -> int | None:
+    """Пробует вычислить TTL в днях из ISO8601 даты истечения."""
+    if not expiry:
+        return None
+    try:
+        expires_at = datetime.fromisoformat(str(expiry).replace("Z", "+00:00"))
+        delta = expires_at - datetime.now(UTC)
+        return max(int(delta.total_seconds() // 86400), 0)
+    except Exception:
+        return None
+
+
+def _pick_ttl_days(payload: Mapping[str, Any]) -> Any:
+    """Возвращает ttl_days с бэкенда или вычисляет из expires_at."""
+    ttl = _pick_from_sources(payload, ["ttlDays", "ttl_days", "ttl", "days"])
+    if ttl not in (None, ""):
+        return ttl
+
+    ttl_from_expiry = _parse_ttl_from_expiry(_pick_from_sources(payload, ["expires_at", "expiresAt", "expiry"]))
+    return ttl_from_expiry if ttl_from_expiry is not None else "?"
+
+
+def _pick_max_downloads(payload: Mapping[str, Any]) -> Any:
+    """Возвращает ограничение на скачивания."""
+    max_dl = _pick_from_sources(
+        payload,
+        ["maxDownloads", "max_downloads", "download_limit", "downloads_limit", "downloads_left"],
+    )
+    return max_dl if max_dl not in (None, "") else "?"
+
+
 DOWNLOAD_DENIED_REASONS: dict[str, str] = {
     "not_grantee": "notifications.download_denied.reason.not_grantee",
     "not_grantee_onchain": "notifications.download_denied.reason.not_grantee_onchain",
@@ -55,11 +111,11 @@ async def format_grant_created(event: NotificationEvent) -> str:
     """Format grant_created notification."""
     payload = event.payload or {}
 
-    grantee = format_address(payload.get("grantee", ""))
-    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
+    grantee = format_address(_pick_address(payload, "grantee"))
+    file_id = format_file_id(_pick_file_id(payload))
 
-    ttl_days = payload.get("ttlDays", payload.get("ttl_days", "?"))
-    max_dl = payload.get("maxDownloads", payload.get("max_downloads", "?"))
+    ttl_days = _pick_ttl_days(payload)
+    max_dl = _pick_max_downloads(payload)
 
     return await get_message(
         "notifications.grant_created",
@@ -76,11 +132,11 @@ async def format_grant_received(event: NotificationEvent) -> str:
     """Format grant_received notification (same as grant_created for grantee)."""
     payload = event.payload or {}
 
-    grantor = format_address(payload.get("grantor", ""))
-    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
+    grantor = format_address(_pick_address(payload, "grantor"))
+    file_id = format_file_id(_pick_file_id(payload))
 
-    ttl_days = payload.get("ttlDays", payload.get("ttl_days", "?"))
-    max_dl = payload.get("maxDownloads", payload.get("max_downloads", "?"))
+    ttl_days = _pick_ttl_days(payload)
+    max_dl = _pick_max_downloads(payload)
 
     return await get_message(
         "notifications.grant_received",
@@ -96,7 +152,7 @@ async def format_grant_received(event: NotificationEvent) -> str:
 async def format_grant_revoked(event: NotificationEvent) -> str:
     """Format grant_revoked notification."""
     payload = event.payload or {}
-    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
+    file_id = format_file_id(_pick_file_id(payload))
 
     return await get_message("notifications.grant_revoked", variables={"file_id": file_id})
 
@@ -104,7 +160,7 @@ async def format_grant_revoked(event: NotificationEvent) -> str:
 async def format_download_allowed(event: NotificationEvent) -> str:
     """Format download_allowed notification."""
     payload = event.payload or {}
-    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
+    file_id = format_file_id(_pick_file_id(payload))
 
     return await get_message("notifications.download_allowed", variables={"file_id": file_id})
 
@@ -112,7 +168,7 @@ async def format_download_allowed(event: NotificationEvent) -> str:
 async def format_download_denied(event: NotificationEvent) -> str:
     """Format download_denied notification."""
     payload = event.payload or {}
-    file_id = format_file_id(payload.get("fileId") or payload.get("capId", ""))
+    file_id = format_file_id(_pick_file_id(payload))
     reason = payload.get("reason", "unknown")
 
     reason_key = DOWNLOAD_DENIED_REASONS.get(reason)

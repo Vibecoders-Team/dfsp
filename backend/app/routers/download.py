@@ -178,6 +178,22 @@ def _load_one_time_payload(token: str) -> dict[str, Any] | None:
         return None
 
 
+@router.get("/once/{token}")
+def get_one_time_payload(token: str) -> dict[str, Any]:
+    """
+    Возвращает и сразу инвалидывает одноразовый payload для расшифровки.
+    410, если токен не найден/уже использован.
+    """
+    if not token:
+        raise HTTPException(400, "bad_token")
+
+    payload = _load_one_time_payload(token)
+    if not payload:
+        raise HTTPException(410, "link_expired")
+
+    return payload
+
+
 @router.get("/{cap_id}")
 def get_download_info(
     cap_id: str,

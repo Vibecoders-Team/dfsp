@@ -109,13 +109,14 @@ async def _send_link(
     is_valid, error_msg = check_public_web_origin()
 
     diagnostic_note = f"\n\n⚠️ {error_msg}" if not is_valid and error_msg else ""
-    text = await get_message(
-        "link.deep_link",
-        variables={"link_url": deep_link, "diagnostic": diagnostic_note},
-    )
-
-    # Показываем кнопку только для валидного origin
     kb = await _build_link_keyboard(deep_link) if is_valid else None
+    if kb:
+        text = await get_message("link.deep_link_button", variables={"diagnostic": diagnostic_note})
+    else:
+        text = await get_message(
+            "link.deep_link",
+            variables={"link_url": deep_link, "diagnostic": diagnostic_note},
+        )
 
     await send(text, kb)
 
@@ -147,17 +148,3 @@ async def cb_link_start(callback: CallbackQuery) -> None:
     )
     # Закрываем "часики" у пользователя
     await callback.answer()
-
-    # После отправки ссылки показываем инструкцию
-    await callback.message.answer(
-        await get_message("link.instructions"),
-    )
-
-    # Обновляем главное меню
-    from ..handlers import start as start_handlers
-
-    keyboard = await start_handlers.get_main_keyboard(is_linked=False)
-    await callback.message.answer(
-        await get_message("link.main_menu_hint"),
-        reply_markup=keyboard,
-    )

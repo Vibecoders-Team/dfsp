@@ -34,20 +34,18 @@ class NotificationEvent(BaseModel):
     def from_stream_fields(cls, fields: Mapping[str, Any], fallback_id: str | None = None) -> "NotificationEvent":
         """Создает событие из сырого словаря Redis Stream / AMQP."""
         try:
-            raw_id = fields.get("id") or fields.get(b"id") or fallback_id
-            raw_type = fields.get("type") or fields.get(b"type")
-            raw_chat = fields.get("chat_id") or fields.get(b"chat_id")
-            raw_ts = fields.get("ts") or fields.get(b"ts") or datetime.now(UTC).isoformat()
-            raw_payload = fields.get("payload") or fields.get(b"payload") or "{}"
-
             def _dec(val: Any) -> Any:
                 return val.decode() if isinstance(val, (bytes, bytearray)) else val
 
-            raw_id = _dec(raw_id)
-            raw_type = _dec(raw_type)
-            raw_chat = _dec(raw_chat)
-            raw_ts = _dec(raw_ts)
-            raw_payload = _dec(raw_payload)
+            decoded_fields: dict[str, Any] = {}
+            for k, v in fields.items():
+                decoded_fields[_dec(k)] = _dec(v)
+
+            raw_id = decoded_fields.get("id") or fallback_id
+            raw_type = decoded_fields.get("type")
+            raw_chat = decoded_fields.get("chat_id")
+            raw_ts = decoded_fields.get("ts") or datetime.now(UTC).isoformat()
+            raw_payload = decoded_fields.get("payload", "{}")
 
             payload_dict: dict[str, Any]
             if isinstance(raw_payload, str):
@@ -59,6 +57,12 @@ class NotificationEvent(BaseModel):
                 payload_dict = dict(raw_payload)
             else:
                 payload_dict = {}
+
+            # Забираем все остальные поля и добавляем их в payload, чтобы не терять данные
+            reserved_keys = {"id", "type", "chat_id", "ts", "payload"}
+            extra_payload = {k: v for k, v in decoded_fields.items() if k not in reserved_keys}
+            if extra_payload:
+                payload_dict = {**payload_dict, **extra_payload}
 
             ts_val: datetime
             if isinstance(raw_ts, datetime):

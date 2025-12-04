@@ -172,7 +172,8 @@ class BotLinkSwitchIn(BaseModel):
 
 
 class BotPrepareDownloadIn(BaseModel):
-    capId: str
+    capId: str | None = None
+    fileId: str | None = None
 
 
 class BotPrepareDownloadOut(BaseModel):
@@ -270,23 +271,73 @@ def bot_prepare_download(
     x_tg_chat_id: str = Header(..., alias="X-TG-Chat-Id"),
 ) -> BotPrepareDownloadOut:
     chat_id = _parse_chat_id(x_tg_chat_id)
-    cap_id = body.capId
-    if not (isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66):
-        raise HTTPException(status_code=400, detail="bad_cap_id")
-    try:
-        cap_b = Web3.to_bytes(hexstr=cap_id)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="bad_cap_id") from exc
-
-    grant: Grant | None = db.scalar(select(Grant).where(Grant.cap_id == cap_b))
-    if grant is None:
-        raise HTTPException(status_code=404, detail="grant_not_found")
-
     user = _resolve_user_by_chat_id_value(chat_id, db)
-    if grant.grantee_id != user.id:
-        raise HTTPException(status_code=403, detail="not_grantee")
 
-    payload = _build_download_payload(db, chain, user, grant, cap_id)
+    cap_id = body.capId
+    file_id = body.fileId
+
+    if not cap_id and not file_id:
+        raise HTTPException(status_code=400, detail="capId_or_fileId_required")
+
+    grant: Grant | None = None
+    file_obj: File | None = None
+    file_id_bytes: bytes | None = None
+
+    if cap_id:
+        if not (isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66):
+            raise HTTPException(status_code=400, detail="bad_cap_id")
+        try:
+            cap_b = Web3.to_bytes(hexstr=cap_id)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="bad_cap_id") from exc
+
+        grant = db.scalar(select(Grant).where(Grant.cap_id == cap_b))
+        if grant is None:
+            raise HTTPException(status_code=404, detail="grant_not_found")
+        if grant.grantee_id != user.id:
+            raise HTTPException(status_code=403, detail="not_grantee")
+        payload = _build_download_payload(db, chain, user, grant, cap_id)
+    else:
+        # fileId путь: владелец файла или первый доступный грант для пользователя
+        fid = file_id or ""
+        if fid.startswith("0x"):
+            fid_hex = fid
+        else:
+            fid_hex = f"0x{fid}"
+        if len(fid_hex) != 66 or not fid_hex.startswith("0x"):
+            raise HTTPException(status_code=400, detail="bad_file_id")
+        try:
+            file_id_bytes = Web3.to_bytes(hexstr=fid_hex)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="bad_file_id") from exc
+
+        file_obj = db.get(File, file_id_bytes)
+        if file_obj is None:
+            raise HTTPException(status_code=404, detail="file_not_found")
+
+        if file_obj.owner_id == user.id:
+            # Владелец файла: готовим одноразовую ссылку без гранта
+            try:
+                cid = chain.cid_of(file_id_bytes) or file_obj.cid
+            except Exception:
+                cid = file_obj.cid
+            if not cid:
+                raise HTTPException(status_code=502, detail="registry_unavailable")
+            payload = {
+                "fileId": fid_hex,
+                "ipfsPath": f"/ipfs/{cid}",
+                "fileName": file_obj.name,
+                "owner": user.eth_address,
+            }
+        else:
+            grant = db.scalar(
+                select(Grant).where(Grant.file_id == file_id_bytes, Grant.grantee_id == user.id).limit(1)
+            )
+            if grant is None:
+                raise HTTPException(status_code=403, detail="not_grantee")
+            cap_hex = "0x" + bytes(grant.cap_id).hex()
+            payload = _build_download_payload(db, chain, user, grant, cap_hex)
+            cap_id = cap_hex
 
     token = secrets.token_urlsafe(20)
     key = f"dl:once:{token}"

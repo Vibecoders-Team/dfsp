@@ -22,6 +22,8 @@ async def get_main_keyboard(is_linked: bool = False) -> InlineKeyboardMarkup:
     """Создаёт главное меню с кнопками в зависимости от статуса привязки."""
     profile_btn = await get_message("buttons.profile")
     files_btn = await get_message("buttons.files")
+    switch_btn = await get_message("buttons.switch")
+    notify_btn = await get_message("buttons.notify")
     unlink_btn = await get_message("buttons.unlink")
     link_btn = await get_message("buttons.link")
     home_btn = await get_message("buttons.home")
@@ -36,6 +38,8 @@ async def get_main_keyboard(is_linked: bool = False) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text=files_btn, callback_data="menu:files"),
             ],
             [
+                InlineKeyboardButton(text=switch_btn, callback_data="menu:switch"),
+                InlineKeyboardButton(text=notify_btn, callback_data="menu:notify"),
                 InlineKeyboardButton(text=unlink_btn, callback_data="unlink:start"),
             ],
             [
