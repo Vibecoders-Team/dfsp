@@ -17,6 +17,7 @@ from redis.exceptions import ResponseError
 
 from ...config import settings
 from ...metrics import tg_notify_dropped_total, tg_notify_sent_total
+from ...services.dfsp_api import prepare_download
 from .antispam import AntiSpam
 from .formatter import format_coalesced, format_notification
 from .models import CoalescedNotification, NotificationEvent
@@ -306,8 +307,36 @@ class NotificationConsumer:
         chat_id = notification.chat_id
         try:
             if len(notification.events) == 1:
-                text = await format_notification(notification.events[0])
-                event_type = notification.events[0].type
+                event = notification.events[0]
+                event_type = event.type
+                text = await format_notification(event)
+
+                # Special handling for download_allowed: generate one-time link
+                if event_type == "download_allowed":
+                    payload = event.payload or {}
+                    cap_id = payload.get("capId")
+
+                    if cap_id:
+                        try:
+                            # Generate one-time download link
+                            dl_resp = await prepare_download(chat_id, cap_id)
+                            download_url = dl_resp.url
+                            file_name = dl_resp.fileName or payload.get("fileName", "Unknown file")
+                            ttl_minutes = dl_resp.ttl // 60
+
+                            # Replace placeholder with actual URL
+                            text = text.replace("{download_url}", download_url)
+
+                            # Add TTL info if not already in message
+                            if "{ttl}" in text:
+                                text = text.replace("{ttl}", str(ttl_minutes))
+                            else:
+                                text += f"\n\n⏱ Link expires in {ttl_minutes} minutes"
+
+                        except Exception as e:
+                            logger.error("Failed to prepare download link for chat %s, capId %s: %s", chat_id, cap_id, e)
+                            # Fallback to error message
+                            text = f"❌ Failed to generate download link. Please try again later."
             else:
                 text = await format_coalesced(notification)
                 event_type = notification.event_type

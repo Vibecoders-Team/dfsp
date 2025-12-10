@@ -448,6 +448,22 @@ def share_file(
                     },
                     event_id=f"grant_received:{cap_hex}:{grantee_chat}",
                 )
+                # Сразу отправляем download_allowed для генерации одноразовой ссылки
+                try:
+                    file_obj = db.get(File, file_id_bytes)
+                    file_name = file_obj.name if file_obj else None
+                    publisher.publish(
+                        "download_allowed",
+                        chat_id=grantee_chat,
+                        payload={
+                            "capId": cap_hex,
+                            "fileId": id,
+                            "fileName": file_name,
+                        },
+                        event_id=f"download_allowed:{cap_hex}:{grantee_chat}",
+                    )
+                except Exception as e:
+                    logger.debug("Failed to publish download_allowed for %s: %s", cap_hex, e)
     except Exception as e:
         logger.warning("Failed to publish notification events for grants: %s", e, exc_info=True)
 

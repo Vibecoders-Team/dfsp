@@ -28,7 +28,7 @@ import PrivacyPage from './components/pages/PrivacyPage';
 import TelegramLinkPage from './components/pages/TelegramLinkPage';
 import { MainLandingPage } from './pages/MainLandingPage/MainLandingPage';
 import PublicPage from './components/pages/PublicPage.tsx';
-
+import OneTimePage from './components/pages/OneTimePage';
 const LANDING_ENABLED = (import.meta as any).env?.VITE_LANDING_ENABLED !== 'false';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -197,6 +197,7 @@ function AppRoutes() {
         />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/public/:token" element={<PublicPage />} />
+        <Route path="/dl/one-time/:token" element={<OneTimePage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
       <Toaster richColors position="top-right" closeButton duration={3500} />

@@ -201,3 +201,41 @@ async def get_bot_files(chat_id: int, limit: int = 10, cursor: str | None = None
 
     data = resp.json()
     return BotFileListResponse.model_validate(data)
+
+
+class PrepareDownloadResponse(BaseModel):
+    """Ответ от /bot/prepare-download."""
+
+    url: str
+    ttl: int
+    fileName: str | None = None
+
+
+async def prepare_download(chat_id: int, cap_id: str) -> PrepareDownloadResponse:
+    """
+    Запрос одноразовой ссылки для скачивания файла.
+
+    POST {DFSP_API_URL}/bot/prepare-download
+    Header: X-TG-Chat-Id: <chat_id>
+    Body: {"capId": "0x..."}
+
+    Возвращает PrepareDownloadResponse с одноразовой ссылкой.
+    """
+    api_url = str(settings.DFSP_API_URL).rstrip("/")
+    url = f"{api_url}/bot/prepare-download"
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(
+            url,
+            headers={"X-TG-Chat-Id": str(chat_id)},
+            json={"capId": cap_id},
+        )
+
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise ValueError(f"DFSP POST /bot/prepare-download failed: {exc}") from exc
+
+    data = resp.json()
+    return PrepareDownloadResponse.model_validate(data)
+

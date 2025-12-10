@@ -572,12 +572,12 @@
   {
     "key": "notifications.download_allowed",
     "language": "ru",
-    "content": "✅ <b>Скачивание разрешено</b>\n\n📁 Файл: <code>{file_id}</code>\nВы можете скачать файл."
+    "content": "✅ <b>Файл готов к скачиванию</b>\n\n📁 Файл: <b>{file_name}</b>\n\n🔗 Одноразовая ссылка для скачивания:\n{download_url}\n\n⚠️ Эта ссылка одноразовая и будет удалена после использования."
   },
   {
     "key": "notifications.download_allowed",
     "language": "en",
-    "content": "✅ <b>Download allowed</b>\n\n📁 File: <code>{file_id}</code>\nYou can download the file."
+    "content": "✅ <b>File ready for download</b>\n\n📁 File: <b>{file_name}</b>\n\n🔗 One-time download link:\n{download_url}\n\n⚠️ This link is one-time use and will expire after download."
   },
   {
     "key": "notifications.download_denied",
@@ -658,6 +658,16 @@
     "key": "notifications.download_denied.reason.pow_required",
     "language": "en",
     "content": "Proof of Work required"
+  },
+  {
+    "key": "notifications.download_denied.reason.unknown",
+    "language": "ru",
+    "content": "Неизвестная причина: {reason}"
+  },
+  {
+    "key": "notifications.download_denied.reason.unknown",
+    "language": "en",
+    "content": "Unknown reason: {reason}"
   },
   {
     "key": "notifications.anchor_ok",

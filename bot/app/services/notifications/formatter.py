@@ -158,7 +158,11 @@ async def format_grant_revoked(event: NotificationEvent) -> str:
 
 
 async def format_download_allowed(event: NotificationEvent) -> str:
-    """Format download_allowed notification."""
+    """
+    Format download_allowed notification.
+    This returns a message with a one-time download link.
+    The actual link generation happens in the consumer.
+    """
     payload = event.payload or {}
     file_id = format_file_id(_pick_file_id(payload))
 
