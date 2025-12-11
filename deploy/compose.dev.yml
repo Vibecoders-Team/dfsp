@@ -1,5 +1,13 @@
 name: dfsp-dev
 
+# --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
+# Создаем шаблон, чтобы применить его ко всем сервисам
+x-logging: &default-logging
+  driver: "local"
+  options:
+    max-size: "30m"
+    max-file: "3"
+
 x-backend-build: &backend-build
   context: ../backend
   dockerfile: Dockerfile
@@ -15,6 +23,7 @@ services:
   db:
     image: postgres:17-alpine
     container_name: dfsp-db-dev
+    logging: *default-logging  # <--- Применено
     env_file:
       - .env.dev
     environment:
@@ -38,6 +47,7 @@ services:
     image: ${REGISTRY_HOST:-registry.dfsp.app}/${SERVICE_BACKEND:-dfsp-backend}:${BRANCH_NAME_LOWER:-dev}
     build: *backend-build
     container_name: dfsp-migrator-dev
+    logging: *default-logging  # <--- Применено
     restart: "no"
     env_file:
       - .env.dev
@@ -55,6 +65,7 @@ services:
   chain:
     image: ghcr.io/foundry-rs/foundry:latest
     container_name: dfsp-anvil-dev
+    logging: *default-logging  # <--- Применено
     env_file:
       - .env.dev
     environment:
@@ -94,6 +105,7 @@ services:
   contracts:
     image: node:${NODE_VERSION:-22}
     container_name: dfsp-contracts-dev
+    logging: *default-logging  # <--- Применено
     working_dir: /app
     depends_on:
       chain:
@@ -122,6 +134,7 @@ services:
     image: ${REGISTRY_HOST:-registry.dfsp.app}/${SERVICE_BACKEND:-dfsp-backend}:${BRANCH_NAME_LOWER:-dev}
     build: *backend-build
     container_name: dfsp-api-dev
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     env_file:
       - .env.dev
@@ -153,6 +166,7 @@ services:
     image: ${REGISTRY_HOST:-registry.dfsp.app}/${SERVICE_BACKEND:-dfsp-backend}:${BRANCH_NAME_LOWER:-dev}
     build: *backend-build
     container_name: dfsp-celery-worker-dev
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     env_file:
       - .env.dev
@@ -179,6 +193,7 @@ services:
     image: ${REGISTRY_HOST:-registry.dfsp.app}/${SERVICE_BACKEND:-dfsp-backend}:${BRANCH_NAME_LOWER:-dev}
     build: *backend-build
     container_name: dfsp-celery-beat-dev
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     env_file:
       - .env.dev
@@ -206,6 +221,7 @@ services:
       context: ../bot
       dockerfile: Dockerfile
     container_name: dfsp-telegram-bot-dev
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     env_file:
       - .env.dev
@@ -243,6 +259,7 @@ services:
   redis:
     image: redis:7.2-alpine
     container_name: dfsp-redis-dev
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     ports:
       - "${REDIS_HOST_PORT:-56379}:6379"
@@ -259,6 +276,7 @@ services:
   ipfs:
     image: ipfs/kubo:${IPFS_VERSION:-latest}
     container_name: dfsp-ipfs-dev
+    logging: *default-logging  # <--- Применено
     env_file:
       - .env.dev
     environment:
@@ -280,6 +298,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     container_name: dfsp-nginx-dev
+    logging: *default-logging  # <--- Применено
     ports:
       - "8081:80"
     volumes:
@@ -294,6 +313,7 @@ services:
   explorer-db:
     image: postgres:17-alpine
     container_name: blockscout-db-dev
+    logging: *default-logging  # <--- Применено
     environment:
       POSTGRES_USER: blockscout
       POSTGRES_PASSWORD: ${EXPLORER_DB_PASSWORD:-blockpass}
@@ -311,6 +331,7 @@ services:
   explorer-indexer:
     image: ghcr.io/blockscout/blockscout:latest
     container_name: blockscout-indexer-dev
+    logging: *default-logging  # <--- Применено
     working_dir: /app
     command: >
       sh -lc "
@@ -350,6 +371,7 @@ services:
   explorer-web:
     image: ghcr.io/blockscout/frontend:latest
     container_name: blockscout-web-dev
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_NETWORK_NAME: DFSP Devnet
