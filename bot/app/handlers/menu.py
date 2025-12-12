@@ -10,8 +10,8 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from ..handlers import files as files_handlers
 from ..handlers import me as me_handlers
 from ..handlers import notifications as notify_handlers
-from ..handlers import switch as switch_handlers
 from ..handlers import start as start_handlers
+from ..handlers import switch as switch_handlers
 from ..services.message_store import get_message
 
 router = Router()

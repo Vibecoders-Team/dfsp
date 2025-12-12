@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
-from contextvars import ContextVar
 from urllib.parse import urlparse, urlunparse
 
 import asyncpg
@@ -102,10 +102,10 @@ class MessageStore:
                 logger.info("Database %s not found (attempt %s); will try to create", db_name, attempt)
                 try:
                     await self._create_database(admin_dsn, db_name)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     last_error = exc
                     logger.warning("Attempt %s: failed to create DB %s: %s", attempt, db_name, exc)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 last_error = exc
                 logger.warning("Attempt %s: failed to connect to %s: %s", attempt, self.db_dsn, exc)
             else:
@@ -125,7 +125,7 @@ class MessageStore:
         for candidate in admin_candidates:
             try:
                 admin_conn = await asyncpg.connect(candidate, timeout=5)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 last_error = exc
                 logger.warning("Failed to connect to admin DSN %s: %s", candidate, exc)
                 continue
@@ -187,7 +187,9 @@ class MessageStore:
         for row in rows:
             self._cache[(row["key"], row["language"])] = row["content"]
 
-    async def get_message(self, key: str, *, language: str | None = None, variables: dict[str, Any] | None = None) -> str:
+    async def get_message(
+        self, key: str, *, language: str | None = None, variables: dict[str, Any] | None = None
+    ) -> str:
         """Достаёт сообщение по ключу/языку и форматирует плейсхолдеры."""
         await self.init()
 

@@ -12,6 +12,7 @@ from ..services.message_store import get_message
 router = Router()
 logger = logging.getLogger(__name__)
 
+
 async def get_start_text(is_linked: bool, language: str | None = None) -> str:
     """Выбирает стартовый текст из хранилища сообщений по статусу привязки."""
     key = "start.linked" if is_linked else "start.unlinked"

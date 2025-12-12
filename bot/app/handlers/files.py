@@ -383,9 +383,7 @@ async def handle_files_callback(callback: CallbackQuery) -> None:
             last_anchor_tx = data.get("lastAnchorTx")
 
             status_icon = "✅" if match else "❌"
-            status_text = await get_message(
-                "verify.status_match" if match else "verify.status_mismatch"
-            )
+            status_text = await get_message("verify.status_match" if match else "verify.status_mismatch")
 
             text = await get_message(
                 "verify.summary",

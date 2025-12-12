@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, Mapping
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -31,9 +32,10 @@ class NotificationEvent(BaseModel):
         return self.ts
 
     @classmethod
-    def from_stream_fields(cls, fields: Mapping[str, Any], fallback_id: str | None = None) -> "NotificationEvent":
+    def from_stream_fields(cls, fields: Mapping[str, Any], fallback_id: str | None = None) -> NotificationEvent:
         """Создает событие из сырого словаря Redis Stream / AMQP."""
         try:
+
             def _dec(val: Any) -> Any:
                 return val.decode() if isinstance(val, (bytes, bytearray)) else val
 
@@ -83,7 +85,7 @@ class NotificationEvent(BaseModel):
                 ts=ts_val,
                 payload=payload_dict,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ValueError(f"Invalid notification payload: {fields}") from exc
 
 

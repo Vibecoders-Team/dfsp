@@ -31,7 +31,7 @@ class QuietHours:
     end_min: int
 
     @classmethod
-    def parse(cls, value: str) -> "QuietHours":
+    def parse(cls, value: str) -> QuietHours:
         """Parses string like '23:00-07:00'."""
         start_raw, _, end_raw = value.partition("-")
         return cls(start_min=_parse_hhmm(start_raw), end_min=_parse_hhmm(end_raw))
@@ -89,14 +89,14 @@ class NotificationPreferences:
             if isinstance(raw, (bytes, bytearray)):
                 raw = raw.decode()
             return str(raw) != "0"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Failed to read subscription flag: %s", exc)
             return self.default_subscribed
 
     async def set_subscribed(self, chat_id: int, subscribed: bool) -> None:
         try:
             await self.redis.set(self._subscribed_key(chat_id), "1" if subscribed else "0")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Failed to store subscription flag: %s", exc)
 
     async def get_quiet_hours(self, chat_id: int) -> QuietHours | None:
@@ -110,20 +110,20 @@ class NotificationPreferences:
             if "-" not in raw_str:
                 return None
             return QuietHours.parse(raw_str)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Failed to read quiet hours: %s", exc)
             return None
 
     async def set_quiet_hours(self, chat_id: int, quiet: QuietHours) -> None:
         try:
             await self.redis.set(self._quiet_key(chat_id), quiet.serialize())
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Failed to store quiet hours: %s", exc)
 
     async def clear_quiet_hours(self, chat_id: int) -> None:
         try:
             await self.redis.delete(self._quiet_key(chat_id))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Failed to clear quiet hours: %s", exc)
 
     async def is_quiet_now(self, chat_id: int, ts: datetime | None = None) -> tuple[bool, int]:

@@ -8,8 +8,9 @@ import json
 import logging
 import uuid
 from collections import defaultdict
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Any
 
 from aiogram import Bot
 from redis import asyncio as aioredis
@@ -148,7 +149,7 @@ class RabbitQueue:
         try:
             if self.connection:
                 await self.connection.close()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("RabbitMQ close failed: %s", exc)
 
 
@@ -203,7 +204,7 @@ class NotificationConsumer:
             except asyncio.CancelledError:
                 logger.info("Notification consumer cancelled")
                 break
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.error("Error in consumer loop: %s", exc, exc_info=True)
                 await asyncio.sleep(2)
 
@@ -220,7 +221,7 @@ class NotificationConsumer:
     async def _handle_message(self, message: QueueMessage) -> None:
         try:
             event = NotificationEvent.from_stream_fields(message.fields, fallback_id=message.raw_id)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             tg_notify_dropped_total.labels(reason="parse_error").inc()
             logger.warning("Failed to parse notification message %s: %s", message.raw_id, exc)
             await message.ack()
@@ -263,7 +264,7 @@ class NotificationConsumer:
             await self._flush_now(key)
         except asyncio.CancelledError:
             return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("Failed to flush coalesced notifications for %s: %s", key, exc, exc_info=True)
         finally:
             self.buffer_tasks.pop(key, None)
@@ -321,7 +322,6 @@ class NotificationConsumer:
                             # Generate one-time download link
                             dl_resp = await prepare_download(chat_id, cap_id)
                             download_url = dl_resp.url
-                            file_name = dl_resp.fileName or payload.get("fileName", "Unknown file")
                             ttl_minutes = dl_resp.ttl // 60
 
                             # Replace placeholder with actual URL
@@ -334,9 +334,11 @@ class NotificationConsumer:
                                 text += f"\n\n⏱ Link expires in {ttl_minutes} minutes"
 
                         except Exception as e:
-                            logger.error("Failed to prepare download link for chat %s, capId %s: %s", chat_id, cap_id, e)
+                            logger.error(
+                                "Failed to prepare download link for chat %s, capId %s: %s", chat_id, cap_id, e
+                            )
                             # Fallback to error message
-                            text = f"❌ Failed to generate download link. Please try again later."
+                            text = "❌ Failed to generate download link. Please try again later."
             else:
                 text = await format_coalesced(notification)
                 event_type = notification.event_type
@@ -358,6 +360,6 @@ class NotificationConsumer:
                     event_type,
                     len(notification.events),
                 )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             tg_notify_dropped_total.labels(reason="send_exception").inc()
             logger.error("Error sending notification to chat %s: %s", chat_id, exc, exc_info=True)

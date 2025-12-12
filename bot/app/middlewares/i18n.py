@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from aiogram import BaseMiddleware
-from aiogram.types import CallbackQuery, Message, Update
+from aiogram.types import Update
 
 try:
     from redis import asyncio as aioredis  # type: ignore[import]

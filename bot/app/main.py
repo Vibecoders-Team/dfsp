@@ -14,17 +14,17 @@ from app.handlers import link_callback as link_callback_handlers
 from app.handlers import me as me_handlers
 from app.handlers import menu as menu_handlers
 from app.handlers import notifications as notifications_handlers
-from app.handlers import switch as switch_handlers
 from app.handlers import start as start_handlers
+from app.handlers import switch as switch_handlers
 from app.handlers import unlink as unlink_handlers
 from app.handlers import verify as verify_handlers
 from app.metrics import setup_metrics_server, tg_webhook_errors_total
-from app.middlewares.i18n import I18nMiddleware
 from app.middlewares.error_handler import ErrorHandlerMiddleware
+from app.middlewares.i18n import I18nMiddleware
 from app.middlewares.logging import LoggingMiddleware
 from app.middlewares.rate_limit import RateLimitMiddleware
-from app.services.notifications.consumer import NotificationConsumer
 from app.services.message_store import message_store
+from app.services.notifications.consumer import NotificationConsumer
 from app.utils.webhook import build_webhook_url, mask_webhook_url
 
 logging.basicConfig(
@@ -44,16 +44,28 @@ async def setup_bot_commands(bot_: Bot) -> None:
 
     async def build_commands(language: str) -> list[BotCommand]:
         return [
-            BotCommand(command="start", description=await message_store.get_message("commands.start", language=language)),
+            BotCommand(
+                command="start", description=await message_store.get_message("commands.start", language=language)
+            ),
             BotCommand(command="me", description=await message_store.get_message("commands.me", language=language)),
-            BotCommand(command="files", description=await message_store.get_message("commands.files", language=language)),
+            BotCommand(
+                command="files", description=await message_store.get_message("commands.files", language=language)
+            ),
             BotCommand(command="link", description=await message_store.get_message("commands.link", language=language)),
-            BotCommand(command="unlink", description=await message_store.get_message("commands.unlink", language=language)),
+            BotCommand(
+                command="unlink", description=await message_store.get_message("commands.unlink", language=language)
+            ),
             BotCommand(command="help", description=await message_store.get_message("commands.help", language=language)),
-            BotCommand(command="verify", description=await message_store.get_message("commands.verify", language=language)),
+            BotCommand(
+                command="verify", description=await message_store.get_message("commands.verify", language=language)
+            ),
             BotCommand(command="lang", description=await message_store.get_message("commands.lang", language=language)),
-            BotCommand(command="notify", description=await message_store.get_message("commands.notify", language=language)),
-            BotCommand(command="switch", description=await message_store.get_message("commands.switch", language=language)),
+            BotCommand(
+                command="notify", description=await message_store.get_message("commands.notify", language=language)
+            ),
+            BotCommand(
+                command="switch", description=await message_store.get_message("commands.switch", language=language)
+            ),
         ]
 
     languages = ("ru", "en")

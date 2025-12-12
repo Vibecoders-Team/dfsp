@@ -55,11 +55,9 @@ async def cmd_me(message: Message) -> None:
 
     from .start import get_main_keyboard
 
-    text = (
-        await get_message(
-            "profile.details",
-            variables={"display_name": display_name, "address": masked},
-        )
+    text = await get_message(
+        "profile.details",
+        variables={"display_name": display_name, "address": masked},
     )
 
     keyboard = await get_main_keyboard(is_linked=True)

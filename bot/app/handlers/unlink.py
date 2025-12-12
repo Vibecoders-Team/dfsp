@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 
+import httpx
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import (
@@ -11,7 +12,6 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
-import httpx
 
 from ..config import settings
 from ..services.message_store import get_message
@@ -92,6 +92,7 @@ async def _perform_unlink(
 
 
 # --- /unlink командой ----------------------------------------------------------
+
 
 async def build_unlink_confirm_keyboard() -> InlineKeyboardMarkup:
     yes_btn = await get_message("buttons.unlink_confirm_yes")

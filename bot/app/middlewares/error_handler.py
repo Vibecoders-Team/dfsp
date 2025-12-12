@@ -8,8 +8,8 @@ from aiogram import BaseMiddleware
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, Message, Update
 
-from ..utils.format import mask_chat_id
 from ..services.message_store import get_message
+from ..utils.format import mask_chat_id
 
 logger = logging.getLogger(__name__)
 

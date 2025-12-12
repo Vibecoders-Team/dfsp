@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 
 from redis import asyncio as aioredis
 
@@ -33,7 +33,7 @@ class AntiSpam:
             if added and added > 0:
                 await self.redis.expire(key, self.seen_ttl)
             return added == 0
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Failed to check deduplication: %s", exc)
             return False
 
@@ -49,6 +49,6 @@ class AntiSpam:
             new_value = await self.redis.incrby(key, weight)
             await self.redis.expire(key, int(timedelta(days=2).total_seconds()))
             return new_value > self.daily_limit
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Failed to update daily limit: %s", exc)
             return False

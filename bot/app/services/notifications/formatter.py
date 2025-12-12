@@ -1,8 +1,8 @@
 """Format notification messages for Telegram."""
-# ruff: noqa: RUF001
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, Mapping
+from typing import Any
 
 from ..message_store import get_message
 from .models import CoalescedNotification, NotificationEvent

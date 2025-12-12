@@ -32,7 +32,7 @@ async def _build_keyboard(links: list[BotLink]) -> InlineKeyboardMarkup:
 
 
 def _summarize_links(links: list[BotLink]) -> str:
-    active = next((l.address for l in links if l.is_active), None)
+    active = next((link.address for link in links if link.is_active), None)
     total = len(links)
     if active:
         return f"{mask_address(active)} / {total}"
@@ -64,9 +64,11 @@ async def cmd_switch(message: Message) -> None:
         await message.answer(await get_message("profile.not_linked"), reply_markup=keyboard)
         return
 
-    active_count = sum(1 for l in links if l.is_active)
+    active_count = sum(1 for link in links if link.is_active)
     if len(links) == 1 and active_count == 1:
-        await message.answer(await get_message("switch.only_one", variables={"address": mask_address(links[0].address)}))
+        await message.answer(
+            await get_message("switch.only_one", variables={"address": mask_address(links[0].address)})
+        )
         return
 
     await _render_switch(message, links)
@@ -106,4 +108,6 @@ async def cb_switch(callback: CallbackQuery) -> None:
     if links:
         await _render_switch(callback.message, links)
     else:
-        await callback.message.answer(await get_message("switch.switch_info", variables={"address": mask_address(address)}))
+        await callback.message.answer(
+            await get_message("switch.switch_info", variables={"address": mask_address(address)})
+        )
