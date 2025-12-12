@@ -153,7 +153,7 @@ export default function VerifyPage() {
             <CardTitle>File ID</CardTitle>
             <CardDescription>Verifying file with ID: {fileId}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter' && !isCalculating && state !== 'loading') { e.preventDefault(); checkOnChain(); } }}>
             <div className="flex gap-3">
               <code className="flex-1 bg-gray-100 px-3 py-2 rounded text-sm">
                 {fileId}

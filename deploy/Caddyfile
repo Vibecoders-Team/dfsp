@@ -190,7 +190,8 @@ dfsp.app {
         }
 
         # tonconnect manifest
-        handle_path /tonconnect-manifest.json {
+        handle /tonconnect-manifest.json {
+            root * /usr/share/caddy/html
             header Access-Control-Allow-Origin "*"
             header Access-Control-Allow-Methods "GET, OPTIONS"
             header Access-Control-Allow-Headers "*"
@@ -263,7 +264,8 @@ dev.dfsp.app {
         handle_path /api/* {
             reverse_proxy dfsp-api-dev:8000
         }
-        handle_path /tonconnect-manifest.json {
+        handle /tonconnect-manifest.json {
+            root * /usr/share/caddy/html-dev
             header Access-Control-Allow-Origin "*"
             header Access-Control-Allow-Methods "GET, OPTIONS"
             header Access-Control-Allow-Headers "*"

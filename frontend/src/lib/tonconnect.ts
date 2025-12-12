@@ -3,22 +3,34 @@ import { ethers } from "ethers";
 
 let tonUI: TonConnectUI | null = null;
 
-function resolveManifestUrl() {
-  const envUrl = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_TONCONNECT_MANIFEST;
-  if (envUrl) return envUrl;
-  if (typeof window !== "undefined" && window.location?.origin) {
-    return `${window.location.origin.replace(/\/+$/, "")}/tonconnect-manifest.json`;
-  }
-  return "/tonconnect-manifest.json";
+export function buildFallbackManifest() {
+  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {};
+  const appUrl = env.TONCONNECT_APP_URL || env.VITE_TONCONNECT_APP_URL || env.VITE_PUBLIC_ORIGIN || env.PUBLIC_WEB_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '');
+  const icon = env.TONCONNECT_ICON_URL || env.VITE_TONCONNECT_ICON_URL || env.VITE_PUBLIC_ICON || '/vite.svg';
+  const terms = env.TONCONNECT_TERMS_URL || `${appUrl.replace(/\/$/, '')}/terms`;
+  return {
+    url: appUrl || '',
+    name: env.TONCONNECT_APP_NAME || env.VITE_APP_NAME || 'DFSP',
+    iconUrl: icon,
+    termsOfUseUrl: terms,
+  } as const;
 }
+
+// (fetchManifestWithFallback removed — not used; fallback handled via blob manifest in getTonConnect)
 
 export function getTonConnect(): TonConnectUI {
   if (typeof window === "undefined") {
     throw new Error("TonConnect unavailable in SSR");
   }
   if (!tonUI) {
+    // Use real HTTPS URL for manifest to comply with Telegram WebApp CSP
+    // CSP from Telegram only allows 'self' and https: in connect-src
+    const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
+
+    console.info('[TonConnect] Using manifest URL:', manifestUrl);
+
     tonUI = new TonConnectUI({
-      manifestUrl: resolveManifestUrl(),
+      manifestUrl,
       actionsConfiguration: {
         notifications: ["before", "success", "error"],
         modals: ["before", "success", "error"],

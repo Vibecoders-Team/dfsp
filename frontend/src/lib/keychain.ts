@@ -327,7 +327,12 @@ async function encryptBackup(password:string, payload:BackupV2Full|BackupV2RSAOn
 
 export async function createBackupBlob(password:string):Promise<Blob>{
   const eoa=unlockedEOAPriv || await idbGet<string>(KEY_EOA_PRIV_LEGACY) || null;
-  const rsa=await idbGet<ArrayBuffer>(KEY_RSA_PRIV_PKCS8);
+  let rsa=await idbGet<ArrayBuffer>(KEY_RSA_PRIV_PKCS8);
+  if(!rsa) {
+    // ensure RSA exists (generate if absent)
+    await ensureRSA();
+    rsa = await idbGet<ArrayBuffer>(KEY_RSA_PRIV_PKCS8);
+  }
   if(!rsa) throw new Error("RSA private missing");
   if(!eoa || !/^0x[0-9a-fA-F]{64}$/.test(eoa)) throw new Error("EOA not available (unlock first)");
   const payload: BackupV3Full = { version:3, mode:"EOA+RSA", rsa_algo:"RSA-OAEP", eoaPrivHex:eoa as `0x${string}`, rsaPrivPkcs8_b64:ab2b64(rsa), createdAt:Math.floor(Date.now()/1000) };
@@ -335,7 +340,12 @@ export async function createBackupBlob(password:string):Promise<Blob>{
 }
 
 export async function createBackupBlobRSAOnly(password:string):Promise<Blob>{
-  const rsa=await idbGet<ArrayBuffer>(KEY_RSA_PRIV_PKCS8); if(!rsa) throw new Error("RSA private missing");
+  let rsa = await idbGet<ArrayBuffer>(KEY_RSA_PRIV_PKCS8);
+  if(!rsa) {
+    await ensureRSA();
+    rsa = await idbGet<ArrayBuffer>(KEY_RSA_PRIV_PKCS8);
+  }
+  if(!rsa) throw new Error("RSA private missing");
   const payload: BackupV3RSAOnly = { version:3, mode:"RSA-only", rsa_algo:"RSA-OAEP", rsaPrivPkcs8_b64:ab2b64(rsa), createdAt:Math.floor(Date.now()/1000) };
   return encryptBackup(password,payload);
 }

@@ -633,6 +633,23 @@ export default function FileDetailsPage() {
           <DialogHeader>
             <DialogTitle>Share public link</DialogTitle>
           </DialogHeader>
+          <form onSubmit={async (e) => { e.preventDefault(); try {
+            setCreating(true);
+            const payload = {
+              ttl_sec: ttlSec? Number(ttlSec): undefined,
+              max_downloads: maxDownloads? Number(maxDownloads): undefined,
+              pow: powEnabled? { enabled: true, difficulty: powDiff? Number(powDiff): undefined }: undefined,
+              name_override: nameOverride || undefined,
+              mime_override: mimeOverride || undefined,
+            };
+            const resp = await createPublicLink(file.id, payload);
+            const origin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || window.location.origin;
+            const pubUrl = origin.replace(/\/$/, '') + `/public/${resp.token}`;
+            copyToClipboard(pubUrl + (nameOverride? `#k=${encodeURIComponent(nameOverride)}`: ''), 'Public link');
+            notify.success('Public link created', { dedupeId: 'pub-created' });
+            setPubModalOpen(false);
+            await loadPublicLinks();
+          } catch (err) { notify.error(getErrorMessage(err, 'Failed to create public link'), { dedupeId: 'pub-create-err' }); } finally { setCreating(false); } }}>
           <div className="grid gap-3 py-2">
             <div className="grid gap-1">
               <Label>TTL (seconds)</Label>
@@ -649,42 +666,18 @@ export default function FileDetailsPage() {
             </div>
             <div className="grid gap-1">
               <Label>Name override</Label>
-            <Input value={nameOverride} onChange={e=>setNameOverride(e.target.value)} placeholder={sanitizeFilename(file.name) || ''} />
-          </div>
+              <Input value={nameOverride} onChange={e=>setNameOverride(e.target.value)} placeholder={sanitizeFilename(file.name) || ''} />
+            </div>
             <div className="grid gap-1">
               <Label>MIME override</Label>
               <Input value={mimeOverride} onChange={e=>setMimeOverride(e.target.value)} placeholder={file.mimeType || ''} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={()=>setPubModalOpen(false)}>Cancel</Button>
-            <Button onClick={async ()=>{
-              try {
-                setCreating(true);
-                const payload = {
-                  ttl_sec: ttlSec? Number(ttlSec): undefined,
-                  max_downloads: maxDownloads? Number(maxDownloads): undefined,
-                  pow: powEnabled? { enabled: true, difficulty: powDiff? Number(powDiff): undefined }: undefined,
-                  name_override: nameOverride || undefined,
-                  mime_override: mimeOverride || undefined,
-                };
-                const resp = await createPublicLink(file.id, payload);
-                const origin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || window.location.origin;
-                const pubUrl = origin.replace(/\/$/, '') + `/public/${resp.token}`;
-                // copy with #k=… (simulating key reference)
-                copyToClipboard(pubUrl + (nameOverride? `#k=${encodeURIComponent(nameOverride)}`: ''), 'Public link');
-                notify.success('Public link created', { dedupeId: 'pub-created' });
-                setPubModalOpen(false);
-                await loadPublicLinks();
-              } catch(e) {
-                notify.error(getErrorMessage(e, 'Failed to create public link'), { dedupeId: 'pub-create-err' });
-              } finally {
-                setCreating(false);
-              }
-            }} disabled={creating}>
-              {creating? 'Creating…' : 'Create & Copy'}
-            </Button>
+            <Button type="button" variant="outline" onClick={()=>setPubModalOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={creating}>{creating? 'Creating…' : 'Create & Copy'}</Button>
           </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

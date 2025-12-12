@@ -215,6 +215,7 @@ export default function UploadPage() {
             <CardHeader>
               <CardTitle>File Information</CardTitle>
             </CardHeader>
+            <form onSubmit={e => { e.preventDefault(); handleSubmit(); }}>
             <CardContent className="space-y-4">
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-3">
@@ -275,8 +276,36 @@ export default function UploadPage() {
                 />
               </div>
             </CardContent>
+            <div className="flex gap-3 justify-end p-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate('/files')}
+                disabled={isProcessing}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isProcessing || !uploadedFile}
+                className="gap-2"
+              >
+                {isProcessing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4" />
+                    Upload & Register
+                  </>
+                )}
+              </Button>
+            </div>
+            </form>
           </Card>
-        )}
+         )}
 
         {state === 'encrypting' && (
           <Card>
@@ -352,35 +381,6 @@ export default function UploadPage() {
               </Button>
             </AlertDescription>
           </Alert>
-        )}
-
-        {uploadedFile && state !== 'done' && (
-          <div className="flex gap-3 justify-end">
-            <Button
-              variant="outline"
-              onClick={() => navigate('/files')}
-              disabled={isProcessing}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={isProcessing || !uploadedFile}
-              className="gap-2"
-            >
-              {isProcessing ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Upload className="h-4 w-4" />
-                  Upload & Register
-                </>
-              )}
-            </Button>
-          </div>
         )}
       </div>
     </Layout>

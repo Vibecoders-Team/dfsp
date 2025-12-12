@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import Layout from '../Layout';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
-import { TableVirtuoso } from 'react-virtuoso';
+// import { TableVirtuoso } from 'react-virtuoso'; // Временно отключено для тестирования
 import {
   Select,
   SelectContent,
@@ -21,7 +21,7 @@ import {
 } from '../ui/select';
 import { Skeleton } from '../ui/skeleton';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Upload, Search, Eye, Share2, CheckCircle2, AlertCircle, Download } from 'lucide-react';
+import { Upload, Search, Eye, Share2, CheckCircle2, AlertCircle, Download, RefreshCw } from 'lucide-react';
 import { fetchMyFiles, type FileListItem } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
 import { notify } from '@/lib/toast';
@@ -42,49 +42,77 @@ interface FileItem {
 }
 
 export default function FilesPage() {
+  const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('date-desc');
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [files, setFiles] = useState<FileItem[]>([]);
   const { isSlowConnection, effectiveType } = useConnectionSpeed();
+  const isFirstLoadRef = useRef(true);
 
-  // Load files from API
+  // Debug: track mount/unmount
   useEffect(() => {
-    async function loadFiles() {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const data = await fetchMyFiles();
-
-        // Convert API data to UI format (safe date parsing)
-        const converted: FileItem[] = data.map((f: FileListItem) => {
-          const d = f.created_at ? new Date(f.created_at) : new Date(0);
-          const created = isNaN(d.getTime()) ? new Date(0) : d;
-          const safeName = sanitizeFilename(f.name);
-          return {
-            id: f.id,
-            name: f.name,
-            size: typeof f.size === 'number' ? f.size : 0,
-            cid: f.cid,
-            checksum: f.checksum,
-            created,
-            mimeType: f.mime,
-            safeName,
-          };
-        });
-        setFiles(converted);
-      } catch (e) {
-        setError(getErrorMessage(e, 'Failed to load files'));
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    loadFiles();
+    console.log('[FilesPage] MOUNTED');
+    return () => console.log('[FilesPage] UNMOUNTED');
   }, []);
 
+  // Load files from API
+  const loadFiles = async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
+      setError(null);
+      console.log('[FilesPage] Loading files...');
+      const data = await fetchMyFiles();
+      console.log('[FilesPage] Loaded files:', data.length);
+
+      // Convert API data to UI format (safe date parsing)
+      const converted: FileItem[] = data.map((f: FileListItem) => {
+        const d = f.created_at ? new Date(f.created_at) : new Date(0);
+        const created = isNaN(d.getTime()) ? new Date(0) : d;
+        const safeName = sanitizeFilename(f.name);
+        return {
+          id: f.id,
+          name: f.name,
+          size: f.size ?? 0,
+          cid: f.cid,
+          checksum: f.checksum,
+          created,
+          mimeType: f.mime,
+          safeName,
+        };
+      });
+      console.log('[FilesPage] Converted files:', converted.map(f => ({ id: f.id.slice(0, 10), name: f.name })));
+      setFiles(converted);
+      console.log('[FilesPage] State updated with', converted.length, 'files');
+    } catch (e) {
+      console.error('[FilesPage] Failed to load files:', e);
+      setError(getErrorMessage(e, 'Failed to load files'));
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    console.log('[FilesPage] useEffect triggered, location.key:', location.key, 'isFirstLoad:', isFirstLoadRef.current);
+    // При первой загрузке - полный loading, при последующих - refresh
+    loadFiles(!isFirstLoadRef.current);
+    isFirstLoadRef.current = false;
+  }, [location.key]);
+
+  // Log files state changes
+  useEffect(() => {
+    console.log('[FilesPage] files state changed:', files.length, 'files:', files.map(f => f.id.slice(0, 10)));
+  }, [files]);
+
   const filteredFiles = useMemo(() => {
+    console.log('[FilesPage] Recalculating filteredFiles, input files.length:', files.length);
     let filtered = [...files];
 
     if (searchQuery) {
@@ -98,8 +126,8 @@ export default function FilesPage() {
     }
 
     filtered.sort((a, b) => {
-      const at = a.created instanceof Date && !isNaN(a.created.getTime()) ? a.created.getTime() : 0;
-      const bt = b.created instanceof Date && !isNaN(b.created.getTime()) ? b.created.getTime() : 0;
+      const at = !isNaN(a.created.getTime()) ? a.created.getTime() : 0;
+      const bt = !isNaN(b.created.getTime()) ? b.created.getTime() : 0;
       switch (sortBy) {
         case 'date-desc':
           return bt - at;
@@ -118,6 +146,7 @@ export default function FilesPage() {
       }
     });
 
+    console.log('[FilesPage] Final filtered files:', filtered.length, 'IDs:', filtered.map(f => f.id.slice(0, 10)));
     return filtered;
   }, [files, searchQuery, sortBy]);
 
@@ -130,7 +159,7 @@ export default function FilesPage() {
   };
 
   const formatDate = (date: Date) => {
-    if (!(date instanceof Date) || isNaN(date.getTime())) return '-';
+    if (isNaN(date.getTime())) return '-';
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -220,12 +249,23 @@ export default function FilesPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1>My Files</h1>
-          <Link to="/upload" className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
-            <Button className="gap-2" disabled={isLoading && isSlowConnection}>
-              <Upload className="h-4 w-4" />
-              Upload File
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => loadFiles(true)}
+              disabled={isRefreshing}
+            >
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Refresh
             </Button>
-          </Link>
+            <Link to="/upload" className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
+              <Button className="gap-2" disabled={isLoading && isSlowConnection}>
+                <Upload className="h-4 w-4" />
+                Upload File
+              </Button>
+            </Link>
+          </div>
         </div>
 
         <div className="flex gap-4 items-center">
@@ -261,7 +301,9 @@ export default function FilesPage() {
           </Alert>
         )}
 
-        {filteredFiles.length === 0 ? (
+        {/* render */}
+
+        {filteredFiles.length === 0 && !isLoading ? (
           <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
             <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
             <h3>No files yet</h3>
@@ -270,82 +312,78 @@ export default function FilesPage() {
               <Button>Upload File</Button>
             </Link>
           </div>
-        ) : (
+        ) : filteredFiles.length > 0 ? (
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <TableVirtuoso
-              data={filteredFiles}
-              style={{ height: '70vh' }}
-              components={{
-                Table: (props: any) => <Table {...props} className="border-collapse" aria-label="Files table" />,
-                TableHead: TableHeader,
-                TableRow,
-                TableBody,
-              }}
-              fixedHeaderContent={() => (
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead>CID</TableHead>
-                  <TableHead>Checksum</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              )}
-              itemContent={(index: number, file: FileItem) => (
-                <>
-                  <TableCell>
-                    <div className="max-w-xs">
-                      <div className="truncate">{file.safeName}</div>
-                      <div className="text-xs text-gray-500">{file.mimeType}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{formatSize(file.size)}</TableCell>
-                  <TableCell>
-                    <button type="button" onClick={()=>copyValue(file.cid,'CID')} className="group" aria-label="Copy CID">
-                      <code className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
-                        {truncate(file.cid, 16)}
-                      </code>
-                    </button>
-                  </TableCell>
-                  <TableCell>
-                    <button type="button" onClick={()=>copyValue(file.checksum,'Checksum')} className="group" aria-label="Copy checksum">
-                      <code className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
-                        {truncate(file.checksum, 20)}
-                      </code>
-                    </button>
-                  </TableCell>
-                  <TableCell>{formatDate(file.created)}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-2">
-                      <Link to={`/files/${file.id}`} className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
-                        <Button variant="ghost" size="sm" className="gap-1.5" disabled={isLoading && isSlowConnection} aria-label={`View ${file.safeName}`}>
-                          <Eye className="h-3.5 w-3.5" />
-                          View
-                        </Button>
-                      </Link>
-                      <Link to={`/files/${file.id}/share`} className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
-                        <Button variant="ghost" size="sm" className="gap-1.5" disabled={isLoading && isSlowConnection} aria-label={`Share ${file.safeName}`}>
-                          <Share2 className="h-3.5 w-3.5" />
-                          Share
-                        </Button>
-                      </Link>
-                      <Link to={`/verify/${file.id}`} className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
-                        <Button variant="ghost" size="sm" className="gap-1.5" disabled={isLoading && isSlowConnection} aria-label={`Verify ${file.safeName}`}>
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          Verify
-                        </Button>
-                      </Link>
-                      <Button variant="ghost" size="sm" className="gap-1.5" onClick={()=>handleDownloadOwn(file)} disabled={isLoading && isSlowConnection} aria-label={`Download ${file.safeName}`}>
-                        <Download className="h-3.5 w-3.5" />
-                        Download
-                      </Button>
-                    </div>
-                  </TableCell>
-                </>
-              )}
-            />
+            <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+              <Table className="border-collapse" aria-label="Files table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Size</TableHead>
+                    <TableHead>CID</TableHead>
+                    <TableHead>Checksum</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredFiles.map((file) => (
+                    <TableRow key={file.id}>
+                      <TableCell>
+                        <div className="max-w-xs">
+                          <div className="truncate">{file.safeName}</div>
+                          <div className="text-xs text-gray-500">{file.mimeType}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>{formatSize(file.size)}</TableCell>
+                      <TableCell>
+                        <button type="button" onClick={()=>copyValue(file.cid,'CID')} className="group" aria-label="Copy CID">
+                          <code className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
+                            {truncate(file.cid, 16)}
+                          </code>
+                        </button>
+                      </TableCell>
+                      <TableCell>
+                        <button type="button" onClick={()=>copyValue(file.checksum,'Checksum')} className="group" aria-label="Copy checksum">
+                          <code className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
+                            {truncate(file.checksum, 20)}
+                          </code>
+                        </button>
+                      </TableCell>
+                      <TableCell>{formatDate(file.created)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-2">
+                          <Link to={`/files/${file.id}`} className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
+                            <Button variant="ghost" size="sm" className="gap-1.5" disabled={isLoading && isSlowConnection} aria-label={`View ${file.safeName}`}>
+                              <Eye className="h-3.5 w-3.5" />
+                              View
+                            </Button>
+                          </Link>
+                          <Link to={`/files/${file.id}/share`} className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
+                            <Button variant="ghost" size="sm" className="gap-1.5" disabled={isLoading && isSlowConnection} aria-label={`Share ${file.safeName}`}>
+                              <Share2 className="h-3.5 w-3.5" />
+                              Share
+                            </Button>
+                          </Link>
+                          <Link to={`/verify/${file.id}`} className={isLoading && isSlowConnection ? 'pointer-events-none' : ''}>
+                            <Button variant="ghost" size="sm" className="gap-1.5" disabled={isLoading && isSlowConnection} aria-label={`Verify ${file.safeName}`}>
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              Verify
+                            </Button>
+                          </Link>
+                          <Button variant="ghost" size="sm" className="gap-1.5" onClick={()=>handleDownloadOwn(file)} disabled={isLoading && isSlowConnection} aria-label={`Download ${file.safeName}`}>
+                            <Download className="h-3.5 w-3.5" />
+                            Download
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </div>
-        )}
+        ) : null}
       </div>
     </Layout>
   );

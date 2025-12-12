@@ -63,6 +63,7 @@ export default function RestorePage() {
             <CardTitle>Backup File</CardTitle>
             <CardDescription>Only .dfspkey files created by DFSP are supported</CardDescription>
           </CardHeader>
+          <form onSubmit={e => { e.preventDefault(); onRestore(); }}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="file">Choose file</Label>
@@ -85,15 +86,16 @@ export default function RestorePage() {
               </Alert>
             )}
             <div className="flex gap-2">
-              <Button onClick={onRestore} disabled={busy || !file || !password} className="gap-2">
+              <Button type="submit" disabled={busy || !file || !password} className="gap-2">
                 <Upload className="h-4 w-4" />
                 {busy ? 'Restoring…' : 'Restore & Sign In'}
               </Button>
               <Link to="/login" className="ml-auto">
-                <Button variant="outline">Back to Login</Button>
+                <Button type="button" variant="outline">Back to Login</Button>
               </Link>
             </div>
           </CardContent>
+          </form>
         </Card>
       </div>
     </Layout>

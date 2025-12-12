@@ -282,14 +282,12 @@ export default function OneTimePage() {
           )}
 
           {phase === 'ready' && (
-            <Button
-              onClick={startDownload}
-              className="w-full gap-2"
-              size="lg"
-            >
-              <Download className="h-5 w-5" />
-              Download File
-            </Button>
+            <form onSubmit={e => { e.preventDefault(); startDownload(); }}>
+              <Button type="submit" className="w-full gap-2" size="lg">
+                <Download className="h-5 w-5" />
+                Download File
+              </Button>
+            </form>
           )}
 
           {(phase === 'downloading' || phase === 'decrypting') && (
@@ -311,4 +309,3 @@ export default function OneTimePage() {
     </div>
   );
 }
-

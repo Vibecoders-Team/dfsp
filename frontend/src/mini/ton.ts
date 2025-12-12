@@ -2,22 +2,19 @@ import { TonConnectUI } from "@tonconnect/ui";
 
 let tonUI: TonConnectUI | null = null;
 
-function resolveManifestUrl() {
-  const envUrl = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_TONCONNECT_MANIFEST;
-  if (envUrl) return envUrl;
-  if (typeof window !== "undefined" && window.location?.origin) {
-    return `${window.location.origin.replace(/\/+$/, "")}/tonconnect-manifest.json`;
-  }
-  return "/tonconnect-manifest.json";
-}
-
 export function getTonConnect(): TonConnectUI {
   if (typeof window === "undefined") {
     throw new Error("TonConnect unavailable in SSR");
   }
   if (!tonUI) {
+    // Use real HTTPS URL for manifest to comply with Telegram WebApp CSP
+    // CSP from Telegram only allows 'self' and https: in connect-src
+    const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
+
+    console.info('[TonConnect Mini] Using manifest URL:', manifestUrl);
+
     tonUI = new TonConnectUI({
-      manifestUrl: resolveManifestUrl(),
+      manifestUrl,
       actionsConfiguration: {
         notifications: ["before", "success", "error"],
         modals: ["before", "success", "error"],

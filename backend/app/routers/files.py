@@ -116,10 +116,10 @@ def list_my_files(
 
     try:
         logger.info(
-            "list_my_files: dsn=%s user=%s total_files=%d per_user=%d recent=%s",
+            "list_my_files: dsn=%s user=%s (addr=%s) total_files=%d per_user=%d recent=%s",
             dsn,
             str(user.id),
-            total_files,
+            user.eth_address,
             per_user_count,
             sample_str,
         )

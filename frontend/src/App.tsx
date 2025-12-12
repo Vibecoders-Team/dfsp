@@ -35,6 +35,8 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
   
+  console.log('[ProtectedRoute] render, isLoading:', isLoading, 'isAuthenticated:', isAuthenticated, 'path:', location.pathname);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">

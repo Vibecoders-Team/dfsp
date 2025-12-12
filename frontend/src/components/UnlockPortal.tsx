@@ -57,14 +57,14 @@ export default function UnlockPortal() {
         <DialogHeader>
           <DialogTitle>Unlock local key</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
+        <form onSubmit={e => { e.preventDefault(); handleUnlock(); }} className="space-y-3">
           <Input type="password" placeholder="Password" value={pwd} onChange={e => setPwd(e.target.value)} disabled={busy} />
           {busy && <div className="text-xs text-gray-500">Unlocking...</div>}
           <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => { setOpen(false); try { window.dispatchEvent(new CustomEvent('dfsp:unlock-cancel')); } catch (e) { console.debug('dispatch unlock-cancel failed', e); } }} disabled={busy}>Cancel</Button>
-            <Button onClick={handleUnlock} disabled={busy || !pwd}>{busy ? '...' : 'Unlock'}</Button>
+            <Button type="button" variant="outline" onClick={() => { setOpen(false); try { window.dispatchEvent(new CustomEvent('dfsp:unlock-cancel')); } catch (e) { console.debug('dispatch unlock-cancel failed', e); } }} disabled={busy}>Cancel</Button>
+            <Button type="submit" disabled={busy || !pwd}>{busy ? '...' : 'Unlock'}</Button>
           </div>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   );
