@@ -330,9 +330,7 @@ def bot_prepare_download(
                 "owner": user.eth_address,
             }
         else:
-            grant = db.scalar(
-                select(Grant).where(Grant.file_id == file_id_bytes, Grant.grantee_id == user.id).limit(1)
-            )
+            grant = db.scalar(select(Grant).where(Grant.file_id == file_id_bytes, Grant.grantee_id == user.id).limit(1))
             if grant is None:
                 raise HTTPException(status_code=403, detail="not_grantee")
             cap_hex = "0x" + bytes(grant.cap_id).hex()

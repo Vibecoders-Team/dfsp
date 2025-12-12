@@ -15,8 +15,7 @@ from sqlalchemy.orm import Session
 from app.cache import Cache
 from app.deps import get_db, get_redis
 from app.models import User
-from app.repos import telegram_repo
-from app.repos import user_repo
+from app.repos import telegram_repo, user_repo
 from app.schemas.telegram import (
     OkResponse,
     TgLinkCompleteRequest,

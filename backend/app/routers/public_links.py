@@ -135,7 +135,9 @@ def public_meta(token: str, db: Annotated[Session, Depends(get_db)]) -> PublicMe
 
 
 @router.post("/public/{token}/pow", response_model=OkOut)
-def public_pow(token: str, body: PowIn, rds: Annotated[redis.Redis, Depends(get_redis)], db: Annotated[Session, Depends(get_db)]) -> OkOut:
+def public_pow(
+    token: str, body: PowIn, rds: Annotated[redis.Redis, Depends(get_redis)], db: Annotated[Session, Depends(get_db)]
+) -> OkOut:
     pl: PublicLink | None = db.scalar(select(PublicLink).where(PublicLink.token == token))
     if pl is None:
         raise HTTPException(404, "not_found")
@@ -152,7 +154,14 @@ def public_pow(token: str, body: PowIn, rds: Annotated[redis.Redis, Depends(get_
     nibbles = int((diff + 3) // 4)
     prefix = "0" * nibbles
     h = hashlib.sha256((body.nonce + body.solution).encode("utf-8")).hexdigest()
-    logger.info(f"public_pow: token={token}, diff={diff}, prefix={prefix}, computed_hash={h[:16]}..., valid={h.startswith(prefix)}")
+    logger.info(
+        "public_pow: token=%s, diff=%s, prefix=%s, computed_hash=%s..., valid=%s",
+        token,
+        diff,
+        prefix,
+        h[:16],
+        h.startswith(prefix),
+    )
     if not h.startswith(prefix):
         raise HTTPException(400, "bad_solution")
     # consume challenge

@@ -97,4 +97,3 @@ def test_bad_name_returns_400():
     payload = {"name": "   "}
     resp = client.patch(f"/files/0x{file_id.hex()}", json=payload, headers={"Authorization": "Bearer x"})
     assert resp.status_code == 400
-

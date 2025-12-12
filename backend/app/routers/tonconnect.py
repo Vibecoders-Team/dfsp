@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import os
-from typing import Annotated
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-
-from app.config import settings
 
 router = APIRouter()
 

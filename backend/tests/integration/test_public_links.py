@@ -84,6 +84,7 @@ def make_public_link(
 
 # dependency override generator helper
 
+
 def override_db(fake_db_obj):
     def _gen():
         yield fake_db_obj
@@ -92,6 +93,7 @@ def override_db(fake_db_obj):
 
 
 # --- Tests ---
+
 
 def test_create_public_link_returns_token(monkeypatch):
     # Prepare fake user and DB

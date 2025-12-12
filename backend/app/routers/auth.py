@@ -129,18 +129,22 @@ def validate_login_typed_data(td: dict[str, Any], nonce_hex: str, eth_address: s
     message = td.get("message")
     _require(primary == "LoginChallenge", "bad_primary_type")
     _require(isinstance(domain, dict), "bad_domain")
+    domain = cast(dict[str, Any], domain)
     _require(domain.get("name") == LOGIN_DOMAIN["name"], "bad_domain_name")
     _require(domain.get("version") == LOGIN_DOMAIN["version"], "bad_domain_version")
     if "chainId" in domain and EXPECTED_CHAIN_ID is not None:
         _require(int(domain["chainId"]) == EXPECTED_CHAIN_ID, "bad_domain_chainId")
     _require(isinstance(types, dict), "bad_types")
+    types = cast(dict[str, Any], types)
     lc = types.get("LoginChallenge")
     _require(isinstance(lc, list) and len(lc) == 2, "bad_types_login")
+    lc = cast(list[dict[str, str]], lc)
     names = [f.get("name") for f in lc if isinstance(f, dict)]
     types_ = [f.get("type") for f in lc if isinstance(f, dict)]
     _require(names == ["address", "nonce"], "bad_types_fields")
     _require(types_ == ["address", "bytes32"], "bad_types_field_types")
     _require(isinstance(message, dict), "bad_message")
+    message = cast(dict[str, Any], message)
     _require(message.get("address") == eth_address, "bad_message_address")
     _require(message.get("nonce") == nonce_hex, "bad_message_nonce")
 
@@ -155,6 +159,7 @@ def challenge() -> ChallengeOut:
 
 
 # ---------- Общие хелперы для TON ----------
+
 
 def _parse_ton_address(addr: str) -> tuple[int, bytes]:
     """
@@ -189,8 +194,8 @@ def _b64decode_loose(s: str) -> bytes:
     """
     try:
         return base64.b64decode(s, validate=False)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("_b64decode_loose first attempt failed: %s", e)
     try:
         padded = s + "=" * ((4 - len(s) % 4) % 4)
         return base64.urlsafe_b64decode(padded)
@@ -204,8 +209,8 @@ def _decode_signature(sig: str) -> bytes:
     """
     try:
         return _b64decode_loose(sig)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("_decode_signature: b64 decode failed: %s", e)
     try:
         clean = sig[2:] if sig.startswith("0x") else sig
         return bytes.fromhex(clean)
@@ -265,7 +270,7 @@ def _ton_sign_data_message_variants(
     domain: str,
     timestamp: int,
     payload_raw: bytes,
-    ptype: str,
+    ptype: str | None,
 ) -> list[bytes]:
     """
     Генерируем множество разумных вариантов сообщения для signData:
@@ -319,14 +324,14 @@ def _ton_sign_data_message_variants(
     ]
 
     domain_parts = [
-        b"",                          # без домена
-        dom_bytes,                    # только домен
-        dom_le + dom_bytes,           # длина LE + домен
-        dom_be + dom_bytes,           # длина BE + домен
+        b"",  # без домена
+        dom_bytes,  # только домен
+        dom_le + dom_bytes,  # длина LE + домен
+        dom_be + dom_bytes,  # длина BE + домен
     ]
 
     ts_parts = [
-        b"",       # без timestamp
+        b"",  # без timestamp
         ts_le64,
         ts_be64,
         ts_le32,
@@ -435,11 +440,8 @@ def _verify_ton_sign_data(
             )
             continue
 
-    logger.warning(
-        "TON _verify_ton_sign_data: all %d variants failed verification", len(variants)
-    )
+    logger.warning("TON _verify_ton_sign_data: all %d variants failed verification", len(variants))
     return False, payload_raw
-
 
 
 @router.post("/ton/challenge", response_model=ChallengeOut)
@@ -451,9 +453,7 @@ def ton_challenge(body: dict) -> ChallengeOut:
 
     pubkey = _b64decode(pubkey_b64)
     if len(pubkey) != 32:
-        logger.warning(
-            "TON /ton/challenge: bad_pubkey length=%d body=%s", len(pubkey), body
-        )
+        logger.warning("TON /ton/challenge: bad_pubkey length=%d body=%s", len(pubkey), body)
         raise HTTPException(400, "bad_pubkey")
 
     challenge_id = str(uuidlib.uuid4())
@@ -510,8 +510,16 @@ def ton_login(body: dict, db: Annotated[Session, Depends(get_db)]) -> Tokens:
         logger.warning("TON /ton/login: challenge_expired id=%s", challenge_id)
         raise HTTPException(410, "challenge_expired")
 
+    # normalize raw to str safely (redis client may return bytes/str/other)
+    if isinstance(raw, (bytes, bytearray)):
+        raw_str = raw.decode("utf-8")
+    elif isinstance(raw, str):
+        raw_str = raw
+    else:
+        raw_str = cast(str, raw)
+
     try:
-        data = json.loads(raw if isinstance(raw, str) else raw.decode())
+        data = json.loads(raw_str)
         nonce_b64 = data["nonce"]
         pubkey_b64 = data["pubkey"]
     except Exception as e:
@@ -540,9 +548,7 @@ def ton_login(body: dict, db: Annotated[Session, Depends(get_db)]) -> Tokens:
         payload_obj,
     )
 
-    logger.warning(
-        "TON /ton/login: verify result ok=%s payload_len=%d", ok, len(payload_raw)
-    )
+    logger.warning("TON /ton/login: verify result ok=%s payload_len=%d", ok, len(payload_raw))
 
     # Жёстко сверяем, что payload соответствует выданному challenge.nonce
     # (для binary-пейлоада)
@@ -550,9 +556,7 @@ def ton_login(body: dict, db: Annotated[Session, Depends(get_db)]) -> Tokens:
         try:
             nonce_from_payload = _ton_payload_bytes(payload_obj)
         except HTTPException:
-            logger.warning(
-                "TON /ton/login: bad_payload while decoding payload_obj=%s", payload_obj
-            )
+            logger.warning("TON /ton/login: bad_payload while decoding payload_obj=%s", payload_obj)
             raise
         if nonce_from_payload != nonce:
             logger.warning(
@@ -577,16 +581,12 @@ def ton_login(body: dict, db: Annotated[Session, Depends(get_db)]) -> Tokens:
     try:
         rds.delete(key)
     except Exception:
-        logger.warning(
-            "TON /ton/login: failed to delete challenge key %s", key, exc_info=True
-        )
+        logger.warning("TON /ton/login: failed to delete challenge key %s", key, exc_info=True)
 
     # find or create user bound to this TON pubkey
     user = db.query(User).filter(User.ton_pubkey == pubkey).one_or_none()
     if user is None:
-        user = db.query(User).filter(
-            User.eth_address == _derive_eth_from_ton_pub(pubkey)
-        ).one_or_none()
+        user = db.query(User).filter(User.eth_address == _derive_eth_from_ton_pub(pubkey)).one_or_none()
 
     if user is None:
         user = User(
@@ -608,9 +608,7 @@ def ton_login(body: dict, db: Annotated[Session, Depends(get_db)]) -> Tokens:
             user.ton_pubkey = pubkey
             db.add(user)
             db.commit()
-            logger.warning(
-                "TON /ton/login: attached ton_pubkey to user id=%s", user.id
-            )
+            logger.warning("TON /ton/login: attached ton_pubkey to user id=%s", user.id)
 
     # embed ton pubkey for downstream checks
     access_payload = {"sub": str(user.id), "ton_pubkey": _derive_ton_address(pubkey)}
@@ -618,7 +616,6 @@ def ton_login(body: dict, db: Annotated[Session, Depends(get_db)]) -> Tokens:
     refresh = make_token(str(user.id), 24 * 60)
     logger.warning("TON /ton/login: success user_id=%s", user.id)
     return Tokens(access=access, refresh=refresh)
-
 
 
 # ---------- ETH register/login ----------

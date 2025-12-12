@@ -120,6 +120,7 @@ def list_my_files(
             dsn,
             str(user.id),
             user.eth_address,
+            total_files,
             per_user_count,
             sample_str,
         )
