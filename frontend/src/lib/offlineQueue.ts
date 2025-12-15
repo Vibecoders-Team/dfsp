@@ -40,7 +40,8 @@ async function processQueueOnce() {
   try {
     const token = localStorage.getItem('ACCESS_TOKEN');
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-    await api.request({ url: next.url, method: next.method as any, data: next.data, headers });
+    // next.method is a string like 'GET'|'POST' - cast to axios expected method type
+    await api.request({ url: next.url, method: next.method as import('axios').Method, data: next.data, headers });
     notify.success('Queued request sent', { description: next.url, dedupeId: 'offline-sent' });
   } catch (e) {
     // push back to queue and abort further attempts to avoid hammering

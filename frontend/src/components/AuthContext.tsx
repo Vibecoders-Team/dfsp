@@ -3,7 +3,7 @@
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type LoginMessage, LOGIN_TYPES as KC_LOGIN_TYPES, LOGIN_DOMAIN as KC_LOGIN_DOMAIN, unlockEOA, type RestoreResult, lockEOA } from '@/lib/keychain';
 import { postChallenge, postLogin, postRegister, postTonChallenge, postTonLogin, ACCESS_TOKEN_KEY, type RegisterPayload, type TypedLoginData, type TonSignPayload } from '@/lib/api';
-import { ethers, type TypedDataDomain, type TypedDataField } from 'ethers';
+import type { TypedDataDomain, TypedDataField } from 'ethers';
 import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
 import { setSelectedAgentKind } from '@/lib/agent/manager';
@@ -46,12 +46,12 @@ export type { AuthContextType };
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Helper to convert types for ethers v6
-function toEthersTypes(src: Record<string, readonly ethers.TypedDataField[]>): Record<string, ethers.TypedDataField[]> {
+function toEthersTypes(src: Record<string, readonly TypedDataField[]>): Record<string, TypedDataField[]> {
   return Object.fromEntries(
     Object.entries(src)
       .filter(([k]) => k !== "EIP712Domain")
       .map(([k, arr]) => [k, Array.from(arr)])
-  );
+  ) as Record<string, TypedDataField[]>;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -144,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        } finally {
          if ((agent as any).setChainEnforcement) { try { (agent as any).setChainEnforcement(true); } catch { /* ignore */ } }
        }
+       const { ethers } = await import('ethers');
        const recovered = ethers.verifyTypedData(domain, TYPES, message, signature);
        if (recovered.toLowerCase() !== address.toLowerCase()) {
           throw new Error(`Signature verification failed: recovered ${recovered} ≠ ${address}`);
@@ -204,7 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       address: tonAddress,
     });
 
-    const derivedEth = deriveEthFromTonPub(pubkeyHex);
+    const derivedEth = await deriveEthFromTonPub(pubkeyHex);
     localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
     localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
     localStorage.setItem(ADDRESS_KEY, derivedEth);
@@ -267,8 +268,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
          }
          throw new Error('Failed to sign the registration challenge');
        }
-       const recovered = ethers.verifyTypedData(domain, TYPES, message, signature);
-       if (recovered.toLowerCase() !== address.toLowerCase()) throw new Error('Signature verification failed');
+       const { ethers: _ethers } = await import('ethers');
+       const recovered2 = _ethers.verifyTypedData(domain, TYPES, message, signature);
+       if (recovered2.toLowerCase() !== address.toLowerCase()) throw new Error('Signature verification failed');
        const payload: RegisterPayload = {
           challenge_id: challenge.challenge_id,
           eth_address: address,
@@ -286,79 +288,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        if (displayName) localStorage.setItem('dfsp_display_name', displayName);
        let backupData: Blob;
        if (agent.kind === 'local') {
-         // EOA already ensured; create full backup with the same password
-         backupData = await createBackupBlob(password);
+         // For local EOA, create a backup blob containing the RSA private key
+         const blob = await createBackupBlob(password);
+         backupData = blob as Blob;
        } else {
-         backupData = new Blob([JSON.stringify({ notice: 'External wallet \u2013 create full backup after local EOA generation if needed.' }, null, 2)], { type: 'application/json' });
+         // For remote agents, no backup is created
+         backupData = new Blob();
        }
-       setUser({ address, displayName, hasBackup: false });
+       bumpSessionGen();
+       setUser({ address, displayName: displayName || undefined, hasBackup: true, authMethod: 'eoa' });
        return { backupData };
    };
 
-  const restoreAccount = async (file: File, password: string) => {
-    // clear stale tokens/session before restore to avoid redirect loops when coming from logged-out state
-    if (!user) {
-      try {
-        localStorage.removeItem(ACCESS_TOKEN_KEY);
-        localStorage.removeItem('REFRESH_TOKEN');
-        bumpSessionGen();
-      } catch { /* ignore */ }
-    }
-    const res = await restoreFromBackup(file, password);
-    // RSA-only backups do not carry an EOA, so skip auto-login and let user choose external wallet
-    if (res.mode === 'RSA-only') {
-      if (user) {
-        setUser({ ...user, hasBackup: true });
-      } else {
-        setUser(null);
-      }
-      return res;
-    }
-    await login({ unlockPassword: password });
-    setUser(prev => prev ? { ...prev, hasBackup: true } : null);
-    return res;
-  };
-
   const logout = () => {
-     // soft logout: leave wallet session intact, just clear auth tokens
      localStorage.removeItem(ACCESS_TOKEN_KEY);
      localStorage.removeItem('REFRESH_TOKEN');
+     localStorage.removeItem(ADDRESS_KEY);
      localStorage.removeItem(AUTH_METHOD_KEY);
      localStorage.removeItem(TON_ADDRESS_KEY);
-     // Do not clear address/display name so UI can prefill
-     // localStorage.removeItem(ADDRESS_KEY);
-     // localStorage.removeItem('dfsp_display_name');
-    clearAllFileKeys();
-    bumpSessionGen();
-    try { lockEOA(); } catch { /* ignore */ }
-    try { window.dispatchEvent(new CustomEvent('dfsp:logout')); } catch { /* ignore */ }
+     clearAllFileKeys();
      setUser(null);
-     // Force Local agent after leaving auth or switching forms
-     try { setSelectedAgentKind('local'); } catch { /* ignore */ }
+   };
+
+  const restoreAccount = async (file: File, password: string) => {
+       const result = await restoreFromBackup(file, password);
+       if (result.mode === 'EOA+RSA') {
+         const addr = result.address ?? '';
+         if (addr) localStorage.setItem(ADDRESS_KEY, addr);
+         localStorage.setItem(AUTH_METHOD_KEY, 'eoa');
+         bumpSessionGen();
+         setUser(prev => prev ? { ...prev, address: addr || prev.address, hasBackup: true } : null);
+       } else {
+         throw new Error('Unsupported account type in backup');
+       }
+       return result;
    };
 
   const updateBackupStatus = (hasBackup: boolean) => {
-    setUser(prev => prev ? { ...prev, hasBackup } : prev);
-  };
+     setUser(prev => prev ? { ...prev, hasBackup } : null);
+   };
 
-  const updateDisplayName = (displayName: string) => {
-    setUser(prev => prev ? { ...prev, displayName } : prev);
-  };
+  const updateDisplayName = async (displayName: string) => {
+     setUser(prev => prev ? { ...prev, displayName } : null);
+     localStorage.setItem('dfsp_display_name', displayName);
+   };
 
-  return (
-    <AuthContext.Provider value={{
-      user,
-      isAuthenticated: !!user,
-      isLoading,
-      login,
-      loginWithTon,
-      register,
-      logout,
-      restoreAccount,
-      updateBackupStatus,
-      updateDisplayName,
-    }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value = { user, isAuthenticated: !!user, isLoading, login, loginWithTon, register, logout, restoreAccount, updateBackupStatus, updateDisplayName };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

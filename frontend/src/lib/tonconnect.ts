@@ -1,7 +1,4 @@
-import { TonConnectUI } from "@tonconnect/ui";
-import { ethers } from "ethers";
-
-let tonUI: TonConnectUI | null = null;
+let tonUI: any = null;
 
 export function buildFallbackManifest() {
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {};
@@ -18,7 +15,7 @@ export function buildFallbackManifest() {
 
 // (fetchManifestWithFallback removed — not used; fallback handled via blob manifest in getTonConnect)
 
-export function getTonConnect(): TonConnectUI {
+export function getTonConnect(): any {
   if (typeof window === "undefined") {
     throw new Error("TonConnect unavailable in SSR");
   }
@@ -26,9 +23,10 @@ export function getTonConnect(): TonConnectUI {
     // Use real HTTPS URL for manifest to comply with Telegram WebApp CSP
     // CSP from Telegram only allows 'self' and https: in connect-src
     const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
-
     console.info('[TonConnect] Using manifest URL:', manifestUrl);
-
+    // Lazy load TonConnectUI
+    const mod = require('@tonconnect/ui');
+    const TonConnectUI = (mod && mod.TonConnectUI) || mod?.default;
     tonUI = new TonConnectUI({
       manifestUrl,
       actionsConfiguration: {
@@ -56,8 +54,9 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-export function deriveEthFromTonPub(pubkeyHex: string): string {
-  const hex = pubkeyHex.startsWith("0x") ? pubkeyHex : `0x${pubkeyHex}`;
+export async function deriveEthFromTonPub(pubkeyHex: string): Promise<string> {
+  const { ethers } = await import('ethers');
+  const hex = pubkeyHex.startsWith('0x') ? pubkeyHex : `0x${pubkeyHex}`;
   const hash = ethers.keccak256(hex);
   return `0x${hash.slice(-40)}`;
 }

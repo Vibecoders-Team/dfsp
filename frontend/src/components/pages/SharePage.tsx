@@ -432,7 +432,7 @@ export default function SharePage() {
     return ()=> window.removeEventListener('dfsp:logout', onLogout);
   },[]);
 
-  useEffect(()=>{ (async()=>{ try { const items = await listPublicLinks(fileId); setPublicLinks(items); } catch{} })(); }, [fileId]);
+  useEffect(() => { (async () => { try { const items = await listPublicLinks(fileId); setPublicLinks(items); } catch { void 0; } })(); }, [fileId]);
 
   if (results.length > 0) {
     return (
@@ -614,7 +614,8 @@ export default function SharePage() {
                      </div>
                      <div className="flex gap-2">
                        <Button type="button" variant="outline" size="sm" onClick={() => {
-                         const origin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || window.location.origin;
+                         const _IM = (import.meta as unknown) as { env?: Record<string,string> };
+                         const origin = _IM.env?.VITE_PUBLIC_ORIGIN || window.location.origin;
                          const pubUrl = origin.replace(/\/$/, '') + `/public/${pl.token}`;
                          const K_file = getOrCreateFileKey(fileId);
                          const keyB64 = btoa(String.fromCharCode(...K_file));
@@ -731,7 +732,8 @@ export default function SharePage() {
                 mime_override: mimeOverride || undefined,
               };
               const resp = await createPublicLink(fileId, payload);
-              const origin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || window.location.origin;
+              const _IM = (import.meta as unknown) as { env?: Record<string,string> };
+              const origin = _IM.env?.VITE_PUBLIC_ORIGIN || window.location.origin;
               const pubUrl = origin.replace(/\/$/, '') + `/public/${resp.token}`;
               const K_file = getOrCreateFileKey(fileId);
               const keyB64 = btoa(String.fromCharCode(...K_file));

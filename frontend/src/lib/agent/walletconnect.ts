@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { BrowserProvider, type TypedDataDomain, type TypedDataField } from 'ethers';
+import type { TypedDataDomain, TypedDataField } from 'ethers';
+type BrowserProvider = import('ethers').BrowserProvider;
 import type { SignerAgent } from './agent';
 
 export class WalletConnectAgent implements SignerAgent {
@@ -74,7 +75,8 @@ export class WalletConnectAgent implements SignerAgent {
     }
     if (this.provider) return this.provider;
     if (this.wc && !this.provider) {
-      this.provider = new BrowserProvider(this.wc as any); //(window as any)[WalletConnectAgent.GLOBAL_KEY] = { wc: this.wc, provider: this.provider };
+      const { BrowserProvider } = await import('ethers');
+      this.provider = new BrowserProvider(this.wc as any);
       return this.provider;
     }
     if (this.initializationPromise) return await this.initializationPromise;
@@ -91,6 +93,7 @@ export class WalletConnectAgent implements SignerAgent {
       // NOTE: Do not auto-enable here to avoid background RPC polling. Enable only in connect().
       this.enabled = !!this.wc;
       this.qrShown = withModal;
+      const { BrowserProvider } = await import('ethers');
       const browserProv = new BrowserProvider(this.wc as any);
       this.provider = browserProv;
       // Avoid persisting provider globally to reduce unintended reuse/polling
@@ -206,31 +209,31 @@ export class WalletConnectAgent implements SignerAgent {
         }
       } else throw e;
     }
-  }
+   }
 
-  async connect(): Promise<void> {
-    await this.ensureWcProvider(true);
-    // Если уже подключено — выходим
-    if (this.connected) {
-      try { await this.ensureExpectedChain(false); } catch { /* ignore */ }
-      return;
-    }
-    // Explicitly enable session only on user connect
-    try { await this.wc?.enable?.(); this.enabled = true; try { sessionStorage.setItem('dfsp_wc_connected','1'); localStorage.setItem('dfsp_wc_inited','1'); } catch { /* ignore */ } } catch { /* ignore */ }
-    await this.ensureExpectedChain(true);
-    const start = Date.now();
-    while (!this.connected && Date.now() - start < 15000) {
-      try {
-        const acc: string[] = await (this.wc as any)?.request?.({ method: 'eth_accounts', params: [] }) || [];
-        if (acc.length > 0) { this.accounts = acc; this.connected = true; try { window.dispatchEvent(new CustomEvent('dfsp:wc-accounts', { detail: { accounts: acc } })); } catch { /* ignore */ } break; }
-      } catch { /* ignore */ }
-      await new Promise(r=>setTimeout(r,500));
-    }
-    if (!this.connected) throw new Error('WalletConnect: connection timeout (no accounts). Complete pairing in wallet and retry.');
-  }
+   async connect(): Promise<void> {
+     await this.ensureWcProvider(true);
+     // Если уже подключено — выходим
+     if (this.connected) {
+       try { await this.ensureExpectedChain(false); } catch { /* ignore */ }
+       return;
+     }
+     // Explicitly enable session only on user connect
+     try { await this.wc?.enable?.(); this.enabled = true; try { sessionStorage.setItem('dfsp_wc_connected','1'); localStorage.setItem('dfsp_wc_inited','1'); } catch { /* ignore */ } } catch { /* ignore */ }
+     await this.ensureExpectedChain(true);
+     const start = Date.now();
+     while (!this.connected && Date.now() - start < 15000) {
+       try {
+         const acc: string[] = await (this.wc as any)?.request?.({ method: 'eth_accounts', params: [] }) || [];
+         if (acc.length > 0) { this.accounts = acc; this.connected = true; try { window.dispatchEvent(new CustomEvent('dfsp:wc-accounts', { detail: { accounts: acc } })); } catch { /* ignore */ } break; }
+       } catch { /* ignore */ }
+       await new Promise(r=>setTimeout(r,500));
+     }
+     if (!this.connected) throw new Error('WalletConnect: connection timeout (no accounts). Complete pairing in wallet and retry.');
+   }
 
-  /** Включить/выключить жесткое соблюдение expectedChain (используется при первом login для подавления network changed). */
-  setChainEnforcement(enabled: boolean) {
-    this.chainEnforcementEnabled = enabled;
-  }
-}
+   /** Включить/выключить жесткое соблюдение expectedChain (используется при первом login для подавления network changed). */
+   setChainEnforcement(enabled: boolean) {
+     this.chainEnforcementEnabled = enabled;
+   }
+ }

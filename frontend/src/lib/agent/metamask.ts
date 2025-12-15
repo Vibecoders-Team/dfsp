@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { BrowserProvider, type TypedDataDomain, type TypedDataField } from 'ethers';
+import type { TypedDataDomain, TypedDataField } from 'ethers';
+type BrowserProvider = import('ethers').BrowserProvider;
 import type { SignerAgent } from './agent';
 import { stripEip712Domain } from './agent';
 
@@ -22,9 +22,10 @@ export class MetaMaskAgent implements SignerAgent {
 
   private async ensureProvider(): Promise<BrowserProvider> {
     if (!this.provider) {
+      const { BrowserProvider } = await import('ethers');
       this.provider = new BrowserProvider(this.getEthereum());
     }
-    return this.provider;
+    return this.provider as any;
   }
 
   private invalidateProvider(): void {

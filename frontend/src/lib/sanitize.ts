@@ -1,6 +1,6 @@
 export function sanitizeFilename(name?: string): string {
   if (!name) return '';
-  const withoutCtrl = name.replace(/[\u0000-\u001F\u007F]/g, '');
+  const withoutCtrl = removeControlChars(name);
   const cleaned = withoutCtrl.replace(/[<>:"'`\\/|?*]/g, '_');
   const trimmed = cleaned.trim();
   return trimmed || 'file';
@@ -42,5 +42,17 @@ export function parseContentDisposition(header?: string | null): string | null {
 
 export function safeText(value?: string): string {
   if (!value) return '';
-  return value.replace(/[\u0000-\u001F\u007F]/g, '').trim();
+  return removeControlChars(value).trim();
+}
+
+function removeControlChars(s: string): string {
+  // remove ASCII control characters (0x00-0x1F) and DEL (0x7F)
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    if ((code >= 0x20 && code !== 0x7f) || code > 0x7f) {
+      out += s.charAt(i);
+    }
+  }
+  return out;
 }

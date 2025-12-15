@@ -8,7 +8,6 @@ import { Badge } from '../ui/badge';
 import { ArrowLeft, CheckCircle2, XCircle, AlertCircle, Upload } from 'lucide-react';
 import { fetchMeta } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
-import { keccak256 } from 'ethers';
 import type * as React from "react";
 import { sanitizeFilename, safeText } from '@/lib/sanitize.ts';
 
@@ -42,7 +41,8 @@ async function sha256Hex(buf: ArrayBuffer): Promise<string> {
     .join('');
 }
 
-function keccakHex(buf: ArrayBuffer): string {
+async function keccakHex(buf: ArrayBuffer): Promise<string> {
+  const { keccak256 } = await import('ethers');
   const hex = keccak256(ab2u8(buf)); // "0x..."
   return hex.slice(2);
 }
@@ -101,7 +101,7 @@ export default function VerifyPage() {
     try {
       const buf = await file.arrayBuffer();
       const s1 = await sha256Hex(buf);
-      const s2 = keccakHex(buf);
+      const s2 = await keccakHex(buf);
 
       const local: LocalCheckData = {
         checksumSha256: s1,

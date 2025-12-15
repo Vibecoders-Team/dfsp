@@ -6,18 +6,23 @@ import UpdateNotification from './components/UpdateNotification';
 import ABICompatibilityCheck from './components/ABICompatibilityCheck';
 import LoginPage from './components/pages/LoginPage';
 import RegisterPage from './components/pages/RegisterPage';
-import FilesPage from './components/pages/FilesPage';
-import FileDetailsPage from './components/pages/FileDetailsPage';
-import SharePage from './components/pages/SharePage';
-import GrantsPage from './components/pages/GrantsPage';
-import DownloadPage from './components/pages/DownloadPage';
-import UploadPage from './components/pages/UploadPage';
-import VerifyPage from './components/pages/VerifyPage';
-import SettingsPage, { ProfileSettings, KeysSettings } from './components/pages/SettingsPage';
-import HealthPage from './components/pages/HealthPage';
-import NotFoundPage from './components/pages/NotFoundPage';
-import ForbiddenPage from './components/pages/ForbiddenPage';
-import ServerErrorPage from './components/pages/ServerErrorPage';
+import React, { Suspense } from 'react';
+
+const FilesPage = React.lazy(() => import('./components/pages/FilesPage'));
+const FileDetailsPage = React.lazy(() => import('./components/pages/FileDetailsPage'));
+const SharePage = React.lazy(() => import('./components/pages/SharePage'));
+const GrantsPage = React.lazy(() => import('./components/pages/GrantsPage'));
+const DownloadPage = React.lazy(() => import('./components/pages/DownloadPage'));
+const UploadPage = React.lazy(() => import('./components/pages/UploadPage'));
+const VerifyPage = React.lazy(() => import('./components/pages/VerifyPage'));
+const OneTimePage = React.lazy(() => import('./components/pages/OneTimePage'));
+const SettingsPage = React.lazy(() => import('./components/pages/SettingsPage'));
+const ProfileSettings = React.lazy(() => import('./components/pages/SettingsPage').then(m => ({ default: m.ProfileSettings })));
+const KeysSettings = React.lazy(() => import('./components/pages/SettingsPage').then(m => ({ default: m.KeysSettings })));
+const HealthPage = React.lazy(() => import('./components/pages/HealthPage'));
+const NotFoundPage = React.lazy(() => import('./components/pages/NotFoundPage'));
+const ForbiddenPage = React.lazy(() => import('./components/pages/ForbiddenPage'));
+const ServerErrorPage = React.lazy(() => import('./components/pages/ServerErrorPage'));
 import { MiniApp, MiniFilesPage, MiniGrantsPage, MiniHomePage, MiniVerifyPage, MiniPublicLinkPage } from './mini/MiniApp';
 import IntentPage from './components/pages/IntentPage';
 import UnlockPortal from './components/UnlockPortal';
@@ -28,8 +33,8 @@ import PrivacyPage from './components/pages/PrivacyPage';
 import TelegramLinkPage from './components/pages/TelegramLinkPage';
 import { MainLandingPage } from './pages/MainLandingPage/MainLandingPage';
 import PublicPage from './components/pages/PublicPage.tsx';
-import OneTimePage from './components/pages/OneTimePage';
-const LANDING_ENABLED = (import.meta as any).env?.VITE_LANDING_ENABLED !== 'false';
+const _IM = (import.meta as unknown) as { env?: Record<string, string> };
+const LANDING_ENABLED = _IM.env?.VITE_LANDING_ENABLED !== 'false';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -96,66 +101,22 @@ function RootRedirect() {
 
 function AppRoutes() {
   return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading…</div>}>
     <>
       <Routes>
         {/* Новый корневой маршрут: лендинг */}
         <Route path="/" element={LANDING_ENABLED ? <MainLandingPage /> : <RootRedirect />} />
         {/* Старая логика редиректа доступна по "/app" для отката */}
         <Route path="/app" element={<RootRedirect />} />
-        <Route
-          path="/login"
-          element={
-            <PublicRoute children={<LoginPage />} />
-          }
-        />
-        <Route
-          path="/register"
-          element={
-            <PublicRoute children={<RegisterPage />} />
-          }
-        />
-        <Route
-          path="/files"
-          element={
-            <ProtectedRoute children={<FilesPage />} />
-          }
-        />
-        <Route
-          path="/files/:id"
-          element={
-            <ProtectedRoute children={<FileDetailsPage />} />
-          }
-        />
-        <Route
-          path="/files/:id/share"
-          element={
-            <ProtectedRoute children={<SharePage />} />
-          }
-        />
-        <Route
-          path="/grants"
-          element={
-            <ProtectedRoute children={<GrantsPage />} />
-          }
-        />
-        <Route
-          path="/download/:capId"
-          element={
-            <ProtectedRoute children={<DownloadPage />} />
-          }
-        />
-        <Route
-          path="/upload"
-          element={
-            <ProtectedRoute children={<UploadPage />} />
-          }
-        />
-        <Route
-          path="/verify/:fileId"
-          element={
-            <ProtectedRoute children={<VerifyPage />} />
-          }
-        />
+        <Route path="/login" element={<PublicRoute children={<LoginPage />} />} />
+        <Route path="/register" element={<PublicRoute children={<RegisterPage />} />} />
+        <Route path="/files" element={<ProtectedRoute children={<FilesPage />} />} />
+        <Route path="/files/:id" element={<ProtectedRoute children={<FileDetailsPage />} />} />
+        <Route path="/files/:id/share" element={<ProtectedRoute children={<SharePage />} />} />
+        <Route path="/grants" element={<ProtectedRoute children={<GrantsPage />} />} />
+        <Route path="/download/:capId" element={<ProtectedRoute children={<DownloadPage />} />} />
+        <Route path="/upload" element={<ProtectedRoute children={<UploadPage />} />} />
+        <Route path="/verify/:fileId" element={<ProtectedRoute children={<VerifyPage />} />} />
         {/* Settings nested routes */}
         <Route
           path="/settings"
@@ -168,12 +129,7 @@ function AppRoutes() {
           <Route path="keys" element={<KeysSettings />} />
           <Route path="*" element={<Navigate to="keys" replace />} />
         </Route>
-        <Route
-          path="/health"
-          element={
-            <ProtectedRoute children={<HealthPage />} />
-          }
-        />
+        <Route path="/health" element={<ProtectedRoute children={<HealthPage />} />} />
         <Route path="/404" element={<NotFoundPage />} />
         <Route path="/403" element={<ForbiddenPage />} />
         <Route path="/500" element={<ServerErrorPage />} />
@@ -207,6 +163,7 @@ function AppRoutes() {
       <UpdateNotification />
       <UnlockPortal />
     </>
+    </Suspense>
   );
 }
 

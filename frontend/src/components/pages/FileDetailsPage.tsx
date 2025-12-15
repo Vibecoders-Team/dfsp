@@ -585,7 +585,8 @@ export default function FileDetailsPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => {
-                            const origin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || window.location.origin;
+                            const _IM = (import.meta as unknown) as { env?: Record<string,string> };
+                            const origin = _IM.env?.VITE_PUBLIC_ORIGIN || window.location.origin;
                             const pubUrl = origin.replace(/\/$/, '') + `/public/${pl.token}`;
                             copyToClipboard(pubUrl + (nameOverride ? `#k=${encodeURIComponent(nameOverride)}` : ''), 'Public link');
                           }}
@@ -643,8 +644,8 @@ export default function FileDetailsPage() {
               mime_override: mimeOverride || undefined,
             };
             const resp = await createPublicLink(file.id, payload);
-            const origin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || window.location.origin;
-            const pubUrl = origin.replace(/\/$/, '') + `/public/${resp.token}`;
+            const origin = (import.meta as unknown) as { env?: Record<string,string> };
+            const pubUrl = origin.env?.VITE_PUBLIC_ORIGIN.replace(/\/$/, '') + `/public/${resp.token}`;
             copyToClipboard(pubUrl + (nameOverride? `#k=${encodeURIComponent(nameOverride)}`: ''), 'Public link');
             notify.success('Public link created', { dedupeId: 'pub-created' });
             setPubModalOpen(false);

@@ -58,11 +58,12 @@ export function MiniPublicLinkPage() {
 
     try {
       // PoW if required
-      const needPow = !!(meta.policy && typeof meta.policy === "object" && (meta.policy as any).pow_difficulty > 0);
+      const policy = meta.policy as Record<string, unknown> | undefined;
+      const needPow = !!(policy && typeof policy === 'object' && Number(policy['pow_difficulty'] ?? 0) > 0);
       if (needPow) {
         setPowProgress("Requesting PoW challenge…");
         const ch = await miniRequestPowChallenge();
-        const difficulty = Number((meta.policy as any).pow_difficulty) || ch.difficulty || 1;
+        const difficulty = Number(policy?.['pow_difficulty'] ?? ch.difficulty ?? 1) || 1;
         const nibbles = Math.floor((difficulty + 3) / 4);
         const prefix = "0".repeat(nibbles);
         let solution = "";
@@ -94,7 +95,7 @@ export function MiniPublicLinkPage() {
         try {
           blob = await miniGetPublicContent(token);
           break;
-        } catch (err: any) {
+        } catch (err: unknown) {
           const msg = normalizeMiniError(err).message;
           if (msg.includes("denied") && attempt < 2) {
             await new Promise((res) => setTimeout(res, 150));
@@ -115,8 +116,9 @@ export function MiniPublicLinkPage() {
           if (finalName.endsWith(".enc")) {
             finalName = finalName.slice(0, -4);
           }
-        } catch (e: any) {
-          setError("Decryption failed: " + (e?.message || "unknown error"));
+        } catch (e: unknown) {
+          const msg = typeof e === 'object' && e && 'message' in e ? String((e as Record<string, unknown>).message ?? '') : '';
+          setError("Decryption failed: " + (msg || 'unknown error'));
           setDownloading(false);
           return;
         }
@@ -130,7 +132,7 @@ export function MiniPublicLinkPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
-    } catch (err) {
+    } catch (err: unknown) {
       setError(normalizeMiniError(err).message);
     } finally {
       setDownloading(false);
@@ -203,4 +205,3 @@ export function MiniPublicLinkPage() {
     </div>
   );
 }
-

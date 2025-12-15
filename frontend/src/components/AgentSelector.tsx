@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import type { AgentKind } from '@/lib/agent';
 import { getSelectedAgentKind, setSelectedAgentKind, getAgent } from '../lib/agent/manager';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
-import MetaMaskFull from './icons/MetaMaskFull';
-import WalletConnectFull from './icons/WalletConnectFull';
+const MetaMaskFull = React.lazy(() => import('./icons/MetaMaskFull')) as any;
+const WalletConnectFull = React.lazy(() => import('./icons/WalletConnectFull')) as any;
 import { useAuth } from './useAuth';
 const EXPECTED_CHAIN_ID = Number((import.meta as any).env?.VITE_CHAIN_ID || (import.meta as any).env?.VITE_EXPECTED_CHAIN_ID || 0);
 
@@ -16,15 +16,6 @@ export default function AgentSelector({ compact = false, showInlineError = true 
   const [err, setErr] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [chainId, setChainId] = useState<number | null>(null);
-
-  // Auto-read for WalletConnect on mount when session exists to show address/cid after refresh
-  useEffect(() => {
-    const hasWcSession = (() => { try { return sessionStorage.getItem('dfsp_wc_connected') === '1'; } catch { return false; } })();
-    if (kind === 'walletconnect' && hasWcSession) {
-      (async () => { try { await readAgentState(); } catch {/* ignore */} })();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const readAgentState = async () => {
     try {
@@ -81,11 +72,10 @@ export default function AgentSelector({ compact = false, showInlineError = true 
           {kind === 'local' ? (
             <span className="px-1 py-0.5 rounded bg-gray-200 text-gray-700">Local</span>
           ) : (
-            <>
+            <Suspense fallback={<span style={{display:'inline-block',width:16}}/>}>
               {kind === 'metamask' && <MetaMaskFull size={16} className="mr-0" />}
               {kind === 'walletconnect' && <WalletConnectFull size={16} className="mr-0" />}
-              <span>{kind === 'metamask' ? 'MetaMask' : 'WalletConnect'}</span>
-            </>
+            </Suspense>
           )}
         </span>
         {chainId !== null && <span className="text-gray-400">cid:{chainId}</span>}
@@ -99,10 +89,10 @@ export default function AgentSelector({ compact = false, showInlineError = true 
       <div className="flex gap-1 shrink-0">
         <Button size="sm" variant={kind==='local'?'secondary':'outline'} onClick={()=>update('local')} disabled={busy}>Local</Button>
         <Button size="sm" variant={kind==='metamask'?'secondary':'outline'} onClick={()=>update('metamask')} disabled={busy}>
-          <MetaMaskFull className="mr-1" /> MetaMask
+          <Suspense fallback={<span style={{display:'inline-block',width:18}}/>}><MetaMaskFull className="mr-1" /></Suspense> MetaMask
         </Button>
         <Button size="sm" variant={kind==='walletconnect'?'secondary':'outline'} onClick={()=>update('walletconnect')} disabled={busy}>
-          <WalletConnectFull className="mr-1" /> WalletConnect
+          <Suspense fallback={<span style={{display:'inline-block',width:18}}/>}><WalletConnectFull className="mr-1" /></Suspense> WalletConnect
         </Button>
       </div>
       {addr && <span className="ml-2 text-xs text-gray-500 shrink-0">{addr}</span>}

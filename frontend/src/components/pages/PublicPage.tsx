@@ -9,6 +9,18 @@ import { fetchPublicMeta, fetchPublicContent, requestPowChallenge, submitPow } f
 import { decryptStream } from '@/lib/cryptoClient';
 import { toast } from 'sonner';
 
+function extractErrorMessage(err: unknown, fallback = 'Failed'): string {
+  if (!err || typeof err !== 'object') return fallback;
+  const e = err as Record<string, unknown>;
+  const resp = e['response'] as Record<string, unknown> | undefined;
+  if (resp) {
+    const data = resp['data'] as Record<string, unknown> | undefined;
+    const msg = data?.['error'] ?? resp['statusText'] ?? e['message'];
+    return String(msg ?? fallback);
+  }
+  return String(e['message'] ?? fallback);
+}
+
 export default function PublicPage() {
   const { token = '' } = useParams();
   const [loading, setLoading] = useState(true);
@@ -38,8 +50,8 @@ export default function PublicPage() {
         setError(null);
         const m = await fetchPublicMeta(token);
         setMeta({ name: m.name, size: m.size, mime: m.mime, policy: m.policy });
-      } catch (e: any) {
-        const msg = String(e?.response?.data?.error || e?.message || 'Failed to load');
+      } catch (e: unknown) {
+        const msg = extractErrorMessage(e, 'Failed to load');
         setError(msg);
       } finally {
         setLoading(false);
@@ -49,12 +61,13 @@ export default function PublicPage() {
 
   const handleDownload = async () => {
     try {
-      const needPow = !!(meta?.policy && typeof meta.policy === 'object' && (meta.policy as any).pow_difficulty);
+      const policy = meta?.policy as Record<string, unknown> | undefined;
+      const needPow = !!(policy && typeof policy === 'object' && Number(policy['pow_difficulty'] ?? 0));
       if (needPow) {
         setSolvingPow(true);
         setPowProgress('requesting challenge…');
         const ch = await requestPowChallenge();
-        const difficulty = Number((meta?.policy as any).pow_difficulty) || ch.difficulty || 1;
+        const difficulty = Number(policy?.['pow_difficulty'] ?? ch.difficulty ?? 1) || 1;
         const nibbles = Math.floor((difficulty + 3) / 4);
         const prefix = '0'.repeat(nibbles);
         let solution = '';
@@ -72,11 +85,10 @@ export default function PublicPage() {
         setPowProgress('submitting solution…');
         try {
           await submitPow(token, ch.challenge, solution);
-        } catch (e: any) {
+        } catch (e: unknown) {
           setSolvingPow(false);
           setPowProgress('');
-          const msg = String(e?.response?.data?.error || e?.message || 'PoW failed');
-          setError(msg);
+          setError(extractErrorMessage(e, 'PoW failed'));
           return;
         }
         setSolvingPow(false);
@@ -90,9 +102,16 @@ export default function PublicPage() {
         try {
           blob = await fetchPublicContent(token);
           break;
-        } catch (err: any) {
-          const status = err?.response?.status;
-          const code = String(err?.response?.data?.error || '');
+        } catch (err: unknown) {
+          let status: number | undefined;
+          if (err && typeof err === 'object') {
+            const resp = (err as Record<string, unknown>)['response'];
+            if (resp && typeof resp === 'object') {
+              const s = (resp as Record<string, unknown>)['status'];
+              if (typeof s === 'number') status = s;
+            }
+          }
+          const code = extractErrorMessage(err, '');
           if (status === 403 && code === 'denied' && attempt < 2) {
             await new Promise(res=>setTimeout(res, 150));
             continue;
@@ -114,9 +133,9 @@ export default function PublicPage() {
           if (finalName.endsWith('.enc')) {
             finalName = finalName.slice(0, -4);
           }
-        } catch (e: any) {
+        } catch (e: unknown) {
           console.error('Decryption failed:', e);
-          toast.error('Failed to decrypt file: ' + (e?.message || 'unknown error'));
+          toast.error('Failed to decrypt file: ' + extractErrorMessage(e, 'unknown error'));
           return;
         }
       }
@@ -129,9 +148,16 @@ export default function PublicPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
       toast.success('Download started');
-    } catch (e: any) {
-      const status = e?.response?.status;
-      const msg = String(e?.response?.data?.error || e?.message || 'Failed to download');
+    } catch (e: unknown) {
+      let status: number | undefined;
+      if (e && typeof e === 'object') {
+        const resp = (e as Record<string, unknown>)['response'];
+        if (resp && typeof resp === 'object') {
+          const s = (resp as Record<string, unknown>)['status'];
+          if (typeof s === 'number') status = s;
+        }
+      }
+      const msg = extractErrorMessage(e, 'Failed to download');
       if (status === 403 || status === 410) {
         setError(msg);
       } else {

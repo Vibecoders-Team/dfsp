@@ -1,15 +1,19 @@
 export type { SignerAgent, AgentKind } from './agent';
 export { stripEip712Domain } from './agent';
 export { LocalAgent } from './local';
-export { MetaMaskAgent } from './metamask';
-export { WalletConnectAgent } from './walletconnect';
 
 import { LocalAgent } from './local';
-import { MetaMaskAgent } from './metamask';
-import { WalletConnectAgent } from './walletconnect';
 
-export function getAgent(kind: 'local' | 'metamask' | 'walletconnect') {
+// NOTE: Do NOT import MetaMaskAgent or WalletConnectAgent eagerly here —
+// importing them at module top-level pulls their dependencies into the
+// initial bundle. Use dynamic import when a caller needs an instance.
+
+export async function getAgent(kind: 'local' | 'metamask' | 'walletconnect') {
   if (kind === 'local') return new LocalAgent();
-  if (kind === 'metamask') return new MetaMaskAgent();
-  return new WalletConnectAgent();
+  if (kind === 'metamask') {
+    const mod = await import('./metamask');
+    return new mod.MetaMaskAgent();
+  }
+  const mod = await import('./walletconnect');
+  return new mod.WalletConnectAgent();
 }

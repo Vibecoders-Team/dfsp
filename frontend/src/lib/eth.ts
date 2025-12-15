@@ -1,4 +1,4 @@
-import {ethers, type TypedDataDomain, type TypedDataField} from "ethers";
+import type { TypedDataDomain, TypedDataField } from 'ethers';
 
 /** ---- EIP-712 ---- */
 export const LOGIN_DOMAIN: TypedDataDomain = {name: "DFSP-Login", version: "1"};
@@ -25,22 +25,23 @@ function getInjectedProvider(): EIP1193Provider {
 
 /** ---- Wallet connect / sign ---- */
 export async function connectWallet(): Promise<{
-    provider: ethers.BrowserProvider;
+    provider: import('ethers').BrowserProvider;
     address: `0x${string}`;
     chainId: number;
 }> {
     const eth = getInjectedProvider();
-    const provider = new ethers.BrowserProvider(eth);
-    const [addressRaw] = (await provider.send("eth_requestAccounts", [])) as string[];
+    const { BrowserProvider } = await import('ethers');
+    const provider = new BrowserProvider(eth);
+    const [addressRaw] = (await provider.send('eth_requestAccounts', [])) as string[];
     const net = await provider.getNetwork();
     const address = addressRaw as `0x${string}`;
-    return {provider, address, chainId: Number(net.chainId)};
+    return { provider, address, chainId: Number(net.chainId) };
 }
 
-export async function signLogin(provider: ethers.BrowserProvider, message: LoginMessage) {
+export async function signLogin(provider: import('ethers').BrowserProvider, message: LoginMessage) {
     const signer = await provider.getSigner();
-    const signature = await signer.signTypedData(LOGIN_DOMAIN, LOGIN_TYPES, message);
-    return {signature};
+    const signature = await signer.signTypedData(LOGIN_DOMAIN, LOGIN_TYPES, message as any);
+    return { signature };
 }
 
 /** ---- RSA PSS (SPKI PEM) ---- */
@@ -52,14 +53,13 @@ function ab2b64(ab: ArrayBuffer): string {
 }
 
 export async function generateRSA(): Promise<{ publicPem: string; privateKey: CryptoKey }> {
-    const pair = await crypto.subtle.generateKey(
-        {name: "RSA-PSS", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256"},
-        true,
-        ["sign", "verify"]
-    );
-    const spki = await crypto.subtle.exportKey("spki", pair.publicKey);
-    const b64 = ab2b64(spki).match(/.{1,64}/g)!.join("\n");
-    const pem = `-----BEGIN PUBLIC KEY-----\n${b64}\n-----END PUBLIC KEY-----\n`;
-    return {publicPem: pem, privateKey: pair.privateKey};
-}
-
+     const pair = await crypto.subtle.generateKey(
+         {name: "RSA-PSS", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256"},
+         true,
+         ["sign", "verify"]
+     );
+     const spki = await crypto.subtle.exportKey("spki", pair.publicKey);
+     const b64 = ab2b64(spki).match(/.{1,64}/g)!.join("\n");
+     const pem = `-----BEGIN PUBLIC KEY-----\n${b64}\n-----END PUBLIC KEY-----\n`;
+     return {publicPem: pem, privateKey: pair.privateKey};
+ }
