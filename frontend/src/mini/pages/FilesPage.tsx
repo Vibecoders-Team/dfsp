@@ -26,6 +26,14 @@ type IntentPreview = {
   createdAt: number;
 };
 
+const cardStyle = {
+  background: "var(--mini-bg-card)",
+  border: "1px solid var(--mini-border)",
+  borderRadius: "var(--mini-radius-lg)",
+  padding: "16px",
+  boxShadow: "var(--mini-shadow-sm)"
+};
+
 export function MiniFilesPage() {
   const { session, method } = useMiniAuth();
   const [files, setFiles] = useState<MiniFileListItem[]>([]);
@@ -233,116 +241,284 @@ export function MiniFilesPage() {
   };
 
   return (
-    <div className="space-y-4">
-      <section className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-2">
-        <p className="text-lg font-semibold">Files</p>
-        <p className="text-sm text-slate-300">
-          Список ваших файлов. Шаринг и revoke выполняются через одноразовый intent и завершаются на основном вебе
-          (подпись мета-транзакции).
-        </p>
-        <p className="text-xs text-slate-500">
-          Интенты действуют ~15 минут и одноразовые: повтор даст ошибку already_used/expired.
-        </p>
-      </section>
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* Header Card */}
+      <div style={{
+        ...cardStyle,
+        background: "var(--mini-gradient-primary)",
+        color: "#fff",
+        position: "relative",
+        overflow: "hidden"
+      }} className="mini-animate-slide-up">
+        <div style={{
+          position: "absolute",
+          top: "-20px",
+          right: "-20px",
+          width: "80px",
+          height: "80px",
+          background: "rgba(255,255,255,0.1)",
+          borderRadius: "50%"
+        }} />
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <p style={{
+            fontSize: "18px",
+            fontWeight: 600,
+            marginBottom: "8px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px"
+          }}>
+            📁 Мои файлы
+          </p>
+          <p style={{
+            fontSize: "14px",
+            opacity: 0.9,
+            lineHeight: 1.5
+          }}>
+            Шаринг и revoke через одноразовый intent с подписью на основном вебе
+          </p>
+        </div>
+      </div>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-500/50 text-red-100 rounded-lg p-3 text-sm">{error}</div>
-      )}
-
-      {method === "ton" && (
-        <div className="bg-amber-900/20 border border-amber-500/50 text-amber-50 rounded-lg p-3 text-sm space-y-1">
-          <p className="font-semibold">Вход через TON Connect</p>
-          <p className="text-xs text-amber-100">
-            Операции, требующие EVM-подписи (grant/revoke), выполняются через handoff на основной веб. Откройте ссылку
-            ниже для связки EVM-адреса и подписи мета-транзакций.
-          </p>
-          <button
-            onClick={() => openWebAppLink("/files")}
-            className="mt-1 px-3 py-1 rounded border border-amber-400 text-amber-50 hover:bg-amber-500/10 transition text-xs"
-          >
-            Открыть основной веб
-          </button>
+        <div style={{
+          ...cardStyle,
+          background: "var(--mini-danger-light)",
+          borderColor: "var(--mini-danger)",
+          color: "var(--mini-danger-text)",
+          fontSize: "14px"
+        }}>
+          {error}
         </div>
       )}
 
-      <div className="grid lg:grid-cols-3 gap-3">
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="font-semibold text-sm text-slate-100">Ваши файлы</p>
-            {loading && <span className="text-xs text-slate-400">обновляем…</span>}
+      {method === "ton" && (
+        <div style={{
+          ...cardStyle,
+          background: "var(--mini-warning-light)",
+          borderColor: "var(--mini-warning)"
+        }} className="mini-animate-slide-up">
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+            <span style={{ fontSize: "20px" }}>⚠️</span>
+            <div>
+              <p style={{
+                fontSize: "14px",
+                fontWeight: 600,
+                color: "var(--mini-warning-text)",
+                marginBottom: "4px"
+              }}>
+                Вход через TON Connect
+              </p>
+              <p style={{
+                fontSize: "13px",
+                color: "var(--mini-warning-text)",
+                opacity: 0.8,
+                marginBottom: "12px"
+              }}>
+                Для EVM-подписи (grant/revoke) перейдите на веб и свяжите EVM-адрес.
+              </p>
+              <button
+                onClick={() => openWebAppLink("/files")}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "var(--mini-radius)",
+                  border: "1px solid var(--mini-warning)",
+                  background: "transparent",
+                  color: "var(--mini-warning-text)",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                  cursor: "pointer"
+                }}
+              >
+                Открыть веб-версию →
+              </button>
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* Main Grid */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr",
+        gap: "12px"
+      }}>
+        {/* Files List */}
+        <div style={cardStyle} className="mini-animate-slide-up">
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "12px"
+          }}>
+            <p style={{
+              fontSize: "14px",
+              fontWeight: 600,
+              color: "var(--mini-text)",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px"
+            }}>
+              📂 Ваши файлы
+              {files.length > 0 && (
+                <span style={{
+                  padding: "2px 8px",
+                  borderRadius: "var(--mini-radius-full)",
+                  background: "var(--mini-primary-light)",
+                  color: "var(--mini-primary)",
+                  fontSize: "12px",
+                  fontWeight: 500
+                }}>
+                  {files.length}
+                </span>
+              )}
+            </p>
+            {loading && (
+              <div style={{
+                width: "16px",
+                height: "16px",
+                border: "2px solid var(--mini-border)",
+                borderTopColor: "var(--mini-primary)",
+                borderRadius: "50%"
+              }} className="mini-animate-spin" />
+            )}
+          </div>
+
           {loading ? (
-            <div className="space-y-2">
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-12 rounded bg-slate-700 animate-pulse" />
+                <div key={i} style={{ height: "56px" }} className="mini-skeleton" />
               ))}
             </div>
           ) : files.length === 0 ? (
-            <p className="text-sm text-slate-400">Файлы не найдены.</p>
+            <div style={{
+              textAlign: "center",
+              padding: "32px 16px",
+              color: "var(--mini-text-muted)"
+            }}>
+              <span style={{ fontSize: "32px", display: "block", marginBottom: "8px" }}>📭</span>
+              <p style={{ fontSize: "14px" }}>Файлы не найдены</p>
+            </div>
           ) : (
-            <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              maxHeight: "300px",
+              overflowY: "auto"
+            }}>
               {files.map((f) => {
                 const active = f.id === selectedId;
                 const isRenaming = renamingId === f.id;
                 return (
                   <div
                     key={f.id}
-                    className={`rounded border px-3 py-2 transition ${
-                      active
-                        ? "bg-sky-600/20 border-sky-500 text-sky-50"
-                        : "bg-slate-900/50 border-slate-700 hover:border-slate-500"
-                    }`}
+                    style={{
+                      padding: "12px",
+                      borderRadius: "var(--mini-radius)",
+                      border: `1px solid ${active ? "var(--mini-primary)" : "var(--mini-border)"}`,
+                      background: active ? "var(--mini-primary-light)" : "var(--mini-bg-tertiary)",
+                      transition: "var(--mini-transition)",
+                      cursor: isRenaming ? "default" : "pointer"
+                    }}
+                    onClick={() => !isRenaming && setSelectedId(f.id)}
                   >
                     {isRenaming ? (
-                      <div className="space-y-1">
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                         <input
                           type="text"
                           value={renameValue}
                           onChange={(e) => setRenameValue(e.target.value)}
-                          className="w-full px-2 py-1 rounded bg-slate-800 border border-slate-600 text-sm text-slate-100"
+                          style={{
+                            padding: "8px 10px",
+                            borderRadius: "var(--mini-radius-sm)",
+                            border: "1px solid var(--mini-border)",
+                            background: "var(--mini-bg-card)",
+                            color: "var(--mini-text)",
+                            fontSize: "13px"
+                          }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleSaveRename();
                             if (e.key === "Escape") handleCancelRename();
                           }}
                           autoFocus
+                          onClick={(e) => e.stopPropagation()}
                         />
-                        {renameError && <p className="text-xs text-red-300">{renameError}</p>}
-                        <div className="flex gap-1">
+                        {renameError && (
+                          <p style={{ fontSize: "12px", color: "var(--mini-danger)" }}>{renameError}</p>
+                        )}
+                        <div style={{ display: "flex", gap: "6px" }}>
                           <button
-                            onClick={handleSaveRename}
-                            className="px-2 py-1 rounded bg-green-600 text-xs text-white"
+                            onClick={(e) => { e.stopPropagation(); handleSaveRename(); }}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: "var(--mini-radius-sm)",
+                              border: "none",
+                              background: "var(--mini-success)",
+                              color: "#fff",
+                              fontSize: "12px",
+                              cursor: "pointer"
+                            }}
                           >
-                            Save
+                            Сохранить
                           </button>
                           <button
-                            onClick={handleCancelRename}
-                            className="px-2 py-1 rounded bg-slate-600 text-xs text-white"
+                            onClick={(e) => { e.stopPropagation(); handleCancelRename(); }}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: "var(--mini-radius-sm)",
+                              border: "1px solid var(--mini-border)",
+                              background: "var(--mini-bg-card)",
+                              color: "var(--mini-text)",
+                              fontSize: "12px",
+                              cursor: "pointer"
+                            }}
                           >
-                            Cancel
+                            Отмена
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => setSelectedId(f.id)}
-                        className="w-full text-left"
-                      >
-                        <div className="flex justify-between items-start">
-                          <p className="font-semibold text-sm flex-1">{f.name || "Без имени"}</p>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleStartRename(f);
-                            }}
-                            className="text-xs text-slate-400 hover:text-slate-200 ml-2"
-                          >
-                            ✏️
-                          </button>
+                      <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between"
+                      }}>
+                        <div>
+                          <p style={{
+                            fontSize: "14px",
+                            fontWeight: 500,
+                            color: active ? "var(--mini-primary)" : "var(--mini-text)",
+                            marginBottom: "2px"
+                          }}>
+                            {f.name || "Без имени"}
+                          </p>
+                          <p style={{
+                            fontSize: "12px",
+                            color: "var(--mini-text-muted)",
+                            fontFamily: "monospace"
+                          }}>
+                            {truncate(f.id, 14)} · {formatBytes(f.size)}
+                          </p>
                         </div>
-                        <p className="text-xs text-slate-400">
-                          {truncate(f.id, 14)} · {formatBytes(f.size)}
-                        </p>
-                      </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartRename(f);
+                          }}
+                          style={{
+                            width: "28px",
+                            height: "28px",
+                            borderRadius: "var(--mini-radius-sm)",
+                            border: "none",
+                            background: "var(--mini-bg-card)",
+                            cursor: "pointer",
+                            fontSize: "14px"
+                          }}
+                        >
+                          ✏️
+                        </button>
+                      </div>
                     )}
                   </div>
                 );
@@ -351,175 +527,432 @@ export function MiniFilesPage() {
           )}
         </div>
 
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-3">
-          <p className="font-semibold text-sm text-slate-100">Детали файла</p>
-          {selectedFile ? (
-            <>
-              <div className="space-y-1 text-sm text-slate-200">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Имя</span>
-                  <span className="font-medium">{selectedFile.name || "Без имени"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Размер</span>
-                  <span>{formatBytes(selectedFile.size)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">CID</span>
-                  <span className="text-slate-200">{truncate(selectedFile.cid, 18)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Создан</span>
-                  <span>{formatDate(selectedFile.created_at)}</span>
-                </div>
-              </div>
+        {/* Selected File Details */}
+        {selectedFile && (
+          <div style={cardStyle} className="mini-animate-slide-up">
+            <p style={{
+              fontSize: "14px",
+              fontWeight: 600,
+              color: "var(--mini-text)",
+              marginBottom: "12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px"
+            }}>
+              📄 Детали файла
+            </p>
 
-              <div className="space-y-2">
-                <button
-                  onClick={handleShareIntent}
-                  disabled={actionLoading === "share"}
-                  className="w-full px-3 py-2 rounded bg-sky-500 text-slate-950 font-semibold hover:bg-sky-400 transition disabled:opacity-60"
-                >
-                  {actionLoading === "share" ? "Готовим intent…" : "Создать intent для шаринга"}
-                </button>
-                <p className="text-xs text-slate-400">
-                  Откроется ссылка {`/intent/${intent?.id ?? "<id>"}`} на основном вебе, где подпишете grant.
-                </p>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-slate-400">Выберите файл слева.</p>
-          )}
-
-          {actionError && <div className="text-sm text-red-300 border border-red-500/50 rounded p-2">{actionError}</div>}
-
-          {activeIntent && <IntentCallout intent={activeIntent} openLink={openWebAppLink} />}
-        </div>
-
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="font-semibold text-sm text-slate-100">Публичные ссылки</p>
-            <button
-              onClick={() => setShowPublicModal(true)}
-              className="px-2 py-1 rounded bg-blue-600 text-xs text-white hover:bg-blue-700"
-            >
-              + Создать
-            </button>
-          </div>
-          {!selectedFile ? (
-            <p className="text-sm text-slate-400">Выберите файл слева.</p>
-          ) : publicLinks.length === 0 ? (
-            <p className="text-sm text-slate-400">Нет публичных ссылок.</p>
-          ) : (
-            <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
-              {publicLinks.map((pl) => (
-                <div key={pl.token} className="border border-slate-700 rounded p-2 bg-slate-900/40">
-                  <p className="text-xs text-slate-400 break-all">Token: {truncate(pl.token, 20)}</p>
-                  <p className="text-xs text-slate-400">
-                    Downloads: {pl.downloads_count ?? 0}
-                    {pl.policy?.max_downloads && pl.policy.max_downloads > 0
-                      ? ` / ${pl.policy.max_downloads}`
-                      : " / ∞"}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, 1fr)",
+              gap: "10px",
+              marginBottom: "16px"
+            }}>
+              {[
+                { label: "Имя", value: selectedFile.name || "Без имени" },
+                { label: "Размер", value: formatBytes(selectedFile.size) },
+                { label: "CID", value: truncate(selectedFile.cid, 16), mono: true },
+                { label: "Создан", value: formatDate(selectedFile.created_at) }
+              ].map((item) => (
+                <div key={item.label} style={{
+                  padding: "10px",
+                  background: "var(--mini-bg-tertiary)",
+                  borderRadius: "var(--mini-radius)"
+                }}>
+                  <p style={{
+                    fontSize: "11px",
+                    color: "var(--mini-text-muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                    marginBottom: "4px"
+                  }}>
+                    {item.label}
                   </p>
-                  <div className="flex gap-1 mt-1">
-                    <button
-                      onClick={() => {
-                        if (!selectedFile) return;
-                        const K_file = getOrCreateFileKey(selectedFile.id);
-                        const keyB64 = btoa(String.fromCharCode(...K_file));
-                        const origin = window.location.origin;
-                        const url = `${origin}/mini/public/${pl.token}#k=${encodeURIComponent(keyB64)}`;
-                        navigator.clipboard.writeText(url);
-                      }}
-                      className="px-2 py-1 rounded bg-slate-600 text-xs text-white hover:bg-slate-500"
-                    >
-                      Copy
-                    </button>
-                    <button
-                      onClick={() => handleRevokePublicLink(pl.token)}
-                      className="px-2 py-1 rounded bg-red-600 text-xs text-white hover:bg-red-700"
-                    >
-                      Revoke
-                    </button>
-                  </div>
+                  <p style={{
+                    fontSize: "13px",
+                    color: "var(--mini-text)",
+                    fontFamily: item.mono ? "monospace" : "inherit",
+                    wordBreak: "break-all"
+                  }}>
+                    {item.value}
+                  </p>
                 </div>
               ))}
             </div>
-          )}
-        </div>
 
-        {showPublicModal && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-            <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 max-w-sm w-full mx-4 space-y-3">
-              <p className="font-semibold text-slate-100">Создать публичную ссылку</p>
-              <p className="text-xs text-slate-400">
-                Будет создана ссылка с безлимитными скачиваниями для файла {selectedFile?.name || ""}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleCreatePublicLink}
-                  disabled={creatingPublic}
-                  className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-                >
-                  {creatingPublic ? "Создаём…" : "Создать"}
-                </button>
-                <button
-                  onClick={() => setShowPublicModal(false)}
-                  className="px-3 py-2 rounded bg-slate-600 text-white hover:bg-slate-500"
-                >
-                  Отмена
-                </button>
+            <button
+              onClick={handleShareIntent}
+              disabled={actionLoading === "share"}
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: "var(--mini-radius)",
+                border: "none",
+                background: actionLoading === "share" ? "var(--mini-bg-tertiary)" : "var(--mini-primary)",
+                color: actionLoading === "share" ? "var(--mini-text-muted)" : "#fff",
+                fontSize: "14px",
+                fontWeight: 500,
+                cursor: actionLoading === "share" ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px"
+              }}
+            >
+              {actionLoading === "share" ? (
+                <>
+                  <div style={{
+                    width: "14px",
+                    height: "14px",
+                    border: "2px solid var(--mini-border)",
+                    borderTopColor: "var(--mini-text)",
+                    borderRadius: "50%"
+                  }} className="mini-animate-spin" />
+                  Готовим intent...
+                </>
+              ) : (
+                <>🔗 Создать intent для шаринга</>
+              )}
+            </button>
+
+            {actionError && (
+              <div style={{
+                marginTop: "12px",
+                padding: "10px",
+                background: "var(--mini-danger-light)",
+                borderRadius: "var(--mini-radius)",
+                fontSize: "13px",
+                color: "var(--mini-danger-text)"
+              }}>
+                {actionError}
               </div>
-            </div>
+            )}
+
+            {activeIntent && <IntentCallout intent={activeIntent} openLink={openWebAppLink} />}
           </div>
         )}
 
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="font-semibold text-sm text-slate-100">Активные гранты</p>
-            {currentGrants?.loading && <span className="text-xs text-slate-400">загружаем…</span>}
-          </div>
-          {currentGrants?.error && (
-            <div className="text-sm text-red-300 border border-red-500/50 rounded p-2">{currentGrants.error}</div>
-          )}
-          {!selectedFile ? (
-            <p className="text-sm text-slate-400">Нет выбранного файла.</p>
-          ) : currentGrants?.items?.length ? (
-            <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
-              {currentGrants.items.map((g) => {
-                const busy = actionLoading === `revoke:${g.capId}`;
-                return (
-                  <div key={g.capId} className="border border-slate-700 rounded p-2 bg-slate-900/40">
-                    <p className="text-sm text-slate-50 flex justify-between">
-                      <span>{truncate(g.grantee, 14)}</span>
-                      <span className="text-xs uppercase text-slate-400">{g.status}</span>
+        {/* Public Links */}
+        {selectedFile && (
+          <div style={cardStyle} className="mini-animate-slide-up">
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: "12px"
+            }}>
+              <p style={{
+                fontSize: "14px",
+                fontWeight: 600,
+                color: "var(--mini-text)",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px"
+              }}>
+                🔗 Публичные ссылки
+              </p>
+              <button
+                onClick={() => setShowPublicModal(true)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "var(--mini-radius-full)",
+                  border: "none",
+                  background: "var(--mini-primary)",
+                  color: "#fff",
+                  fontSize: "12px",
+                  fontWeight: 500,
+                  cursor: "pointer"
+                }}
+              >
+                + Создать
+              </button>
+            </div>
+
+            {publicLinks.length === 0 ? (
+              <p style={{
+                fontSize: "13px",
+                color: "var(--mini-text-muted)",
+                textAlign: "center",
+                padding: "16px"
+              }}>
+                Нет публичных ссылок
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {publicLinks.map((pl) => (
+                  <div key={pl.token} style={{
+                    padding: "12px",
+                    background: "var(--mini-bg-tertiary)",
+                    borderRadius: "var(--mini-radius)"
+                  }}>
+                    <p style={{
+                      fontSize: "12px",
+                      color: "var(--mini-text-muted)",
+                      fontFamily: "monospace",
+                      marginBottom: "6px"
+                    }}>
+                      {truncate(pl.token, 20)}
                     </p>
-                    <p className="text-xs text-slate-400 break-all">{g.capId}</p>
-                    <p className="text-xs text-slate-400">
-                      DL {g.usedDownloads}/{g.maxDownloads} · до {formatDate(g.expiresAt)}
+                    <p style={{
+                      fontSize: "12px",
+                      color: "var(--mini-text-secondary)",
+                      marginBottom: "8px"
+                    }}>
+                      Скачиваний: {pl.downloads_count ?? 0}
+                      {pl.policy?.max_downloads && pl.policy.max_downloads > 0
+                        ? ` / ${pl.policy.max_downloads}`
+                        : " / ∞"}
                     </p>
-                    <button
-                      onClick={() => handleRevokeIntent(g.capId)}
-                      disabled={busy}
-                      className="mt-2 w-full px-2 py-1 rounded bg-red-500 text-slate-950 font-semibold hover:bg-red-400 transition disabled:opacity-60"
-                    >
-                      {busy ? "Готовим revoke intent…" : "Отозвать через intent"}
-                    </button>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button
+                        onClick={() => {
+                          if (!selectedFile) return;
+                          const K_file = getOrCreateFileKey(selectedFile.id);
+                          const keyB64 = btoa(String.fromCharCode(...K_file));
+                          const origin = window.location.origin;
+                          const url = `${origin}/mini/public/${pl.token}#k=${encodeURIComponent(keyB64)}`;
+                          navigator.clipboard.writeText(url);
+                        }}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: "var(--mini-radius-sm)",
+                          border: "1px solid var(--mini-border)",
+                          background: "var(--mini-bg-card)",
+                          color: "var(--mini-text)",
+                          fontSize: "12px",
+                          cursor: "pointer"
+                        }}
+                      >
+                        📋 Копировать
+                      </button>
+                      <button
+                        onClick={() => handleRevokePublicLink(pl.token)}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: "var(--mini-radius-sm)",
+                          border: "none",
+                          background: "var(--mini-danger)",
+                          color: "#fff",
+                          fontSize: "12px",
+                          cursor: "pointer"
+                        }}
+                      >
+                        Отозвать
+                      </button>
+                    </div>
                   </div>
-                );
-              })}
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Active Grants */}
+        {selectedFile && currentGrants && (
+          <div style={cardStyle} className="mini-animate-slide-up">
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: "12px"
+            }}>
+              <p style={{
+                fontSize: "14px",
+                fontWeight: 600,
+                color: "var(--mini-text)",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px"
+              }}>
+                🔐 Активные гранты
+              </p>
+              {currentGrants.loading && (
+                <div style={{
+                  width: "14px",
+                  height: "14px",
+                  border: "2px solid var(--mini-border)",
+                  borderTopColor: "var(--mini-primary)",
+                  borderRadius: "50%"
+                }} className="mini-animate-spin" />
+              )}
             </div>
-          ) : currentGrants?.loading ? (
-            <div className="space-y-2">
-              {[1, 2].map((i) => (
-                <div key={i} className="h-16 rounded bg-slate-700 animate-pulse" />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-400">Грантов пока нет.</p>
-          )}
-        </div>
+
+            {currentGrants.error && (
+              <div style={{
+                padding: "10px",
+                background: "var(--mini-danger-light)",
+                borderRadius: "var(--mini-radius)",
+                fontSize: "13px",
+                color: "var(--mini-danger-text)",
+                marginBottom: "12px"
+              }}>
+                {currentGrants.error}
+              </div>
+            )}
+
+            {currentGrants.items.length === 0 ? (
+              <p style={{
+                fontSize: "13px",
+                color: "var(--mini-text-muted)",
+                textAlign: "center",
+                padding: "16px"
+              }}>
+                Грантов пока нет
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {currentGrants.items.map((g) => {
+                  const busy = actionLoading === `revoke:${g.capId}`;
+                  return (
+                    <div key={g.capId} style={{
+                      padding: "12px",
+                      background: "var(--mini-bg-tertiary)",
+                      borderRadius: "var(--mini-radius)"
+                    }}>
+                      <div style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "6px"
+                      }}>
+                        <span style={{
+                          fontSize: "13px",
+                          fontWeight: 500,
+                          color: "var(--mini-text)"
+                        }}>
+                          {truncate(g.grantee, 14)}
+                        </span>
+                        <span style={{
+                          padding: "2px 8px",
+                          borderRadius: "var(--mini-radius-full)",
+                          background: g.status === "confirmed" ? "var(--mini-success-light)" : "var(--mini-bg-card)",
+                          color: g.status === "confirmed" ? "var(--mini-success)" : "var(--mini-text-muted)",
+                          fontSize: "11px",
+                          fontWeight: 500,
+                          textTransform: "uppercase"
+                        }}>
+                          {g.status}
+                        </span>
+                      </div>
+                      <p style={{
+                        fontSize: "11px",
+                        color: "var(--mini-text-muted)",
+                        fontFamily: "monospace",
+                        marginBottom: "6px"
+                      }}>
+                        {truncate(g.capId, 24)}
+                      </p>
+                      <p style={{
+                        fontSize: "12px",
+                        color: "var(--mini-text-secondary)",
+                        marginBottom: "10px"
+                      }}>
+                        DL {g.usedDownloads}/{g.maxDownloads} · до {formatDate(g.expiresAt)}
+                      </p>
+                      <button
+                        onClick={() => handleRevokeIntent(g.capId)}
+                        disabled={busy}
+                        style={{
+                          width: "100%",
+                          padding: "8px",
+                          borderRadius: "var(--mini-radius-sm)",
+                          border: "none",
+                          background: busy ? "var(--mini-bg-card)" : "var(--mini-danger)",
+                          color: busy ? "var(--mini-text-muted)" : "#fff",
+                          fontSize: "13px",
+                          fontWeight: 500,
+                          cursor: busy ? "not-allowed" : "pointer"
+                        }}
+                      >
+                        {busy ? "Готовим intent..." : "❌ Отозвать"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Public Link Modal */}
+      {showPublicModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "var(--mini-bg-modal)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+            padding: "16px"
+          }}
+          onClick={(e) => e.target === e.currentTarget && setShowPublicModal(false)}
+          className="mini-animate-fade-in"
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "340px",
+              background: "var(--mini-bg-card)",
+              borderRadius: "var(--mini-radius-lg)",
+              boxShadow: "var(--mini-shadow-xl)",
+              padding: "20px"
+            }}
+            className="mini-animate-scale-in"
+          >
+            <p style={{
+              fontSize: "16px",
+              fontWeight: 600,
+              color: "var(--mini-text)",
+              marginBottom: "8px"
+            }}>
+              Создать публичную ссылку
+            </p>
+            <p style={{
+              fontSize: "13px",
+              color: "var(--mini-text-secondary)",
+              marginBottom: "16px"
+            }}>
+              Будет создана ссылка с безлимитными скачиваниями для файла «{selectedFile?.name || ""}»
+            </p>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                onClick={handleCreatePublicLink}
+                disabled={creatingPublic}
+                style={{
+                  flex: 1,
+                  padding: "12px",
+                  borderRadius: "var(--mini-radius)",
+                  border: "none",
+                  background: creatingPublic ? "var(--mini-bg-tertiary)" : "var(--mini-primary)",
+                  color: creatingPublic ? "var(--mini-text-muted)" : "#fff",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  cursor: creatingPublic ? "not-allowed" : "pointer"
+                }}
+              >
+                {creatingPublic ? "Создаём..." : "Создать"}
+              </button>
+              <button
+                onClick={() => setShowPublicModal(false)}
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: "var(--mini-radius)",
+                  border: "1px solid var(--mini-border)",
+                  background: "var(--mini-bg-tertiary)",
+                  color: "var(--mini-text)",
+                  fontSize: "14px",
+                  cursor: "pointer"
+                }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -539,39 +972,86 @@ function IntentCallout({ intent, openLink }: { intent: IntentPreview; openLink: 
   const expiresAt = new Date(intent.createdAt + intent.ttl * 1000);
   const expiresAtLabel = expiresAt.toLocaleTimeString("ru-RU", { timeStyle: "short" });
   const expiryLabel = expired
-    ? "intent истёк, создайте новый"
-    : `истекает через ≈${minutes} мин (до ${expiresAtLabel})`;
+    ? "Intent истёк, создайте новый"
+    : `≈${minutes} мин (до ${expiresAtLabel})`;
+
   return (
-    <div className="border border-sky-500/40 bg-sky-900/20 rounded p-3 space-y-1 text-sm text-slate-100">
-      <p className="font-semibold text-sky-200">Intent готов</p>
-      <p className="text-xs text-slate-300 break-all">{intent.url}</p>
-      <p className="text-xs text-slate-400">
-        Действие: {intent.action} · {expiryLabel} · одноразовый.
+    <div style={{
+      marginTop: "12px",
+      padding: "14px",
+      background: expired ? "var(--mini-danger-light)" : "var(--mini-primary-light)",
+      borderRadius: "var(--mini-radius)",
+      border: `1px solid ${expired ? "var(--mini-danger)" : "var(--mini-primary)"}`
+    }} className="mini-animate-scale-in">
+      <p style={{
+        fontSize: "13px",
+        fontWeight: 600,
+        color: expired ? "var(--mini-danger-text)" : "var(--mini-primary)",
+        marginBottom: "8px",
+        display: "flex",
+        alignItems: "center",
+        gap: "6px"
+      }}>
+        {expired ? "⏰ Intent истёк" : "✓ Intent готов"}
       </p>
-      <div className="flex gap-2">
+      <p style={{
+        fontSize: "12px",
+        color: "var(--mini-text-secondary)",
+        marginBottom: "6px",
+        fontFamily: "monospace",
+        wordBreak: "break-all"
+      }}>
+        {intent.url}
+      </p>
+      <p style={{
+        fontSize: "12px",
+        color: "var(--mini-text-muted)",
+        marginBottom: "12px"
+      }}>
+        {intent.action === "share" ? "Шаринг" : "Отзыв"} · {expiryLabel} · одноразовый
+      </p>
+      <div style={{ display: "flex", gap: "8px" }}>
         <button
-          className="px-3 py-1 rounded bg-sky-500 text-slate-950 font-semibold hover:bg-sky-400 transition disabled:opacity-60"
-          onClick={() => {
-            if (expired) return;
-            openLink(intent.url);
-          }}
+          onClick={() => !expired && openLink(intent.url)}
           disabled={expired}
+          style={{
+            flex: 1,
+            padding: "10px",
+            borderRadius: "var(--mini-radius-sm)",
+            border: "none",
+            background: expired ? "var(--mini-bg-tertiary)" : "var(--mini-primary)",
+            color: expired ? "var(--mini-text-muted)" : "#fff",
+            fontSize: "13px",
+            fontWeight: 500,
+            cursor: expired ? "not-allowed" : "pointer"
+          }}
         >
           Открыть
         </button>
         <button
-          className="px-3 py-1 rounded border border-slate-600 text-slate-100 hover:border-slate-400 transition disabled:opacity-60"
-          onClick={() => {
-            if (expired) return;
-            navigator.clipboard.writeText(intent.url);
-          }}
+          onClick={() => !expired && navigator.clipboard.writeText(intent.url)}
           disabled={expired}
+          style={{
+            padding: "10px 16px",
+            borderRadius: "var(--mini-radius-sm)",
+            border: "1px solid var(--mini-border)",
+            background: "var(--mini-bg-card)",
+            color: expired ? "var(--mini-text-muted)" : "var(--mini-text)",
+            fontSize: "13px",
+            cursor: expired ? "not-allowed" : "pointer"
+          }}
         >
-          Скопировать
+          📋
         </button>
       </div>
       {expired && (
-        <p className="text-xs text-red-300">Intent истёк — запросите новый, они одноразовые.</p>
+        <p style={{
+          marginTop: "10px",
+          fontSize: "12px",
+          color: "var(--mini-danger-text)"
+        }}>
+          Intent истёк — создайте новый (они одноразовые)
+        </p>
       )}
     </div>
   );

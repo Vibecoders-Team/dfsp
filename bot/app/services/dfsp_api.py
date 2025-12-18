@@ -53,6 +53,36 @@ class BotFileListResponse(BaseModel):
     cursor: str | None = None
 
 
+async def get_bot_files(chat_id: int, limit: int = 10, cursor: str | None = None) -> BotFileListResponse:
+    """
+    Получить список файлов пользователя.
+
+    GET {DFSP_API_URL}/bot/files
+    Headers: X-TG-Chat-Id
+    Query: limit, cursor
+    """
+    api_url = str(settings.DFSP_API_URL).rstrip("/")
+    url = f"{api_url}/bot/files"
+    params: dict[str, Any] = {"limit": limit}
+    if cursor:
+        params["cursor"] = cursor
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            url,
+            headers={"X-TG-Chat-Id": str(chat_id)},
+            params=params,
+        )
+
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise ValueError(f"DFSP GET /bot/files failed: {exc}") from exc
+
+    data = resp.json()
+    return BotFileListResponse.model_validate(data)
+
+
 async def get_bot_profile(chat_id: int) -> BotProfile | None:
     """
     Запрос профиля пользователя у бэкенда по Telegram chat_id.

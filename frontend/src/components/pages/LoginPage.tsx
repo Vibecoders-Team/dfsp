@@ -90,11 +90,11 @@ export default function LoginPage() {
   const isTonLoading = tonState === 'connecting' || tonState === 'signing';
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
-            <Key className="h-8 w-8 text-blue-600" />
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-4">
+            <Key className="h-8 w-8 text-primary" />
           </div>
           <h1 className="mb-2">Login</h1>
           <div className="flex flex-col items-center gap-3 mt-2">
@@ -116,14 +116,14 @@ export default function LoginPage() {
               </Alert>
             )}
           </div>
-          <p className="text-gray-600">
-            {keysExist === false 
+          <p className="text-muted-foreground">
+            {keysExist === false
               ? 'No local keys found — you can still login with MetaMask/WalletConnect'
               : 'Sign in with your selected signer'}
           </p>
         </div>
 
-        <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
+        <div className="bg-card p-8 rounded-lg shadow-sm border border-border">
           <form onSubmit={handleSubmit} className="space-y-6">
             {keysExist === false && (
               <Alert>

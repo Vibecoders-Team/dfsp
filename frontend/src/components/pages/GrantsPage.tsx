@@ -163,13 +163,13 @@ export default function GrantsPage() {
         )}
 
         {loading ? (
-          <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
-            <div className="flex items-center gap-3 text-sm text-gray-700">
-              <div className="h-5 w-5 border-2 border-gray-300 border-b-transparent rounded-full animate-spin" />
+          <div className="bg-card rounded-lg border border-border p-6 space-y-4">
+            <div className="flex items-center gap-3 text-sm text-foreground">
+              <div className="h-5 w-5 border-2 border-muted border-b-transparent rounded-full animate-spin" />
               <div>
                 <div>Loading grants…</div>
                 {isSlowConnection && (
-                  <div className="text-xs text-gray-500">Slow connection {effectiveType || '3G/2G'} detected, please wait.</div>
+                  <div className="text-xs text-muted-foreground">Slow connection {effectiveType || '3G/2G'} detected, please wait.</div>
                 )}
               </div>
             </div>
@@ -180,13 +180,13 @@ export default function GrantsPage() {
             </div>
           </div>
         ) : filteredGrants.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-            <Share2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <div className="text-center py-12 bg-card rounded-lg border border-border">
+            <Share2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3>No grants</h3>
-            <p className="text-gray-600">{role === 'received' ? 'When someone shares a file with you, it will appear here' : 'When you share files, they will appear here'}</p>
+            <p className="text-muted-foreground">{role === 'received' ? 'When someone shares a file with you, it will appear here' : 'When you share files, they will appear here'}</p>
           </div>
         ) : (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="bg-card rounded-lg border border-border overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>

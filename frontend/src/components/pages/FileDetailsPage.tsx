@@ -394,9 +394,9 @@ export default function FileDetailsPage() {
           <CardContent>
             <div className="grid grid-cols-2 gap-4 items-center">
               <div>
-                <div className="text-sm text-gray-500 mb-1">File ID</div>
+                <div className="text-sm text-muted-foreground mb-1">File ID</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded whitespace-nowrap">{file.id}</code>
+                  <code className="text-sm bg-muted px-2 py-1 rounded whitespace-nowrap">{file.id}</code>
                   <Button variant="ghost" size="sm" onClick={() => copyToClipboard(file.id, 'File ID')}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
@@ -404,14 +404,14 @@ export default function FileDetailsPage() {
               </div>
 
               <div>
-                <div className="text-sm text-gray-500 mb-1">Size</div>
+                <div className="text-sm text-muted-foreground mb-1">Size</div>
                 <div>{formatSize(file.size)}</div>
               </div>
 
               <div>
-                <div className="text-sm text-gray-500 mb-1">CID</div>
+                <div className="text-sm text-muted-foreground mb-1">CID</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded whitespace-nowrap">{file.cid || ''}</code>
+                  <code className="text-sm bg-muted px-2 py-1 rounded whitespace-nowrap">{file.cid || ''}</code>
                   <Button variant="ghost" size="sm" onClick={() => copyToClipboard(file.cid || '', 'CID')}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
@@ -419,14 +419,14 @@ export default function FileDetailsPage() {
               </div>
 
               <div>
-                <div className="text-sm text-gray-500 mb-1">Created</div>
+                <div className="text-sm text-muted-foreground mb-1">Created</div>
                 <div>{formatDate(file.created)}</div>
               </div>
 
               <div className="col-span-2">
-                <div className="text-sm text-gray-500 mb-1">Checksum</div>
+                <div className="text-sm text-muted-foreground mb-1">Checksum</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded whitespace-nowrap">{file.checksum}</code>
+                  <code className="text-sm bg-muted px-2 py-1 rounded whitespace-nowrap">{file.checksum}</code>
                   <Button variant="ghost" size="sm" onClick={() => copyToClipboard(file.checksum || '', 'Checksum')}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
@@ -434,14 +434,14 @@ export default function FileDetailsPage() {
               </div>
 
               <div>
-                <div className="text-sm text-gray-500 mb-1">MIME Type</div>
+                <div className="text-sm text-muted-foreground mb-1">MIME Type</div>
                 <div className="text-sm">{file.mimeType || '-'}</div>
               </div>
 
               <div>
-                <div className="text-sm text-gray-500 mb-1">Owner</div>
+                <div className="text-sm text-muted-foreground mb-1">Owner</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded whitespace-nowrap">{truncate(file.owner || '-', 16)}</code>
+                  <code className="text-sm bg-muted px-2 py-1 rounded whitespace-nowrap">{truncate(file.owner || '-', 16)}</code>
                   <Button variant="ghost" size="sm" onClick={() => copyToClipboard(file.owner || '', 'Owner address')}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>

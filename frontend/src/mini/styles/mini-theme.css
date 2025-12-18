@@ -1,0 +1,240 @@
+/* Mini App Theme System */
+
+/* CSS Variables for Mini App */
+:root {
+  /* Light theme (default) */
+  --mini-bg: #f8fafc;
+  --mini-bg-secondary: #ffffff;
+  --mini-bg-tertiary: #f1f5f9;
+  --mini-bg-hover: #e2e8f0;
+  --mini-bg-active: #dbeafe;
+  --mini-bg-card: #ffffff;
+  --mini-bg-card-hover: #f8fafc;
+  --mini-bg-modal: rgba(0, 0, 0, 0.5);
+
+  --mini-text: #0f172a;
+  --mini-text-secondary: #475569;
+  --mini-text-muted: #94a3b8;
+  --mini-text-inverse: #ffffff;
+
+  --mini-border: #e2e8f0;
+  --mini-border-light: #f1f5f9;
+  --mini-border-focus: #3b82f6;
+
+  --mini-primary: #3b82f6;
+  --mini-primary-hover: #2563eb;
+  --mini-primary-light: #dbeafe;
+  --mini-primary-text: #ffffff;
+
+  --mini-success: #10b981;
+  --mini-success-light: #d1fae5;
+  --mini-success-text: #065f46;
+
+  --mini-warning: #f59e0b;
+  --mini-warning-light: #fef3c7;
+  --mini-warning-text: #92400e;
+
+  --mini-danger: #ef4444;
+  --mini-danger-light: #fee2e2;
+  --mini-danger-text: #991b1b;
+
+  --mini-accent: #8b5cf6;
+  --mini-accent-light: #ede9fe;
+
+  --mini-gradient-primary: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  --mini-gradient-success: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  --mini-gradient-card: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+
+  --mini-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --mini-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --mini-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --mini-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  --mini-radius-sm: 0.375rem;
+  --mini-radius: 0.5rem;
+  --mini-radius-lg: 0.75rem;
+  --mini-radius-xl: 1rem;
+  --mini-radius-full: 9999px;
+
+  --mini-transition: 0.2s ease;
+  --mini-transition-fast: 0.15s ease;
+}
+
+/* Dark theme */
+.mini-dark {
+  --mini-bg: #0f172a;
+  --mini-bg-secondary: #1e293b;
+  --mini-bg-tertiary: #334155;
+  --mini-bg-hover: #334155;
+  --mini-bg-active: #1e3a5f;
+  --mini-bg-card: #1e293b;
+  --mini-bg-card-hover: #273548;
+  --mini-bg-modal: rgba(0, 0, 0, 0.7);
+
+  --mini-text: #f1f5f9;
+  --mini-text-secondary: #cbd5e1;
+  --mini-text-muted: #64748b;
+  --mini-text-inverse: #0f172a;
+
+  --mini-border: #334155;
+  --mini-border-light: #1e293b;
+  --mini-border-focus: #60a5fa;
+
+  --mini-primary: #60a5fa;
+  --mini-primary-hover: #3b82f6;
+  --mini-primary-light: #1e3a5f;
+  --mini-primary-text: #0f172a;
+
+  --mini-success: #34d399;
+  --mini-success-light: #064e3b;
+  --mini-success-text: #a7f3d0;
+
+  --mini-warning: #fbbf24;
+  --mini-warning-light: #78350f;
+  --mini-warning-text: #fde68a;
+
+  --mini-danger: #f87171;
+  --mini-danger-light: #7f1d1d;
+  --mini-danger-text: #fecaca;
+
+  --mini-accent: #a78bfa;
+  --mini-accent-light: #4c1d95;
+
+  --mini-gradient-primary: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
+  --mini-gradient-success: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  --mini-gradient-card: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+
+  --mini-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --mini-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --mini-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --mini-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+}
+
+/* Light theme explicit class */
+.mini-light {
+  /* Uses :root defaults */
+}
+
+/* Mini App Base Styles */
+.mini-app {
+  min-height: 100vh;
+  background: var(--mini-bg);
+  color: var(--mini-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Animation Keyframes */
+@keyframes mini-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes mini-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mini-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes mini-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes mini-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes mini-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Utility Classes */
+.mini-animate-fade-in {
+  animation: mini-fade-in 0.3s ease-out;
+}
+
+.mini-animate-slide-up {
+  animation: mini-slide-up 0.3s ease-out;
+}
+
+.mini-animate-scale-in {
+  animation: mini-scale-in 0.2s ease-out;
+}
+
+.mini-animate-pulse {
+  animation: mini-pulse 2s ease-in-out infinite;
+}
+
+.mini-animate-spin {
+  animation: mini-spin 1s linear infinite;
+}
+
+/* Skeleton loader */
+.mini-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--mini-bg-tertiary) 25%,
+    var(--mini-bg-hover) 50%,
+    var(--mini-bg-tertiary) 75%
+  );
+  background-size: 200% 100%;
+  animation: mini-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--mini-radius);
+}
+
+/* Scrollbar Styles */
+.mini-app ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.mini-app ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mini-app ::-webkit-scrollbar-thumb {
+  background: var(--mini-border);
+  border-radius: var(--mini-radius-full);
+}
+
+.mini-app ::-webkit-scrollbar-thumb:hover {
+  background: var(--mini-text-muted);
+}
+
+/* Focus Ring */
+.mini-focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--mini-bg), 0 0 0 4px var(--mini-border-focus);
+}
+
+/* Glass Effect */
+.mini-glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.mini-dark .mini-glass {
+  background: rgba(30, 41, 59, 0.8);
+}
+

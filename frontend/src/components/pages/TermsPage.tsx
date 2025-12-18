@@ -4,8 +4,8 @@ export default function TermsPage() {
   return (
     <Layout publicDoc>
       <div className="max-w-5xl mx-auto">
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 sm:p-10 md:p-12">
-          <div className="prose max-w-none">
+        <div className="bg-card border border-border rounded-xl shadow-sm p-8 sm:p-10 md:p-12">
+          <div className="prose dark:prose-invert max-w-none">
             <h1 className="mb-4 text-3xl font-semibold tracking-tight">DFSP — Terms of Use</h1>
             <h2>1. Who we are</h2>
             <p>DFSP (“we”, “us”, “our”) provides a decentralized file storage and proof platform. We do not custody user private keys and cannot recover access to user wallets.</p>

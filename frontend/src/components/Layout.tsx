@@ -1,7 +1,8 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from './useAuth';
+import { useTheme } from './ThemeContext';
 import { Button } from './ui/button';
-import { FileText, Key, LogOut, Settings, Share2 } from 'lucide-react';
+import { FileText, Key, LogOut, Settings, Share2, Sun, Moon } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +23,13 @@ interface LayoutProps {
 export default function Layout({ children, publicDoc }: LayoutProps) {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const { resolvedTheme, setTheme, theme } = useTheme();
+
+  const toggleTheme = () => {
+    if (theme === 'light') setTheme('dark');
+    else if (theme === 'dark') setTheme('system');
+    else setTheme('light');
+  };
 
   const isActive = (path: string) => {
     const p = location.pathname;
@@ -36,8 +44,8 @@ export default function Layout({ children, publicDoc }: LayoutProps) {
 
   if (publicDoc) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b border-gray-200">
+      <div className="min-h-screen bg-background">
+        <header className="bg-card border-b border-border">
           <div className="max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-end">
             <Link to="/register">
               <Button variant="outline" size="sm">Back to register</Button>
@@ -52,14 +60,14 @@ export default function Layout({ children, publicDoc }: LayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200">
+    <div className="min-h-screen bg-background">
+      <header className="bg-card border-b border-border">
         <div className="max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-8">
               <Link to="/files" className="flex items-center gap-2">
-                <Key className="h-6 w-6 text-blue-600" />
-                <span className="text-xl">DFSP</span>
+                <Key className="h-6 w-6 text-primary" />
+                <span className="text-xl font-semibold text-foreground">DFSP</span>
               </Link>
 
               <nav className="flex gap-1">
@@ -87,14 +95,28 @@ export default function Layout({ children, publicDoc }: LayoutProps) {
             </div>
 
             <div className="flex items-center gap-4">
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-muted-foreground">
                 {user?.displayName && <span className="mr-2">{user.displayName}</span>}
-                <Link to="/settings/profile" className="text-xs text-blue-600 hover:underline" title="Open profile">
+                <Link to="/settings/profile" className="text-xs text-primary hover:underline" title="Open profile">
                   {user?.address.slice(0, 6)}...{user?.address.slice(-4)}
                 </Link>
               </div>
               <KeyLockIndicator />
               <AgentSelector compact={!!user} />
+
+              {/* Theme Toggle Button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleTheme}
+                title={`Theme: ${theme}`}
+              >
+                {resolvedTheme === 'dark' ? (
+                  <Moon className="h-4 w-4" />
+                ) : (
+                  <Sun className="h-4 w-4" />
+                )}
+              </Button>
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -111,8 +133,11 @@ export default function Layout({ children, publicDoc }: LayoutProps) {
                   <DropdownMenuItem asChild>
                     <Link to="/settings/keys">Keys</Link>
                   </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/settings/appearance">Appearance</Link>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={logout} className="text-red-600">
+                  <DropdownMenuItem onClick={logout} className="text-destructive">
                     <LogOut className="h-4 w-4 mr-2" />
                     Logout
                   </DropdownMenuItem>

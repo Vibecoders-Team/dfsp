@@ -65,16 +65,16 @@ export default function IntentPage() {
 
   return (
     <Layout>
-      <div className="max-w-2xl mx-auto bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+      <div className="max-w-2xl mx-auto bg-card rounded-lg border border-border p-6 space-y-4">
         <div>
-          <p className="text-sm text-gray-500 uppercase tracking-wide mb-1">Intent</p>
+          <p className="text-sm text-muted-foreground uppercase tracking-wide mb-1">Intent</p>
           <h1 className="text-2xl font-semibold">Handoff</h1>
-          <p className="text-sm text-gray-600 mt-1">Интенты одноразовые и истекают через ~15 минут.</p>
+          <p className="text-sm text-muted-foreground mt-1">Интенты одноразовые и истекают через ~15 минут.</p>
         </div>
 
         {status === "loading" && (
-          <div className="flex items-center gap-2 text-gray-700">
-            <span className="h-4 w-4 rounded-full border-b-2 border-gray-900 animate-spin" />
+          <div className="flex items-center gap-2 text-foreground">
+            <span className="h-4 w-4 rounded-full border-b-2 border-primary animate-spin" />
             <span>Подтверждаем intent…</span>
           </div>
         )}
@@ -96,8 +96,8 @@ export default function IntentPage() {
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 mb-1">Payload</p>
-              <pre className="text-xs bg-gray-900 text-gray-100 rounded p-3 overflow-auto max-h-64">{payloadStr}</pre>
+              <p className="text-xs text-muted-foreground mb-1">Payload</p>
+              <pre className="text-xs bg-muted text-foreground rounded p-3 overflow-auto max-h-64">{payloadStr}</pre>
             </div>
             <Link to="/files" className="inline-flex px-3 py-2 rounded bg-gray-900 text-white text-sm">
               Открыть список файлов

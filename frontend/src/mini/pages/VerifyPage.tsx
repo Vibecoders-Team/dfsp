@@ -6,6 +6,14 @@ import { useSearchParams } from "react-router-dom";
 
 type VerifyState = "idle" | "loading" | "ready" | "error";
 
+const cardStyle = {
+  background: "var(--mini-bg-card)",
+  border: "1px solid var(--mini-border)",
+  borderRadius: "var(--mini-radius-lg)",
+  padding: "16px",
+  boxShadow: "var(--mini-shadow-sm)"
+};
+
 export function MiniVerifyPage() {
   const { session } = useMiniAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -66,79 +74,217 @@ export function MiniVerifyPage() {
   const selectedOptions = useMemo(() => files.slice(0, 6), [files]);
 
   return (
-    <div className="space-y-4">
-      <section className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-2">
-        <p className="text-lg font-semibold">Verify</p>
-        <p className="text-sm text-slate-300">
-          Сверка off-chain (БД) и on-chain метаданных: CID, keccak256 checksum, размер и mime. match=true при совпадении
-          checksum.
-        </p>
-      </section>
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* Header Card */}
+      <div style={{
+        ...cardStyle,
+        background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+        color: "#fff",
+        position: "relative",
+        overflow: "hidden"
+      }} className="mini-animate-slide-up">
+        <div style={{
+          position: "absolute",
+          top: "-20px",
+          right: "-20px",
+          width: "80px",
+          height: "80px",
+          background: "rgba(255,255,255,0.1)",
+          borderRadius: "50%"
+        }} />
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <p style={{
+            fontSize: "18px",
+            fontWeight: 600,
+            marginBottom: "8px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px"
+          }}>
+            ✓ Проверка файла
+          </p>
+          <p style={{
+            fontSize: "14px",
+            opacity: 0.9,
+            lineHeight: 1.5
+          }}>
+            Сверка off-chain (БД) и on-chain метаданных: CID, checksum, размер и MIME
+          </p>
+        </div>
+      </div>
 
-      <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
-        <div className="flex flex-col sm:flex-row gap-2">
+      {/* Search Card */}
+      <div style={cardStyle} className="mini-animate-slide-up">
+        <div style={{
+          display: "flex",
+          gap: "10px",
+          marginBottom: "12px"
+        }}>
           <input
             value={fileId}
             onChange={(e) => setFileId(e.target.value)}
             placeholder="0x… fileId"
-            className="flex-1 rounded bg-slate-900 border border-slate-700 px-3 py-2 text-slate-100 placeholder:text-slate-500"
+            style={{
+              flex: 1,
+              padding: "12px 14px",
+              borderRadius: "var(--mini-radius)",
+              border: "1px solid var(--mini-border)",
+              background: "var(--mini-bg-tertiary)",
+              color: "var(--mini-text)",
+              fontSize: "14px",
+              outline: "none",
+              transition: "var(--mini-transition)"
+            }}
           />
           <button
             onClick={handleVerify}
             disabled={verifyState === "loading"}
-            className="px-4 py-2 rounded bg-sky-500 text-slate-950 font-semibold hover:bg-sky-400 transition disabled:opacity-60"
+            style={{
+              padding: "12px 20px",
+              borderRadius: "var(--mini-radius)",
+              border: "none",
+              background: verifyState === "loading" ? "var(--mini-bg-tertiary)" : "var(--mini-success)",
+              color: verifyState === "loading" ? "var(--mini-text-muted)" : "#fff",
+              fontSize: "14px",
+              fontWeight: 500,
+              cursor: verifyState === "loading" ? "not-allowed" : "pointer",
+              transition: "var(--mini-transition)",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px"
+            }}
           >
-            {verifyState === "loading" ? "Проверяем…" : "Проверить"}
+            {verifyState === "loading" ? (
+              <>
+                <div style={{
+                  width: "14px",
+                  height: "14px",
+                  border: "2px solid var(--mini-border)",
+                  borderTopColor: "var(--mini-text)",
+                  borderRadius: "50%"
+                }} className="mini-animate-spin" />
+                <span>...</span>
+              </>
+            ) : (
+              <>✓ Проверить</>
+            )}
           </button>
         </div>
+
         {loadingFiles ? (
-          <p className="text-xs text-slate-500">Подгружаем ваши файлы…</p>
-        ) : (
-          selectedOptions.length > 0 && (
-            <div className="text-xs text-slate-400">
-              Быстрый выбор:{" "}
-              {selectedOptions.map((f, idx) => (
-                <button
-                  key={f.id}
-                  onClick={() => {
-                    setFileId(f.id);
-                    setSearchParams({ fileId: f.id });
-                  }}
-                  className="underline hover:text-sky-300 mr-2"
-                >
-                  {f.name || `Файл ${idx + 1}`}
-                </button>
-              ))}
-            </div>
-          )
+          <p style={{
+            fontSize: "12px",
+            color: "var(--mini-text-muted)"
+          }}>
+            Загружаем ваши файлы...
+          </p>
+        ) : selectedOptions.length > 0 && (
+          <div style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "6px"
+          }}>
+            <span style={{
+              fontSize: "12px",
+              color: "var(--mini-text-muted)",
+              marginRight: "4px"
+            }}>
+              Быстрый выбор:
+            </span>
+            {selectedOptions.map((f, idx) => (
+              <button
+                key={f.id}
+                onClick={() => {
+                  setFileId(f.id);
+                  setSearchParams({ fileId: f.id });
+                }}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: "var(--mini-radius-full)",
+                  border: "1px solid var(--mini-border)",
+                  background: fileId === f.id ? "var(--mini-primary-light)" : "var(--mini-bg-tertiary)",
+                  color: fileId === f.id ? "var(--mini-primary)" : "var(--mini-text-secondary)",
+                  fontSize: "12px",
+                  cursor: "pointer",
+                  transition: "var(--mini-transition)"
+                }}
+              >
+                {f.name || `Файл ${idx + 1}`}
+              </button>
+            ))}
+          </div>
         )}
-        {error && <div className="text-sm text-red-300 border border-red-500/50 rounded p-2">{error}</div>}
+
+        {error && (
+          <div style={{
+            marginTop: "12px",
+            padding: "10px 12px",
+            background: "var(--mini-danger-light)",
+            borderRadius: "var(--mini-radius)",
+            fontSize: "13px",
+            color: "var(--mini-danger-text)"
+          }}>
+            {error}
+          </div>
+        )}
       </div>
 
       {verifyState === "ready" && result && (
-        <div className="grid md:grid-cols-3 gap-3">
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px"
+        }}>
           <StatusCard match={match} onchain={onchain ?? null} offchain={offchain ?? null} />
-          <MetaCard title="On-chain" meta={onchain} />
-          <MetaCard title="Off-chain" meta={offchain} />
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, 1fr)",
+            gap: "12px"
+          }}>
+            <MetaCard title="On-chain" meta={onchain} />
+            <MetaCard title="Off-chain" meta={offchain} />
+          </div>
         </div>
       )}
 
       {verifyState === "error" && !result && (
-        <div className="bg-red-900/30 border border-red-500/50 text-red-100 rounded-lg p-3 text-sm">
-          {error || "Не удалось выполнить проверку."}
+        <div style={{
+          ...cardStyle,
+          background: "var(--mini-danger-light)",
+          borderColor: "var(--mini-danger)"
+        }}>
+          <p style={{
+            fontSize: "14px",
+            color: "var(--mini-danger-text)"
+          }}>
+            {error || "Не удалось выполнить проверку."}
+          </p>
         </div>
       )}
 
       {result && (
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-2">
-          <p className="text-sm text-slate-200">
+        <div style={cardStyle} className="mini-animate-slide-up">
+          <p style={{
+            fontSize: "14px",
+            color: "var(--mini-text-secondary)",
+            marginBottom: "12px"
+          }}>
             Детальная проверка и загрузка локального файла доступна на основном вебе.
           </p>
           <button
             onClick={() => openWebAppLink(`/verify/${fileId}`)}
-            className="px-4 py-2 rounded border border-slate-600 text-slate-100 hover:border-slate-400 transition"
+            style={{
+              padding: "10px 20px",
+              borderRadius: "var(--mini-radius)",
+              border: "1px solid var(--mini-border)",
+              background: "var(--mini-bg-tertiary)",
+              color: "var(--mini-text)",
+              fontSize: "14px",
+              cursor: "pointer",
+              transition: "var(--mini-transition)"
+            }}
           >
-            Открыть /verify/{truncate(fileId, 14)} на вебе
+            Открыть /verify/{truncate(fileId, 14)} на вебе →
           </button>
         </div>
       )}
@@ -160,38 +306,99 @@ function StatusCard({
     if (!offchain && onchain) return "Нет off-chain данных по файлу.";
     if (!onchain && !offchain) return "Метаданные отсутствуют.";
     if (!match) return "Checksum не совпадает между on-chain и off-chain.";
-    return "Checksum совпадает.";
+    return "Checksum совпадает — файл верифицирован.";
   })();
+
   return (
     <div
-      className={`rounded-lg border p-4 ${
-        match
-          ? "border-emerald-500/60 bg-emerald-900/20 text-emerald-50"
-          : "border-amber-500/60 bg-amber-900/20 text-amber-50"
-      }`}
+      style={{
+        ...cardStyle,
+        background: match ? "var(--mini-success-light)" : "var(--mini-warning-light)",
+        borderColor: match ? "var(--mini-success)" : "var(--mini-warning)",
+        textAlign: "center",
+        padding: "24px"
+      }}
+      className="mini-animate-scale-in"
     >
-      <p className="text-sm uppercase tracking-wide">{match ? "match=true" : "match=false"}</p>
-      <p className="text-lg font-semibold">{match ? "Checksum совпадает" : "Отличается или отсутствует запись"}</p>
-      <p className="text-xs mt-1 opacity-80">{hint}</p>
-      <p className="text-xs mt-1 opacity-60">Сравниваем keccak256 checksum off-chain записи с on-chain.</p>
+      <div style={{
+        width: "56px",
+        height: "56px",
+        borderRadius: "50%",
+        background: match ? "var(--mini-success)" : "var(--mini-warning)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        margin: "0 auto 12px",
+        fontSize: "24px"
+      }}>
+        {match ? "✓" : "⚠"}
+      </div>
+      <p style={{
+        fontSize: "11px",
+        fontWeight: 600,
+        textTransform: "uppercase",
+        letterSpacing: "0.5px",
+        color: match ? "var(--mini-success-text)" : "var(--mini-warning-text)",
+        marginBottom: "4px"
+      }}>
+        {match ? "match=true" : "match=false"}
+      </p>
+      <p style={{
+        fontSize: "16px",
+        fontWeight: 600,
+        color: match ? "var(--mini-success-text)" : "var(--mini-warning-text)",
+        marginBottom: "8px"
+      }}>
+        {match ? "Checksum совпадает" : "Отличается или отсутствует"}
+      </p>
+      <p style={{
+        fontSize: "13px",
+        color: match ? "var(--mini-success-text)" : "var(--mini-warning-text)",
+        opacity: 0.8
+      }}>
+        {hint}
+      </p>
     </div>
   );
 }
 
 function MetaCard({ title, meta }: { title: string; meta: MiniVerifyResponse["onchain"] | null | undefined }) {
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-800 p-4 space-y-2">
-      <p className="text-sm font-semibold text-slate-100">{title}</p>
+    <div style={{
+      ...cardStyle,
+      padding: "14px"
+    }} className="mini-animate-slide-up">
+      <p style={{
+        fontSize: "13px",
+        fontWeight: 600,
+        color: "var(--mini-text)",
+        marginBottom: "12px",
+        display: "flex",
+        alignItems: "center",
+        gap: "6px"
+      }}>
+        {title === "On-chain" ? "⛓️" : "💾"} {title}
+      </p>
       {meta ? (
-        <div className="space-y-1 text-xs text-slate-200">
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "8px"
+        }}>
           <Row label="CID" value={meta.cid || "-"} />
-          <Row label="Checksum" value={meta.checksum || "-"} monospace />
+          <Row label="Checksum" value={truncate(meta.checksum || "-", 16)} monospace />
           <Row label="Size" value={formatBytes(meta.size)} />
           <Row label="MIME" value={meta.mime || "-"} />
           {meta.name && <Row label="Name" value={meta.name} />}
         </div>
       ) : (
-        <p className="text-sm text-slate-500">Нет данных.</p>
+        <p style={{
+          fontSize: "13px",
+          color: "var(--mini-text-muted)",
+          fontStyle: "italic"
+        }}>
+          Нет данных
+        </p>
       )}
     </div>
   );
@@ -199,9 +406,28 @@ function MetaCard({ title, meta }: { title: string; meta: MiniVerifyResponse["on
 
 function Row({ label, value, monospace }: { label: string; value: string; monospace?: boolean }) {
   return (
-    <div className="flex justify-between gap-3">
-      <span className="text-slate-500">{label}</span>
-      <span className={`text-right ${monospace ? "font-mono break-all" : ""}`}>{value}</span>
+    <div style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      gap: "8px"
+    }}>
+      <span style={{
+        fontSize: "12px",
+        color: "var(--mini-text-muted)",
+        flexShrink: 0
+      }}>
+        {label}
+      </span>
+      <span style={{
+        fontSize: "12px",
+        color: "var(--mini-text)",
+        textAlign: "right",
+        wordBreak: "break-all",
+        fontFamily: monospace ? "monospace" : "inherit"
+      }}>
+        {value}
+      </span>
     </div>
   );
 }

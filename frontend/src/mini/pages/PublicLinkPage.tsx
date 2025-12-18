@@ -140,19 +140,62 @@ export function MiniPublicLinkPage() {
     }
   };
 
+  const cardStyle = {
+    background: "var(--mini-bg-card)",
+    border: "1px solid var(--mini-border)",
+    borderRadius: "var(--mini-radius-lg)",
+    padding: "16px",
+    boxShadow: "var(--mini-shadow-sm)"
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (!bytes) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    const idx = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+    const val = bytes / 1024 ** idx;
+    return `${val.toFixed(val >= 10 ? 0 : 1)} ${units[idx]}`;
+  };
+
   if (loading) {
     return (
-      <div className="p-4 space-y-2">
-        <div className="h-6 bg-slate-700 rounded animate-pulse w-1/2" />
-        <div className="h-4 bg-slate-700 rounded animate-pulse w-1/3" />
+      <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+        <div style={{ height: "28px", borderRadius: "var(--mini-radius)" }} className="mini-skeleton" />
+        <div style={{ height: "20px", borderRadius: "var(--mini-radius)", width: "60%" }} className="mini-skeleton" />
+        <div style={{ height: "100px", borderRadius: "var(--mini-radius-lg)" }} className="mini-skeleton" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-4">
-        <div className="bg-red-900/30 border border-red-500/50 text-red-100 rounded-lg p-3 text-sm">{error}</div>
+      <div style={{ padding: "16px" }}>
+        <div style={{
+          ...cardStyle,
+          background: "var(--mini-danger-light)",
+          borderColor: "var(--mini-danger)",
+          textAlign: "center"
+        }}>
+          <div style={{
+            width: "48px",
+            height: "48px",
+            borderRadius: "50%",
+            background: "var(--mini-danger)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            margin: "0 auto 12px",
+            fontSize: "24px",
+            color: "#fff"
+          }}>
+            ✗
+          </div>
+          <p style={{
+            fontSize: "14px",
+            color: "var(--mini-danger-text)"
+          }}>
+            {error}
+          </p>
+        </div>
       </div>
     );
   }
@@ -160,47 +203,155 @@ export function MiniPublicLinkPage() {
   if (!meta) return null;
 
   return (
-    <div className="p-4 space-y-4">
-      <section className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-2">
-        <p className="text-lg font-semibold">Public File</p>
-        <div className="space-y-1 text-sm">
-          <div className="flex justify-between">
-            <span className="text-slate-400">Name:</span>
-            <span className="text-slate-100">{meta.name}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Size:</span>
-            <span className="text-slate-100">{meta.size ? `${meta.size} bytes` : "-"}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">MIME:</span>
-            <span className="text-slate-100">{meta.mime || "-"}</span>
-          </div>
-          {meta.expires_at && (
-            <div className="flex justify-between">
-              <span className="text-slate-400">Expires:</span>
-              <span className="text-slate-100">{new Date(meta.expires_at).toLocaleString()}</span>
-            </div>
-          )}
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* Header Card */}
+      <div style={{
+        ...cardStyle,
+        background: "var(--mini-gradient-primary)",
+        color: "#fff",
+        position: "relative",
+        overflow: "hidden"
+      }} className="mini-animate-slide-up">
+        <div style={{
+          position: "absolute",
+          top: "-20px",
+          right: "-20px",
+          width: "80px",
+          height: "80px",
+          background: "rgba(255,255,255,0.1)",
+          borderRadius: "50%"
+        }} />
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <p style={{
+            fontSize: "18px",
+            fontWeight: 600,
+            marginBottom: "8px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px"
+          }}>
+            📄 Публичный файл
+          </p>
+          <p style={{
+            fontSize: "14px",
+            opacity: 0.9
+          }}>
+            Скачайте файл по публичной ссылке
+          </p>
         </div>
-      </section>
+      </div>
 
+      {/* File Details */}
+      <div style={cardStyle} className="mini-animate-slide-up">
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, 1fr)",
+          gap: "12px",
+          marginBottom: "0"
+        }}>
+          {[
+            { label: "Имя", value: meta.name || "Без имени" },
+            { label: "Размер", value: meta.size ? formatFileSize(meta.size) : "-" },
+            { label: "Тип", value: meta.mime || "-" },
+            { label: "Истекает", value: meta.expires_at ? new Date(meta.expires_at).toLocaleDateString() : "∞" }
+          ].map((item) => (
+            <div key={item.label} style={{
+              padding: "12px",
+              background: "var(--mini-bg-tertiary)",
+              borderRadius: "var(--mini-radius)"
+            }}>
+              <p style={{
+                fontSize: "11px",
+                color: "var(--mini-text-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+                marginBottom: "4px"
+              }}>
+                {item.label}
+              </p>
+              <p style={{
+                fontSize: "13px",
+                color: "var(--mini-text)",
+                fontWeight: 500,
+                wordBreak: "break-all"
+              }}>
+                {item.value}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Warning if no key */}
       {!keyFromHash && (
-        <div className="bg-amber-900/20 border border-amber-500/50 text-amber-50 rounded-lg p-3 text-xs">
-          ⚠️ No decryption key found in URL. File will download encrypted.
+        <div style={{
+          ...cardStyle,
+          background: "var(--mini-warning-light)",
+          borderColor: "var(--mini-warning)"
+        }} className="mini-animate-slide-up">
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+            <span style={{ fontSize: "18px" }}>⚠️</span>
+            <p style={{
+              fontSize: "13px",
+              color: "var(--mini-warning-text)"
+            }}>
+              Ключ расшифровки не найден в URL. Файл будет скачан в зашифрованном виде.
+            </p>
+          </div>
         </div>
       )}
 
+      {/* Download Button */}
       <button
         onClick={handleDownload}
         disabled={downloading}
-        className="w-full px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-medium transition"
+        style={{
+          width: "100%",
+          padding: "16px",
+          borderRadius: "var(--mini-radius-lg)",
+          border: "none",
+          background: downloading ? "var(--mini-bg-tertiary)" : "var(--mini-primary)",
+          color: downloading ? "var(--mini-text-muted)" : "#fff",
+          fontSize: "16px",
+          fontWeight: 600,
+          cursor: downloading ? "not-allowed" : "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "10px",
+          boxShadow: downloading ? "none" : "var(--mini-shadow)",
+          transition: "var(--mini-transition)"
+        }}
+        className="mini-animate-slide-up"
       >
-        {downloading ? "Downloading…" : "Download"}
+        {downloading ? (
+          <>
+            <div style={{
+              width: "18px",
+              height: "18px",
+              border: "2px solid var(--mini-border)",
+              borderTopColor: "var(--mini-text)",
+              borderRadius: "50%"
+            }} className="mini-animate-spin" />
+            Скачивание...
+          </>
+        ) : (
+          <>⬇️ Скачать файл</>
+        )}
       </button>
 
+      {/* PoW Progress */}
       {powProgress && (
-        <div className="text-xs text-slate-400 text-center">{powProgress}</div>
+        <div style={{
+          textAlign: "center",
+          padding: "12px",
+          background: "var(--mini-bg-tertiary)",
+          borderRadius: "var(--mini-radius)",
+          fontSize: "13px",
+          color: "var(--mini-text-secondary)"
+        }} className="mini-animate-pulse">
+          🔐 {powProgress}
+        </div>
       )}
     </div>
   );

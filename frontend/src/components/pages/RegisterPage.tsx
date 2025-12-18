@@ -137,20 +137,20 @@ export default function RegisterPage() {
   const isLoading = state === 'generating' || state === 'registering';
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-12">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
-            <Key className="h-8 w-8 text-blue-600" />
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-4">
+            <Key className="h-8 w-8 text-primary" />
           </div>
           <h1 className="mb-2">Create Account</h1>
-          <p className="text-gray-600">
+          <p className="text-muted-foreground">
             Set up your secure decentralized file sharing account. You can sign with Local keys, MetaMask, or WalletConnect.
           </p>
           <div className="flex justify-center mt-2"><AgentSelector showInlineError={false} /></div>
         </div>
 
-        <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
+        <div className="bg-card p-8 rounded-lg shadow-sm border border-border">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="displayName">Display Name (Optional)</Label>

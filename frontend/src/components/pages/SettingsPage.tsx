@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../useAuth';
+import { useTheme } from '../ThemeContext';
 import Layout from '../Layout';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Key, User, Download, Upload, AlertCircle, CheckCircle2, Copy } from 'lucide-react';
+import { Key, User, Download, Upload, AlertCircle, CheckCircle2, Copy, Palette, Sun, Moon, Monitor } from 'lucide-react';
 import { notify } from '@/lib/toast';
 import { ensureRSA, createBackupBlob, createBackupBlobRSAOnly } from '@/lib/keychain.ts';
 import { publishMyKeyCard } from '@/lib/publishMyKey.ts';
@@ -33,7 +34,12 @@ function SettingsNav() {
           Keys & Backup
         </Button>
       </Link>
-      {/* Security page удалена */}
+      <Link to="appearance">
+        <Button variant={isActive('appearance') ? 'secondary' : 'ghost'} className="w-full justify-start gap-2">
+          <Palette className="h-4 w-4" />
+          Appearance
+        </Button>
+      </Link>
     </nav>
   );
 }
@@ -134,7 +140,7 @@ export function ProfileSettings() {
           {success && (
             <Alert>
               <CheckCircle2 className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-800">
+              <AlertDescription className="text-green-800 dark:text-green-200">
                 Profile updated successfully
               </AlertDescription>
             </Alert>
@@ -143,6 +149,115 @@ export function ProfileSettings() {
           <div className="flex justify-end">
             <Button onClick={handleSave} disabled={isSaving}>
               {isSaving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export function AppearanceSettings() {
+  const { theme, setTheme, resolvedTheme } = useTheme();
+
+  const themes = [
+    { value: 'light' as const, label: 'Light', icon: Sun, description: 'Always use light mode' },
+    { value: 'dark' as const, label: 'Dark', icon: Moon, description: 'Always use dark mode' },
+    { value: 'system' as const, label: 'System', icon: Monitor, description: 'Follow system preference' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2>Appearance</h2>
+        <p className="text-muted-foreground">Customize the look and feel of the application</p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Palette className="h-5 w-5" />
+            Theme
+          </CardTitle>
+          <CardDescription>
+            Select a theme for the dashboard. Current: <span className="font-medium capitalize">{resolvedTheme}</span>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {themes.map(({ value, label, icon: Icon, description }) => (
+              <button
+                key={value}
+                onClick={() => setTheme(value)}
+                className={`
+                  relative flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all duration-200
+                  ${theme === value 
+                    ? 'border-primary bg-primary/5 ring-2 ring-primary/20' 
+                    : 'border-border hover:border-primary/50 hover:bg-accent/50'
+                  }
+                `}
+              >
+                {theme === value && (
+                  <div className="absolute top-2 right-2">
+                    <CheckCircle2 className="h-5 w-5 text-primary" />
+                  </div>
+                )}
+                <div className={`
+                  p-4 rounded-full transition-colors
+                  ${theme === value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}
+                `}>
+                  <Icon className="h-6 w-6" />
+                </div>
+                <div className="text-center">
+                  <p className="font-semibold">{label}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{description}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Theme preview */}
+          <div className="mt-6 p-4 rounded-lg border bg-card">
+            <p className="text-sm text-muted-foreground mb-3">Preview</p>
+            <div className="flex items-center gap-4">
+              <div className={`
+                w-16 h-16 rounded-lg flex items-center justify-center font-bold text-lg
+                ${resolvedTheme === 'dark' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-900'}
+              `}>
+                Aa
+              </div>
+              <div className="flex-1 space-y-2">
+                <div className={`h-3 rounded ${resolvedTheme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'}`} style={{ width: '80%' }} />
+                <div className={`h-3 rounded ${resolvedTheme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'}`} style={{ width: '60%' }} />
+                <div className={`h-3 rounded ${resolvedTheme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'}`} style={{ width: '40%' }} />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Interface Settings</CardTitle>
+          <CardDescription>Additional appearance options</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between py-3 border-b">
+            <div>
+              <p className="font-medium">Reduced Motion</p>
+              <p className="text-sm text-muted-foreground">Minimize animations for accessibility</p>
+            </div>
+            <Button variant="outline" size="sm" disabled>
+              Coming soon
+            </Button>
+          </div>
+          <div className="flex items-center justify-between py-3">
+            <div>
+              <p className="font-medium">Compact Mode</p>
+              <p className="text-sm text-muted-foreground">Show more content with smaller spacing</p>
+            </div>
+            <Button variant="outline" size="sm" disabled>
+              Coming soon
             </Button>
           </div>
         </CardContent>
@@ -397,8 +512,8 @@ export default function SettingsPage() {
     <Layout children={(
       <div className="grid grid-cols-4 gap-6">
         <div className="col-span-1">
-          <div className="bg-white p-4 rounded-lg border border-gray-200">
-            <h3 className="mb-4">Settings</h3>
+          <div className="bg-card p-4 rounded-lg border border-border">
+            <h3 className="mb-4 text-foreground font-semibold">Settings</h3>
             <SettingsNav />
           </div>
         </div>
