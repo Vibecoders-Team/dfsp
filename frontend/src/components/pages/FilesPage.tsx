@@ -304,16 +304,16 @@ export default function FilesPage() {
         {/* render */}
 
         {filteredFiles.length === 0 && !isLoading ? (
-          <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-            <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <div className="text-center py-12 bg-card rounded-lg border border-border">
+            <Upload className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3>No files yet</h3>
-            <p className="text-gray-600 mb-6">Upload your first file to get started</p>
+            <p className="text-muted-foreground mb-6">Upload your first file to get started</p>
             <Link to="/upload">
               <Button>Upload File</Button>
             </Link>
           </div>
         ) : filteredFiles.length > 0 ? (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="bg-card rounded-lg border border-border overflow-hidden">
             <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
               <Table className="border-collapse" aria-label="Files table">
                 <TableHeader>
