@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:prod": "tsc -b && vite build",
+    "build:dev": "tsc -b && VITE_OUT_DIR=build-dev vite build",
     "lint": "eslint \"src/**/*.{ts,tsx,js,jsx}\" --max-warnings=0",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -76,7 +78,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.4.0",
-    "happy-dom": "^15.11.7",
+    "happy-dom": "^20.0.0",
     "prettier": "^3.6.2",
     "rollup-plugin-visualizer": "5.7.0",
     "typescript": "~5.8.3",

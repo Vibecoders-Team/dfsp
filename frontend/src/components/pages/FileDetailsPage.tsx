@@ -238,7 +238,7 @@ export default function FileDetailsPage() {
   const statusBadge = (status: GrantRow['status']) => {
     switch (status) {
       case 'confirmed':
-        return <Badge className="bg-green-100 text-green-800">Active</Badge>;
+        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Active</Badge>;
       case 'expired':
         return <Badge variant="secondary">Expired</Badge>;
       case 'revoked':
@@ -457,7 +457,7 @@ export default function FileDetailsPage() {
           </CardHeader>
           <CardContent>
             {file.versions.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 No versions yet
               </div>
             ) : (
@@ -474,12 +474,12 @@ export default function FileDetailsPage() {
                     <TableRow key={idx}>
                       <TableCell>{formatDate(version.created)}</TableCell>
                       <TableCell>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                        <code className="text-xs bg-muted px-2 py-1 rounded">
                           {truncate(version.cid, 32)}
                         </code>
                       </TableCell>
                       <TableCell>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                        <code className="text-xs bg-muted px-2 py-1 rounded">
                           {truncate(version.checksum, 44)}
                         </code>
                       </TableCell>
@@ -497,7 +497,7 @@ export default function FileDetailsPage() {
           </CardHeader>
           <CardContent>
             {file.grants.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 No grants yet. Share this file to create grants.
               </div>
             ) : (
@@ -516,12 +516,12 @@ export default function FileDetailsPage() {
                   {file.grants.map((grant) => (
                     <TableRow key={grant.capId}>
                       <TableCell>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                        <code className="text-xs bg-muted text-foreground px-2 py-1 rounded">
                           {truncate(grant.grantee, 12)}
                         </code>
                       </TableCell>
                       <TableCell>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">
+                        <code className="text-xs bg-muted text-foreground px-2 py-1 rounded break-all">
                           {grant.capId}
                         </code>
                       </TableCell>
@@ -557,7 +557,7 @@ export default function FileDetailsPage() {
           </CardHeader>
           <CardContent>
             {publicLinks.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">No public links</div>
+              <div className="text-center py-8 text-muted-foreground">No public links</div>
             ) : (
               <Table>
                 <TableHeader>
@@ -572,11 +572,11 @@ export default function FileDetailsPage() {
                   {publicLinks.map((pl) => (
                     <TableRow key={pl.token}>
                       <TableCell>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">{pl.token}</code>
+                        <code className="text-xs bg-muted text-foreground px-2 py-1 rounded break-all">{pl.token}</code>
                       </TableCell>
                       <TableCell>{pl.expires_at ? formatDate(new Date(pl.expires_at)) : '-'}</TableCell>
                       <TableCell>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                        <code className="text-xs bg-muted text-foreground px-2 py-1 rounded">
                           {JSON.stringify(pl.policy || {})}
                         </code>
                       </TableCell>

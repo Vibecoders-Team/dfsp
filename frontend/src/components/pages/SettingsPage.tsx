@@ -82,7 +82,7 @@ export function ProfileSettings() {
     <div className="space-y-6">
       <div>
         <h2>Profile Settings</h2>
-        <p className="text-gray-600">Manage your profile information</p>
+        <p className="text-muted-foreground">Manage your profile information</p>
       </div>
 
       <Card>
@@ -161,9 +161,9 @@ export function AppearanceSettings() {
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   const themes = [
-    { value: 'light' as const, label: 'Light', icon: Sun, description: 'Always use light mode' },
-    { value: 'dark' as const, label: 'Dark', icon: Moon, description: 'Always use dark mode' },
-    { value: 'system' as const, label: 'System', icon: Monitor, description: 'Follow system preference' },
+    { value: 'light' as const, label: 'Light', icon: Sun },
+    { value: 'dark' as const, label: 'Dark', icon: Moon },
+    { value: 'system' as const, label: 'System', icon: Monitor },
   ];
 
   return (
@@ -180,58 +180,29 @@ export function AppearanceSettings() {
             Theme
           </CardTitle>
           <CardDescription>
-            Select a theme for the dashboard. Current: <span className="font-medium capitalize">{resolvedTheme}</span>
+            Current: <span className="font-medium capitalize">{resolvedTheme}</span>
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {themes.map(({ value, label, icon: Icon, description }) => (
+          <div className="flex flex-wrap items-center gap-2">
+            {themes.map(({ value, label, icon: Icon }) => (
               <button
                 key={value}
+                type="button"
                 onClick={() => setTheme(value)}
-                className={`
-                  relative flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all duration-200
-                  ${theme === value 
-                    ? 'border-primary bg-primary/5 ring-2 ring-primary/20' 
-                    : 'border-border hover:border-primary/50 hover:bg-accent/50'
-                  }
-                `}
+                className={
+                  `inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ` +
+                  (theme === value
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border bg-background hover:bg-accent hover:text-accent-foreground')
+                }
+                aria-pressed={theme === value}
               >
-                {theme === value && (
-                  <div className="absolute top-2 right-2">
-                    <CheckCircle2 className="h-5 w-5 text-primary" />
-                  </div>
-                )}
-                <div className={`
-                  p-4 rounded-full transition-colors
-                  ${theme === value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}
-                `}>
-                  <Icon className="h-6 w-6" />
-                </div>
-                <div className="text-center">
-                  <p className="font-semibold">{label}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{description}</p>
-                </div>
+                <Icon className="h-4 w-4" />
+                <span className="font-medium">{label}</span>
+                {theme === value && <CheckCircle2 className="h-4 w-4" />}
               </button>
             ))}
-          </div>
-
-          {/* Theme preview */}
-          <div className="mt-6 p-4 rounded-lg border bg-card">
-            <p className="text-sm text-muted-foreground mb-3">Preview</p>
-            <div className="flex items-center gap-4">
-              <div className={`
-                w-16 h-16 rounded-lg flex items-center justify-center font-bold text-lg
-                ${resolvedTheme === 'dark' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-900'}
-              `}>
-                Aa
-              </div>
-              <div className="flex-1 space-y-2">
-                <div className={`h-3 rounded ${resolvedTheme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'}`} style={{ width: '80%' }} />
-                <div className={`h-3 rounded ${resolvedTheme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'}`} style={{ width: '60%' }} />
-                <div className={`h-3 rounded ${resolvedTheme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'}`} style={{ width: '40%' }} />
-              </div>
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -380,7 +351,7 @@ export function KeysSettings() {
     <div className="space-y-6">
       <div>
         <h2>Keys & Backup</h2>
-        <p className="text-gray-600">Manage your encryption keys and backups</p>
+        <p className="text-muted-foreground">Manage your encryption keys and backups</p>
       </div>
 
       {!user?.hasBackup && (
@@ -411,7 +382,7 @@ export function KeysSettings() {
           <div className="space-y-2">
             <Label>RSA Public Key (SPKI PEM)</Label>
             <div className="relative">
-              <textarea value={isLoadingKeys ? 'Loading…' : publicPem} disabled className="w-full h-32 p-3 text-xs font-mono bg-gray-50 border border-gray-200 rounded resize-none" />
+              <textarea value={isLoadingKeys ? 'Loading…' : publicPem} disabled className="w-full h-32 p-3 text-xs font-mono bg-muted border border-border rounded resize-none" />
               <Button variant="ghost" size="sm" className="absolute top-2 right-2" onClick={() => { navigator.clipboard.writeText(publicPem); notify.success('Public key copied', { dedupeId: 'pubkey-copied' }); }} disabled={!publicPem}>
                 <Copy className="h-4 w-4" />
               </Button>
@@ -423,8 +394,8 @@ export function KeysSettings() {
               {publishBusy ? 'Publishing…' : 'Publish My Key Card'}
             </Button>
             {publishCid && (
-              <div className="text-sm text-gray-600">
-                CID: <code className="bg-gray-100 px-1 py-0.5 rounded">{publishCid}</code>
+              <div className="text-sm text-muted-foreground">
+                CID: <code className="bg-muted px-1 py-0.5 rounded">{publishCid}</code>
                 {publishUrl && (
                   <>
                     {' '}
@@ -477,7 +448,7 @@ export function KeysSettings() {
           </div>
 
           {showPasswordPrompt && selectedFile && (
-            <div className="p-4 border border-gray-200 rounded-lg space-y-4 bg-gray-50">
+            <div className="p-4 border border-border rounded-lg space-y-4 bg-muted/50">
               <div>
                 <p className="text-sm mb-2">Selected file: {selectedFile.name}</p>
                 <Label htmlFor="restorePassword">Password</Label>

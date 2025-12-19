@@ -441,7 +441,7 @@ export default function SharePage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <CheckCircle2 className="h-6 w-6 text-green-600" />
+                <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
                 File Shared Successfully
               </CardTitle>
               <CardDescription>
@@ -451,10 +451,10 @@ export default function SharePage() {
             <CardContent>
               <div className="space-y-3">
                 {results.map((result, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div key={idx} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                     <div>
                       <code className="text-sm">{truncate(result.grantee, 16)}</code>
-                      <div className="text-xs text-gray-500 mt-1">Cap ID: {result.capId}</div>
+                      <div className="text-xs text-muted-foreground mt-1">Cap ID: {result.capId}</div>
                     </div>
                     <Badge variant={result.status === 'queued' ? 'default' : result.status === 'confirmed' ? 'secondary' : 'outline'}>{result.status}</Badge>
                   </div>
@@ -535,7 +535,7 @@ export default function SharePage() {
                  <Label>Added Recipients ({recipients.length})</Label>
                  <div className="space-y-2">
                    {recipients.map((recipient) => (
-                     <div key={recipient.address} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                     <div key={recipient.address} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                        <code className="text-sm">{truncate(recipient.address, 16)}</code>
                        <Button type="button" variant="ghost" size="sm" onClick={() => removeRecipient(recipient.address)} disabled={isSubmitting}>
                          <X className="h-4 w-4" />
@@ -557,13 +557,13 @@ export default function SharePage() {
                <div className="space-y-2">
                  <Label htmlFor="ttl">TTL (days)</Label>
                  <Input id="ttl" type="number" min="1" max="365" value={ttlDays} onChange={(e) => setTtlDays(e.target.value)} disabled={isSubmitting} />
-                 <p className="text-xs text-gray-500">Time until access expires</p>
+                 <p className="text-xs text-muted-foreground">Time until access expires</p>
                </div>
 
                <div className="space-y-2">
                  <Label htmlFor="maxDownloads">Max Downloads</Label>
                  <Input id="maxDownloads" type="number" min="1" max="1000" value={maxDownloads} onChange={(e) => setMaxDownloads(e.target.value)} disabled={isSubmitting} />
-                 <p className="text-xs text-gray-500">Maximum download count</p>
+                 <p className="text-xs text-muted-foreground">Maximum download count</p>
                </div>
              </div>
            </CardContent>
@@ -576,7 +576,7 @@ export default function SharePage() {
            </CardHeader>
            <CardContent>
              {recipients.length === 0 ? (
-               <div className="text-center py-8 text-gray-500">Add recipients to see their encrypted keys</div>
+               <div className="text-center py-8 text-muted-foreground">Add recipients to see their encrypted keys</div>
              ) : (
                <div className="space-y-4">
                  {recipients.map((recipient) => (
@@ -597,15 +597,15 @@ export default function SharePage() {
            </CardHeader>
            <CardContent>
              {publicLinks.length === 0 ? (
-               <div className="text-center py-8 text-gray-500">No public links</div>
+               <div className="text-center py-8 text-muted-foreground">No public links</div>
              ) : (
                <div className="space-y-3">
                  {publicLinks.map(pl=> (
-                   <div key={pl.token} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                   <div key={pl.token} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                      <div className="flex-1">
-                       <div className="text-sm break-all">Token: <code className="bg-gray-100 px-1 py-0.5 rounded">{pl.token}</code></div>
-                       <div className="text-xs text-gray-500">Expires: {pl.expires_at || '-'}</div>
-                       <div className="text-xs text-gray-500">
+                       <div className="text-sm break-all">Token: <code className="bg-muted px-1 py-0.5 rounded">{pl.token}</code></div>
+                       <div className="text-xs text-muted-foreground">Expires: {pl.expires_at || '-'}</div>
+                       <div className="text-xs text-muted-foreground">
                          Downloads: {pl.downloads_count ?? 0}
                          {pl.policy?.max_downloads && pl.policy.max_downloads > 0
                            ? ` / ${pl.policy.max_downloads} (${Math.max(0, pl.policy.max_downloads - (pl.downloads_count ?? 0))} left)`

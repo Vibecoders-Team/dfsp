@@ -250,24 +250,24 @@ export default function VerifyPage() {
         </Card>
 
         {state === 'match' && (
-          <Alert className="border-green-200 bg-green-50">
-            <CheckCircle2 className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-800">
-              <div className="flex items-center justify-between">
+          <Alert className="border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-900">
+            <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <AlertDescription className="text-green-800 dark:text-green-200">
+              <div className="flex items-center justify-between gap-3">
                 <span>Verification successful! Checksums match.</span>
-                <Badge className="bg-green-600">Match</Badge>
+                <Badge className="bg-green-600 text-white dark:bg-green-500 dark:text-white">Match</Badge>
               </div>
             </AlertDescription>
           </Alert>
         )}
 
         {state === 'mismatch' && (
-          <Alert variant="destructive">
-            <XCircle className="h-4 w-4" />
-            <AlertDescription>
+          <Alert className="border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-900">
+            <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+            <AlertDescription className="text-red-800 dark:text-red-200">
               <div className="flex items-center justify-between gap-3">
                 <span>Verification failed! Checksums do not match.</span>
-                <Badge variant="destructive">Mismatch</Badge>
+                <Badge className="bg-red-600 text-white dark:bg-red-500 dark:text-white">Mismatch</Badge>
               </div>
               {onChainData?.checksum && localCheckData?.checksumKeccak && (
                 <div className="mt-3 space-y-2">

@@ -207,6 +207,20 @@ dfsp.app {
             reverse_proxy telegram-bot:8080
         }
 
+        # --- Static assets (Vite hashed) ---
+        @assets path /assets/*
+        handle @assets {
+            root * /usr/share/caddy/html
+            header Cache-Control "public, max-age=31536000, immutable"
+            header X-DFSP-Assets "1"
+            file_server
+        }
+
+        # index.html must not be cached aggressively (it references hashed assets)
+        @index path /index.html
+        header @index Cache-Control "no-cache"
+        header @index X-DFSP-Index "1"
+
         # Static SPA
         handle {
             root * /usr/share/caddy/html
@@ -272,6 +286,21 @@ dev.dfsp.app {
             header Cache-Control "public, max-age=60"
             file_server
         }
+
+        # --- Static assets (Vite hashed) ---
+        @assets path /assets/*
+        handle @assets {
+            root * /usr/share/caddy/html-dev
+            header Cache-Control "public, max-age=31536000, immutable"
+            header X-DFSP-Assets "1"
+            file_server
+        }
+
+        @index path /index.html
+        header @index Cache-Control "no-cache"
+        header @index X-DFSP-Index "1"
+
+        # Static SPA
         handle {
             root * /usr/share/caddy/html-dev
             try_files {path} /index.html

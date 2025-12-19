@@ -20,7 +20,7 @@
 Don't commit by yourself.
 We use **Conventional Commits** for a clear history and automatic generation of releases/CHANGELOG.
 
-## Format
+### Format
 
 ```
 

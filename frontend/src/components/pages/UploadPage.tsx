@@ -166,7 +166,7 @@ export default function UploadPage() {
       <div className="max-w-2xl mx-auto space-y-6">
         <div>
           <h1>Upload File</h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 dark:text-gray-400">
             Encrypt and upload your file to IPFS
           </p>
         </div>
@@ -177,15 +177,15 @@ export default function UploadPage() {
               <div
                 className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
                   isDragging
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-300 hover:border-gray-400'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                    : 'border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600'
                 }`}
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
               >
                 <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600 mb-4">
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
                   Drag and drop your file here, or click to browse
                 </p>
                 <input
@@ -217,26 +217,26 @@ export default function UploadPage() {
             </CardHeader>
             <form onSubmit={e => { e.preventDefault(); handleSubmit(); }}>
             <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between p-4 bg-muted rounded-lg border border-border">
                   <div className="flex items-center gap-3">
                     <File className="h-8 w-8 text-blue-600" />
                     <div>
-                      <div>{sanitizeFilename(uploadedFile.name)}</div>
-                      <div className="text-sm text-gray-500">
+                      <div className="text-foreground">{sanitizeFilename(uploadedFile.name)}</div>
+                      <div className="text-sm text-muted-foreground">
                         {formatBytes(uploadedFile.size)}
                       </div>
                     </div>
                   </div>
-                {!isProcessing && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={removeFile}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
+                  {!isProcessing && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={removeFile}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">

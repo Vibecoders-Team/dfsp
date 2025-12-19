@@ -76,7 +76,7 @@ export default function GrantsPage() {
   const getStatusBadge = (status: MyGrantItem['status']) => {
     switch (status) {
       case 'confirmed':
-        return <Badge className="bg-green-100 text-green-800">Active</Badge>;
+        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Active</Badge>;
       case 'pending':
         return <Badge>Pending</Badge>;
       case 'expired':
@@ -153,7 +153,7 @@ export default function GrantsPage() {
           </Select>
 
           <div className="flex-1" />
-          <div className="text-sm text-gray-600">{filteredGrants.length} item{filteredGrants.length !== 1 ? 's' : ''}</div>
+          <div className="text-sm text-muted-foreground">{filteredGrants.length} item{filteredGrants.length !== 1 ? 's' : ''}</div>
         </div>
 
         {error && (
@@ -203,17 +203,17 @@ export default function GrantsPage() {
                 {filteredGrants.map((g) => (
                   <TableRow key={g.capId}>
                     <TableCell>
-                      <code className="text-xs bg-gray-100 px-2 py-1 rounded">{truncate((role === 'received' ? g.grantor : g.grantee) || '', 12)}</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">{truncate((role === 'received' ? g.grantor : g.grantee) || '', 12)}</code>
                     </TableCell>
                     <TableCell>
                       <Link to={`/files/${g.fileId}`} className="hover:underline">{sanitizeFilename(g.fileName) || truncate(g.fileId, 14)}</Link>
                     </TableCell>
                     <TableCell>
-                      <code className="text-xs bg-gray-100 px-2 py-1 rounded">{truncate(g.capId, 16)}</code>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">{truncate(g.capId, 16)}</code>
                     </TableCell>
                     <TableCell>{formatDate(g.expiresAt)}</TableCell>
                     <TableCell>
-                      <span className={g.usedDownloads >= g.maxDownloads ? 'text-red-600' : ''}>
+                      <span className={g.usedDownloads >= g.maxDownloads ? 'text-red-600 dark:text-red-400' : ''}>
                         {g.usedDownloads} / {g.maxDownloads}
                       </span>
                     </TableCell>
@@ -236,7 +236,7 @@ export default function GrantsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="gap-1.5 text-red-600"
+                          className="gap-1.5 text-red-600 dark:text-red-400"
                           onClick={() => handleRevoke(g.capId)}
                           disabled={revoking.has(g.capId) || disableActions}
                         >

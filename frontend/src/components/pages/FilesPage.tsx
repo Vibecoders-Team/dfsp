@@ -332,20 +332,20 @@ export default function FilesPage() {
                       <TableCell>
                         <div className="max-w-xs">
                           <div className="truncate">{file.safeName}</div>
-                          <div className="text-xs text-gray-500">{file.mimeType}</div>
+                          <div className="text-xs text-muted-foreground">{file.mimeType}</div>
                         </div>
                       </TableCell>
                       <TableCell>{formatSize(file.size)}</TableCell>
                       <TableCell>
                         <button type="button" onClick={()=>copyValue(file.cid,'CID')} className="group" aria-label="Copy CID">
-                          <code className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
+                          <code className="text-xs bg-muted text-foreground px-2 py-1 rounded inline-flex items-center gap-1">
                             {truncate(file.cid, 16)}
                           </code>
                         </button>
                       </TableCell>
                       <TableCell>
                         <button type="button" onClick={()=>copyValue(file.checksum,'Checksum')} className="group" aria-label="Copy checksum">
-                          <code className="text-xs bg-gray-100 px-2 py-1 rounded inline-flex items-center gap-1">
+                          <code className="text-xs bg-muted text-foreground px-2 py-1 rounded inline-flex items-center gap-1">
                             {truncate(file.checksum, 20)}
                           </code>
                         </button>
