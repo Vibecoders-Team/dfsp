@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Key, AlertCircle } from 'lucide-react';
 import { hasEOA, isEOAUnlocked } from '@/lib/keychain';
-import { getAgent, setSelectedAgentKind } from '@/lib/agent/manager';
+import { getAgent } from '@/lib/agent/manager';
 import { getErrorMessage } from '@/lib/errors';
 import AgentSelector from '../AgentSelector';
 import TonConnectLogo from '@/assets/icons/TonConnect-Logo.svg';
@@ -27,8 +27,7 @@ export default function LoginPage() {
   // Check if keys exist on mount (optional)
   useEffect(() => {
     hasEOA().then(setKeysExist);
-    // сбрасываем активный агент на Local при заходе на Login
-    try { setSelectedAgentKind('local'); } catch { /* ignore */ }
+    // Не форсим Local signer при заходе на Login: пользователь может выбрать MetaMask/WalletConnect.
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {

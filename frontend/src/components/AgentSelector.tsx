@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useState, Suspense } from 'react';
 import type { AgentKind } from '@/lib/agent';
 import { getSelectedAgentKind, setSelectedAgentKind, getAgent } from '../lib/agent/manager';
 import { Alert, AlertDescription } from './ui/alert';
@@ -52,11 +52,8 @@ export default function AgentSelector({ compact = false, showInlineError = true 
       // metamask path
       await readAgentState();
     } catch (e: unknown) {
-      // On error (e.g., QR closed or wallet error), fallback to Local and show a concise message in lower alert only if allowed
-      try { setSelectedAgentKind('local'); } catch { /* ignore */ }
-      setKind('local');
-      setAddr('');
-      setChainId(null);
+      // Не откатываемся обратно на Local: иначе выглядит как "само переключилось".
+      // Оставляем выбранный signer и показываем ошибку.
       setErr(e instanceof Error ? e.message : 'Switch signer failed');
     } finally {
       setBusy(false);

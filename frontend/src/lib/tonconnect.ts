@@ -1,4 +1,5 @@
 let tonUI: any = null;
+let tonUIPromise: Promise<any> | null = null;
 
 export function buildFallbackManifest() {
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {};
@@ -15,27 +16,30 @@ export function buildFallbackManifest() {
 
 // (fetchManifestWithFallback removed — not used; fallback handled via blob manifest in getTonConnect)
 
-export function getTonConnect(): any {
+export async function getTonConnect(): Promise<any> {
   if (typeof window === "undefined") {
     throw new Error("TonConnect unavailable in SSR");
   }
-  if (!tonUI) {
+  if (tonUI) return tonUI;
+  if (!tonUIPromise) {
     // Use real HTTPS URL for manifest to comply with Telegram WebApp CSP
     // CSP from Telegram only allows 'self' and https: in connect-src
     const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
     console.info('[TonConnect] Using manifest URL:', manifestUrl);
-    // Lazy load TonConnectUI
-    const mod = require('@tonconnect/ui');
-    const TonConnectUI = (mod && mod.TonConnectUI) || mod?.default;
-    tonUI = new TonConnectUI({
-      manifestUrl,
-      actionsConfiguration: {
-        notifications: ["before", "success", "error"],
-        modals: ["before", "success", "error"],
-      },
-    });
+    // Lazy load TonConnectUI via dynamic import (ESM-safe)
+    tonUIPromise = import('@tonconnect/ui').then((mod: any) => {
+      const TonConnectUI = mod?.TonConnectUI ?? mod?.default;
+      if (!TonConnectUI) throw new Error('TonConnectUI not found in @tonconnect/ui');
+      return new TonConnectUI({
+        manifestUrl,
+        actionsConfiguration: {
+          notifications: ["before", "success", "error"],
+          modals: ["before", "success", "error"],
+        },
+      });
+    }).then((ui) => { tonUI = ui; return ui; });
   }
-  return tonUI;
+  return tonUIPromise;
 }
 
 export function hexToBytes(hex: string): Uint8Array {

@@ -24,6 +24,10 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
         const headers = AxiosHeaders.from(config.headers);
         headers.set("Authorization", `Bearer ${tok}`);
         config.headers = headers;
+        // DEBUG: log outgoing request with token info
+        console.info('[API] Request:', config.method?.toUpperCase(), config.url, 'token_len:', tok.length);
+    } else {
+        console.warn('[API] Request without token:', config.method?.toUpperCase(), config.url);
     }
     return config;
 });
@@ -38,6 +42,8 @@ api.interceptors.response.use(
             // Do not redirect for public endpoints (we need to show TTL/limit/revoked errors)
             const isPublic = /\/public\//.test(url || '') || url.startsWith('/public/');
             if ((status === 401 || status === 403) && !isPublic) {
+                // DEBUG: log 401/403 details before clearing token
+                console.error('[API] Got', status, 'for', url, '- clearing token and redirecting. Response:', err.response?.data);
                 try { localStorage.removeItem(ACCESS_TOKEN_KEY); } catch {/* ignore */}
                 window.location.href = "/login";
             }

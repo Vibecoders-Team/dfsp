@@ -1,23 +1,27 @@
 let tonUI: any = null;
+let tonUIPromise: Promise<any> | null = null;
 
-export function getTonConnect(): any {
+export async function getTonConnect(): Promise<any> {
   if (typeof window === "undefined") {
     throw new Error("TonConnect unavailable in SSR");
   }
-  if (!tonUI) {
+  if (tonUI) return tonUI;
+  if (!tonUIPromise) {
     const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
     console.info('[TonConnect Mini] Using manifest URL:', manifestUrl);
-    const mod = require('@tonconnect/ui');
-    const TonConnectUI = (mod && mod.TonConnectUI) || mod?.default;
-    tonUI = new TonConnectUI({
-      manifestUrl,
-      actionsConfiguration: {
-        notifications: ["before", "success", "error"],
-        modals: ["before", "success", "error"],
-      },
-    });
+    tonUIPromise = import('@tonconnect/ui').then((mod: any) => {
+      const TonConnectUI = mod?.TonConnectUI ?? mod?.default;
+      if (!TonConnectUI) throw new Error('TonConnectUI not found in @tonconnect/ui');
+      return new TonConnectUI({
+        manifestUrl,
+        actionsConfiguration: {
+          notifications: ["before", "success", "error"],
+          modals: ["before", "success", "error"],
+        },
+      });
+    }).then((ui) => { tonUI = ui; return ui; });
   }
-  return tonUI;
+  return tonUIPromise;
 }
 
 export function hexToBytes(hex: string): Uint8Array {

@@ -1,14 +1,13 @@
 /* eslint-disable react-refresh/only-export-components */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
-import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type LoginMessage, LOGIN_TYPES as KC_LOGIN_TYPES, LOGIN_DOMAIN as KC_LOGIN_DOMAIN, unlockEOA, type RestoreResult, lockEOA } from '@/lib/keychain';
+import { hasEOA, ensureEOA, ensureRSA, createBackupBlob, restoreFromBackup, type LoginMessage, LOGIN_TYPES as KC_LOGIN_TYPES, LOGIN_DOMAIN as KC_LOGIN_DOMAIN, unlockEOA, type RestoreResult } from '@/lib/keychain';
 import { postChallenge, postLogin, postRegister, postTonChallenge, postTonLogin, ACCESS_TOKEN_KEY, type RegisterPayload, type TypedLoginData, type TonSignPayload } from '@/lib/api';
 import type { TypedDataDomain, TypedDataField } from 'ethers';
 import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
 import { setSelectedAgentKind } from '@/lib/agent/manager';
 import { deriveEthFromTonPub, getTonConnect, hexToBytes, toBase64 } from '@/lib/tonconnect';
-import { clearAllFileKeys } from '@/lib/fileKey';
 
 const LOGIN_DOMAIN: TypedDataDomain = KC_LOGIN_DOMAIN;
 const LOGIN_TYPES: Record<string, TypedDataField[]> = KC_LOGIN_TYPES;
@@ -35,7 +34,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (opts?: { unlockPassword?: string }) => Promise<void>;
   loginWithTon: () => Promise<void>;
-  register: (password: string, confirmPassword: string, displayName?: string) => Promise<{ backupData: Blob }>;
+  register: (password?: string, confirmPassword?: string, displayName?: string) => Promise<{ backupData: Blob }>;
   logout: () => void;
   restoreAccount: (file: File, password: string) => Promise<RestoreResult>;
   updateBackupStatus: (hasBackup: boolean) => void;
@@ -85,6 +84,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (opts?: { unlockPassword?: string }) => {
+       // DEBUG: Check time skew between client and server
+       try {
+         const timeRes = await fetch((import.meta as any).env?.VITE_API_BASE + '/time');
+         if (timeRes.ok) {
+           const timeData = await timeRes.json();
+           const serverTime = timeData.server_time_unix;
+           const clientTime = Math.floor(Date.now() / 1000);
+           const skew = clientTime - serverTime;
+           console.info('[Auth] Time skew check: server=%d client=%d skew=%d seconds', serverTime, clientTime, skew);
+           if (Math.abs(skew) > 300) {
+             console.warn('[Auth] WARNING: Time skew > 5 minutes! This may cause JWT issues.');
+           }
+         }
+       } catch (e) {
+         console.warn('[Auth] Could not check server time:', e);
+       }
+
        const challenge = await postChallenge();
        const agent = await getAgent();
        if (agent.kind === 'local') {
@@ -161,8 +177,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           signature,
        };
        const tokens = await postLogin(payload);
+
+       // DEBUG: Log token receipt and storage
+       console.info('[Auth] Received tokens, access length:', tokens.access?.length, 'refresh length:', tokens.refresh?.length);
+       if (tokens.access) {
+         // Decode JWT payload (middle part) to check iat/exp
+         try {
+           const parts = tokens.access.split('.');
+           if (parts.length === 3) {
+             const payload = JSON.parse(atob(parts[1]));
+             const now = Math.floor(Date.now() / 1000);
+             console.info('[Auth] JWT iat:', payload.iat, 'exp:', payload.exp, 'client_now:', now, 'iat_diff:', now - payload.iat, 'ttl:', payload.exp - now);
+           }
+         } catch { /* ignore parse errors */ }
+       }
+
        localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access);
        localStorage.setItem('REFRESH_TOKEN', tokens.refresh);
+
+       // Verify token was saved
+       const savedToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+       console.info('[Auth] Token saved, verified length:', savedToken?.length, 'matches:', savedToken === tokens.access);
+
        localStorage.setItem(ADDRESS_KEY, address);
        localStorage.setItem(AUTH_METHOD_KEY, 'eoa');
        localStorage.removeItem(TON_ADDRESS_KEY);
@@ -173,7 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    };
 
   const loginWithTon = async () => {
-    const ton = getTonConnect();
+    const ton = await getTonConnect();
     if (!ton.wallet) {
       await ton.connectWallet();
     }
@@ -216,21 +252,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const register = async (
-    password: string,
-    confirmPassword: string,
+    password?: string,
+    confirmPassword?: string,
     displayName?: string
   ): Promise<{ backupData: Blob }> => {
-       if (password !== confirmPassword) throw new Error('Passwords do not match');
-       if (password.length < 8) {
-         throw new Error('Password must be at least 8 characters');
+       const agent = await getAgent();
+
+       // Password is only required for local signer (we encrypt the local EOA in browser storage)
+       if (agent.kind === 'local') {
+         const pwd = password ?? '';
+         const cpwd = confirmPassword ?? '';
+         if (pwd !== cpwd) throw new Error('Passwords do not match');
+         if (pwd.length < 8) {
+           throw new Error('Password must be at least 8 characters');
+         }
+         // Pre-unlock/generate local EOA with provided password to avoid unlock dialog
+         await ensureEOA(pwd);
        }
+
        const challenge = await postChallenge();
        const { publicPem } = await ensureRSA();
-       const agent = await getAgent();
-       // Pre-unlock local EOA with provided password to avoid unlock dialog
-       if (agent.kind === 'local') {
-         await ensureEOA(password);
-       }
+
        // --- Network / chain handling (unified with login) ---
        if (EXPECTED_CHAIN_ID && agent.getChainId) {
          try {
@@ -289,7 +331,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        let backupData: Blob;
        if (agent.kind === 'local') {
          // For local EOA, create a backup blob containing the RSA private key
-         const blob = await createBackupBlob(password);
+         const blob = await createBackupBlob(password ?? '');
          backupData = blob as Blob;
        } else {
          // For remote agents, no backup is created
@@ -301,39 +343,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    };
 
   const logout = () => {
+     setUser(null);
      localStorage.removeItem(ACCESS_TOKEN_KEY);
      localStorage.removeItem('REFRESH_TOKEN');
      localStorage.removeItem(ADDRESS_KEY);
      localStorage.removeItem(AUTH_METHOD_KEY);
      localStorage.removeItem(TON_ADDRESS_KEY);
-     clearAllFileKeys();
-     setUser(null);
-   };
+     bumpSessionGen();
+  };
 
   const restoreAccount = async (file: File, password: string) => {
-       const result = await restoreFromBackup(file, password);
-       if (result.mode === 'EOA+RSA') {
-         const addr = result.address ?? '';
-         if (addr) localStorage.setItem(ADDRESS_KEY, addr);
-         localStorage.setItem(AUTH_METHOD_KEY, 'eoa');
-         bumpSessionGen();
-         setUser(prev => prev ? { ...prev, address: addr || prev.address, hasBackup: true } : null);
-       } else {
-         throw new Error('Unsupported account type in backup');
-       }
-       return result;
-   };
+     return restoreFromBackup(file, password);
+  };
 
   const updateBackupStatus = (hasBackup: boolean) => {
-     setUser(prev => prev ? { ...prev, hasBackup } : null);
-   };
+     setUser(u => u ? { ...u, hasBackup } : u);
+     try {
+       if (hasBackup) {
+         const address = localStorage.getItem(ADDRESS_KEY);
+         const displayName = localStorage.getItem('dfsp_display_name');
+         const authMethod = (localStorage.getItem(AUTH_METHOD_KEY) as 'eoa' | 'ton' | null) || 'eoa';
+         const tonAddress = localStorage.getItem(TON_ADDRESS_KEY) || undefined;
+         if (address) {
+           setUser({ address, displayName: displayName || undefined, hasBackup, authMethod, tonAddress });
+         }
+       }
+     } catch { /* ignore */ }
+  };
 
-  const updateDisplayName = async (displayName: string) => {
-     setUser(prev => prev ? { ...prev, displayName } : null);
+  const updateDisplayName = (displayName: string) => {
+     setUser(u => u ? { ...u, displayName } : u);
      localStorage.setItem('dfsp_display_name', displayName);
-   };
+  };
 
-  const value = { user, isAuthenticated: !!user, isLoading, login, loginWithTon, register, logout, restoreAccount, updateBackupStatus, updateDisplayName };
+  const isAuthenticated = !!user && !isLoading;
+  const value = { user, isAuthenticated, isLoading, login, loginWithTon, register, logout, restoreAccount, updateBackupStatus, updateDisplayName };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

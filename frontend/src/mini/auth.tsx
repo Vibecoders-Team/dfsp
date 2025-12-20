@@ -66,7 +66,7 @@ export function MiniAuthProvider({ children }: { children: ReactNode }) {
     setStatus("authenticating");
     setError(null);
     try {
-      const ton = getTonConnect();
+      const ton = await getTonConnect();
       if (!ton.wallet) {
         await ton.connectWallet();
       }

@@ -131,7 +131,7 @@ function AppRoutes() {
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Suspense>
-      <Toaster richColors position="top-right" closeButton duration={3500} />
+      <Toaster richColors position="bottom-right" closeButton duration={3500} />
       <ABICompatibilityCheck />
       <UpdateNotification />
       <UnlockPortal />
