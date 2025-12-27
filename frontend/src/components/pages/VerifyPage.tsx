@@ -8,8 +8,8 @@ import { Badge } from '../ui/badge';
 import { ArrowLeft, CheckCircle2, XCircle, AlertCircle, Upload } from 'lucide-react';
 import { fetchMeta } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
-import { keccak256 } from 'ethers';
 import type * as React from "react";
+import { sanitizeFilename, safeText } from '@/lib/sanitize.ts';
 
 type VerifyState = 'idle' | 'loading' | 'match' | 'mismatch' | 'not_found' | 'error';
 
@@ -41,7 +41,8 @@ async function sha256Hex(buf: ArrayBuffer): Promise<string> {
     .join('');
 }
 
-function keccakHex(buf: ArrayBuffer): string {
+async function keccakHex(buf: ArrayBuffer): Promise<string> {
+  const { keccak256 } = await import('ethers');
   const hex = keccak256(ab2u8(buf)); // "0x..."
   return hex.slice(2);
 }
@@ -55,6 +56,7 @@ export default function VerifyPage() {
   const [localCheckData, setLocalCheckData] = useState<LocalCheckData | null>(null);
   const [error, setError] = useState('');
   const [isCalculating, setIsCalculating] = useState(false);
+  const [showMismatchDetails, setShowMismatchDetails] = useState(false);
 
   const checkOnChain = async () => {
     setState('loading');
@@ -78,6 +80,7 @@ export default function VerifyPage() {
       if (localCheckData && oc.checksum) {
         const match = localCheckData.checksumKeccak.toLowerCase() === oc.checksum.replace(/^0x/, '').toLowerCase();
         setState(match ? 'match' : 'mismatch');
+        setShowMismatchDetails(false);
       } else {
         setState('idle');
       }
@@ -98,7 +101,7 @@ export default function VerifyPage() {
     try {
       const buf = await file.arrayBuffer();
       const s1 = await sha256Hex(buf);
-      const s2 = keccakHex(buf);
+      const s2 = await keccakHex(buf);
 
       const local: LocalCheckData = {
         checksumSha256: s1,
@@ -112,6 +115,7 @@ export default function VerifyPage() {
       if (onChainData?.checksum) {
         const match = s2.toLowerCase() === onChainData.checksum.replace(/^0x/, '').toLowerCase();
         setState(match ? 'match' : 'mismatch');
+        setShowMismatchDetails(false);
       }
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to calculate checksum'));
@@ -149,9 +153,9 @@ export default function VerifyPage() {
             <CardTitle>File ID</CardTitle>
             <CardDescription>Verifying file with ID: {fileId}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter' && !isCalculating && state !== 'loading') { e.preventDefault(); checkOnChain(); } }}>
             <div className="flex gap-3">
-              <code className="flex-1 bg-gray-100 px-3 py-2 rounded text-sm">
+              <code className="flex-1 bg-muted px-3 py-2 rounded text-sm">
                 {fileId}
               </code>
               <Button onClick={checkOnChain} disabled={state === 'loading'}>
@@ -170,19 +174,19 @@ export default function VerifyPage() {
               <div className="space-y-3">
                 {onChainData.name && (
                   <div>
-                    <div className="text-sm text-gray-500 mb-1">File Name</div>
-                    <div>{onChainData.name}</div>
+                    <div className="text-sm text-muted-foreground mb-1">File Name</div>
+                    <div>{safeText(onChainData.name)}</div>
                   </div>
                 )}
                 <div>
-                  <div className="text-sm text-gray-500 mb-1">CID</div>
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded block">
+                  <div className="text-sm text-muted-foreground mb-1">CID</div>
+                  <code className="text-sm bg-muted px-2 py-1 rounded block">
                     {onChainData.cid || '-'}
                   </code>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500 mb-1">Checksum (keccak256)</div>
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded block break-all">
+                  <div className="text-sm text-muted-foreground mb-1">Checksum (keccak256)</div>
+                  <code className="text-sm bg-muted px-2 py-1 rounded block break-all">
                     {onChainData.checksum || '-'}
                   </code>
                 </div>
@@ -219,24 +223,24 @@ export default function VerifyPage() {
             </div>
 
             {localCheckData && (
-              <div className="p-4 bg-gray-50 rounded-lg space-y-3">
+              <div className="p-4 bg-muted/50 rounded-lg space-y-3">
                 <div>
-                  <div className="text-sm text-gray-500 mb-1">File Name</div>
-                  <div>{localCheckData.fileName}</div>
+                  <div className="text-sm text-muted-foreground mb-1">File Name</div>
+                  <div>{sanitizeFilename(localCheckData.fileName)}</div>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500 mb-1">Size</div>
+                  <div className="text-sm text-muted-foreground mb-1">Size</div>
                   <div>{formatBytes(localCheckData.size)}</div>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500 mb-1">SHA-256</div>
-                  <code className="text-sm bg-white px-2 py-1 rounded block break-all">
+                  <div className="text-sm text-muted-foreground mb-1">SHA-256</div>
+                  <code className="text-sm bg-muted px-2 py-1 rounded block break-all">
                     {localCheckData.checksumSha256}
                   </code>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500 mb-1">Keccak256</div>
-                  <code className="text-sm bg-white px-2 py-1 rounded block break-all">
+                  <div className="text-sm text-muted-foreground mb-1">Keccak256</div>
+                  <code className="text-sm bg-muted px-2 py-1 rounded block break-all">
                     {localCheckData.checksumKeccak}
                   </code>
                 </div>
@@ -246,25 +250,51 @@ export default function VerifyPage() {
         </Card>
 
         {state === 'match' && (
-          <Alert className="border-green-200 bg-green-50">
-            <CheckCircle2 className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-800">
-              <div className="flex items-center justify-between">
+          <Alert className="border-green-200 bg-green-50 dark:bg-green-950/50 dark:border-green-800">
+            <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <AlertDescription className="text-green-800 dark:text-green-300">
+              <div className="flex items-center justify-between gap-3">
                 <span>Verification successful! Checksums match.</span>
-                <Badge className="bg-green-600">Match</Badge>
+                <Badge className="bg-green-600 text-white dark:bg-green-600 dark:text-white">Match</Badge>
               </div>
             </AlertDescription>
           </Alert>
         )}
 
         {state === 'mismatch' && (
-          <Alert variant="destructive">
-            <XCircle className="h-4 w-4" />
-            <AlertDescription>
-              <div className="flex items-center justify-between">
+          <Alert className="border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-900">
+            <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+            <AlertDescription className="text-red-800 dark:text-red-200">
+              <div className="flex items-center justify-between gap-3">
                 <span>Verification failed! Checksums do not match.</span>
-                <Badge variant="destructive">Mismatch</Badge>
+                <Badge className="bg-red-600 text-white dark:bg-red-500 dark:text-white">Mismatch</Badge>
               </div>
+              {onChainData?.checksum && localCheckData?.checksumKeccak && (
+                <div className="mt-3 space-y-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => setShowMismatchDetails((v) => !v)}
+                  >
+                    {showMismatchDetails ? 'Hide details' : 'Show details'}
+                  </Button>
+                  {showMismatchDetails && (
+                    <div className="space-y-2 rounded-md border border-destructive/30 bg-card p-3 text-sm text-foreground">
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">On-chain checksum</div>
+                        <code className="block break-all bg-muted p-2 rounded">{onChainData.checksum}</code>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Local keccak256</div>
+                        <code className="block break-all bg-muted p-2 rounded">
+                          {localCheckData.checksumKeccak}
+                        </code>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </AlertDescription>
           </Alert>
         )}
@@ -276,7 +306,7 @@ export default function VerifyPage() {
           </Alert>
         )}
 
-        {onChainData && localCheckData && (
+        {state === 'match' && onChainData && localCheckData && (
           <Card>
             <CardHeader>
               <CardTitle>Comparison</CardTitle>
@@ -285,14 +315,14 @@ export default function VerifyPage() {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <div className="text-sm text-gray-500 mb-2">On-Chain Checksum</div>
-                    <code className="text-xs bg-gray-100 p-2 rounded block break-all">
+                    <div className="text-sm text-muted-foreground mb-2">On-Chain Checksum</div>
+                    <code className="text-xs bg-muted p-2 rounded block break-all">
                       {onChainData.checksum || '-'}
                     </code>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-500 mb-2">Local Keccak256</div>
-                    <code className="text-xs bg-gray-100 p-2 rounded block break-all">
+                    <div className="text-sm text-muted-foreground mb-2">Local Keccak256</div>
+                    <code className="text-xs bg-muted p-2 rounded block break-all">
                       {localCheckData.checksumKeccak}
                     </code>
                   </div>

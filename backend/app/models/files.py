@@ -38,6 +38,7 @@ class File(Base):
     checksum: Mapped[bytes] = mapped_column(sa.LargeBinary(32), nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=func.now(), nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), index=True)
     grants: Mapped[list[Grant]] = relationship("Grant", back_populates="file", cascade="all, delete-orphan")
 
 

@@ -8,17 +8,22 @@ from redis import asyncio as aioredis
 
 from app.config import settings
 from app.handlers import files as files_handlers
+from app.handlers import lang as lang_handlers
 from app.handlers import link as link_handlers
 from app.handlers import link_callback as link_callback_handlers
 from app.handlers import me as me_handlers
 from app.handlers import menu as menu_handlers
+from app.handlers import notifications as notifications_handlers
 from app.handlers import start as start_handlers
+from app.handlers import switch as switch_handlers
 from app.handlers import unlink as unlink_handlers
 from app.handlers import verify as verify_handlers
 from app.metrics import setup_metrics_server, tg_webhook_errors_total
 from app.middlewares.error_handler import ErrorHandlerMiddleware
+from app.middlewares.i18n import I18nMiddleware
 from app.middlewares.logging import LoggingMiddleware
 from app.middlewares.rate_limit import RateLimitMiddleware
+from app.services.message_store import message_store
 from app.services.notifications.consumer import NotificationConsumer
 from app.utils.webhook import build_webhook_url, mask_webhook_url
 
@@ -37,17 +42,41 @@ async def setup_bot_commands(bot_: Bot) -> None:
     from aiogram.exceptions import TelegramNetworkError
     from aiogram.types import BotCommand
 
-    commands = [
-        BotCommand(command="start", description="Главное меню"),
-        BotCommand(command="me", description="Мой профиль"),
-        BotCommand(command="files", description="Мои файлы"),
-        BotCommand(command="link", description="Привязать аккаунт"),
-        BotCommand(command="unlink", description="Отвязать аккаунт"),
-        BotCommand(command="help", description="Справка"),
-    ]
+    async def build_commands(language: str) -> list[BotCommand]:
+        return [
+            BotCommand(
+                command="start", description=await message_store.get_message("commands.start", language=language)
+            ),
+            BotCommand(command="me", description=await message_store.get_message("commands.me", language=language)),
+            BotCommand(
+                command="files", description=await message_store.get_message("commands.files", language=language)
+            ),
+            BotCommand(command="link", description=await message_store.get_message("commands.link", language=language)),
+            BotCommand(
+                command="unlink", description=await message_store.get_message("commands.unlink", language=language)
+            ),
+            BotCommand(command="help", description=await message_store.get_message("commands.help", language=language)),
+            BotCommand(
+                command="verify", description=await message_store.get_message("commands.verify", language=language)
+            ),
+            BotCommand(command="lang", description=await message_store.get_message("commands.lang", language=language)),
+            BotCommand(
+                command="notify", description=await message_store.get_message("commands.notify", language=language)
+            ),
+            BotCommand(
+                command="switch", description=await message_store.get_message("commands.switch", language=language)
+            ),
+        ]
+
+    languages = ("ru", "en")
+    default_lang = settings.I18N_FALLBACK or settings.BOT_DEFAULT_LANGUAGE
 
     try:
-        await bot_.set_my_commands(commands)
+        default_commands = await build_commands(default_lang)
+        await bot_.set_my_commands(default_commands)
+        for lang in languages:
+            commands = await build_commands(lang)
+            await bot_.set_my_commands(commands, language_code=lang)
         logger.info("Bot commands menu set")
     except TelegramNetworkError as e:
         logger.warning("Failed to set bot commands (network error): %s. Bot will continue without menu.", e)
@@ -62,6 +91,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     )
     dp_ = Dispatcher()
 
+    dp_.update.middleware(I18nMiddleware(settings.I18N_FALLBACK or settings.BOT_DEFAULT_LANGUAGE))
     dp_.update.middleware(ErrorHandlerMiddleware())
     dp_.update.middleware(LoggingMiddleware())
     dp_.update.middleware(RateLimitMiddleware())
@@ -74,6 +104,9 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     dp_.include_router(me_handlers.router)
     dp_.include_router(files_handlers.router)
     dp_.include_router(verify_handlers.router)
+    dp_.include_router(lang_handlers.router)
+    dp_.include_router(notifications_handlers.router)
+    dp_.include_router(switch_handlers.router)
     # остальные роутеры: grants, callbacks
 
     return bot_, dp_
@@ -88,6 +121,9 @@ bot, dp = create_bot_and_dispatcher()
 async def run_polling() -> None:
     logger.info("Starting polling (dev mode)...")
 
+    # Ensure message templates DB is ready
+    await message_store.init()
+
     # Setup bot commands menu
     await setup_bot_commands(bot)
 
@@ -95,8 +131,10 @@ async def run_polling() -> None:
     consumer_task = None
     redis_client = None
     try:
-        redis_client = aioredis.from_url(settings.REDIS_DSN, decode_responses=False)
-        consumer = NotificationConsumer(bot, redis_client)
+        queue_dsn = settings.QUEUE_DSN or settings.REDIS_DSN
+        redis_dsn = settings.REDIS_DSN if queue_dsn.startswith("amqp") else queue_dsn
+        redis_client = aioredis.from_url(redis_dsn, decode_responses=False)
+        consumer = NotificationConsumer(bot, redis_client, queue_dsn=queue_dsn)
         consumer_task = asyncio.create_task(consumer.start())
         logger.info("Notification consumer started")
     except Exception as e:
@@ -194,6 +232,9 @@ def create_web_app() -> web.Application:
     async def on_startup(app_: web.Application) -> None:
         logger.info("Webhook app startup")
 
+        # Ensure message templates DB is ready
+        await message_store.init()
+
         # Ensure webhook is set in Telegram
         webhook_url = await ensure_webhook(bot)
         logger.info("Webhook configured at %s", mask_webhook_url(webhook_url, settings.WEBHOOK_SECRET))
@@ -202,8 +243,10 @@ def create_web_app() -> web.Application:
         await setup_bot_commands(bot)
 
         # Start notification consumer in background
-        redis_client = aioredis.from_url(settings.REDIS_DSN, decode_responses=False)
-        consumer = NotificationConsumer(bot, redis_client)
+        queue_dsn = settings.QUEUE_DSN or settings.REDIS_DSN
+        redis_dsn = settings.REDIS_DSN if queue_dsn.startswith("amqp") else queue_dsn
+        redis_client = aioredis.from_url(redis_dsn, decode_responses=False)
+        consumer = NotificationConsumer(bot, redis_client, queue_dsn=queue_dsn)
         consumer_task = asyncio.create_task(consumer.start())
         app_["consumer_task"] = consumer_task
         app_["redis_client"] = redis_client

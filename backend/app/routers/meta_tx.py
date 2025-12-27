@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # NEW: optional sync execution in dev
+import logging
 import os
 import uuid
 from typing import Annotated, Any
@@ -13,6 +14,8 @@ from ..models.meta_tx_requests import MetaTxRequest
 from ..relayer import enqueue_forward_request
 from ..relayer import submit_forward as _submit_forward_task
 from ..schemas.auth import MetaTxSubmitIn
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/meta-tx", tags=["meta-tx"])
 
@@ -44,9 +47,6 @@ def submit(req: MetaTxSubmitIn, response: Response, db: Annotated[Session, Depen
         rds.set(key, "queued", ex=3600)
     except Exception:
         # best-effort, log for diagnostics
-        import logging
-
-        logger = logging.getLogger(__name__)
         logger.debug("submit_meta_tx: failed to set redis key %s", key, exc_info=True)
 
     # upsert в БД запись MetaTxRequest (для внутренних дедупов и мониторинга)
@@ -67,6 +67,7 @@ def submit(req: MetaTxSubmitIn, response: Response, db: Annotated[Session, Depen
     except Exception:
         db.rollback()
         # не критично для постановки задачи
+
 
     # ставим задачу в Celery (дедупликация и сериализация произойдут в самой задаче)
     task_id = enqueue_forward_request(req.request_id, req.typed_data, req.signature)

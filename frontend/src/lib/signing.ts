@@ -5,7 +5,7 @@ import type {TypedDataDomain, TypedDataField} from 'ethers';
 interface MaybeChainAgent extends SignerAgent {
     getChainId?: () => Promise<number | undefined>;
     switchChain?: (chainId: number) => Promise<void>;
-    kind: 'local' | 'metamask' | 'walletconnect'
+    kind: 'local' | 'metamask' | 'walletconnect' | 'ton'
 }
 
 export class NetworkMismatchError extends Error {
@@ -22,7 +22,7 @@ export async function signForwardTyped(agent: MaybeChainAgent, td: ForwardTyped,
   const desired = typeof domainObj.chainId === 'number' ? (domainObj.chainId as number) : (typeof domainObj.chainId === 'string' ? Number(domainObj.chainId) : undefined);
 
   // Strict network alignment for ForwardRequest (external wallets)
-  if (td.primaryType === 'ForwardRequest' && agent.kind !== 'local' && desired && agent.getChainId) {
+  if (td.primaryType === 'ForwardRequest' && agent.kind !== 'local' && agent.kind !== 'ton' && desired && agent.getChainId) {
     const current = await agent.getChainId();
     if (current !== undefined && desired !== current) {
       if (retrySwitch && agent.switchChain) {

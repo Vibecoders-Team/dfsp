@@ -219,19 +219,6 @@ def submit_forward(self: Task, request_id: str, typed_data: dict[str, Any], sign
     Отправка meta-тx в OZ MinimalForwarder c пер-Grantor блокировкой, ретраями, метриками и структурированными логами.
     """
     t0 = time.perf_counter()
-    chain = get_chain()
-    fwd = chain.get_forwarder()
-
-    msg = (typed_data or {}).get("message") or {}
-    try:
-        req_tuple = _build_req_tuple(msg)
-        sig_bytes = Web3.to_bytes(hexstr=cast(HexStr, signature))
-    except Exception as e:
-        _metrics_incr("error_total")
-        return {"status": "bad_request", "error": str(e)}
-
-    series = _series_key(msg)
-    lock = rds.lock(series, timeout=60, blocking_timeout=30)
 
     # DB session for idempotency/metrics persistence
     db: Session | None = None
@@ -249,6 +236,22 @@ def submit_forward(self: Task, request_id: str, typed_data: dict[str, Any], sign
     except Exception as e:
         log.debug("submit_forward: idempotency check failed: %s", e, exc_info=True)
         pass
+
+
+    # Standard EVM signature processing
+    chain = get_chain()
+    fwd = chain.get_forwarder()
+
+    msg = (typed_data or {}).get("message") or {}
+    try:
+        req_tuple = _build_req_tuple(msg)
+        sig_bytes = Web3.to_bytes(hexstr=cast(HexStr, signature))
+    except Exception as e:
+        _metrics_incr("error_total")
+        return {"status": "bad_request", "error": str(e)}
+
+    series = _series_key(msg)
+    lock = rds.lock(series, timeout=60, blocking_timeout=30)
 
     with lock:
         # verify signature and nonce

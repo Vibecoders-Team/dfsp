@@ -8,7 +8,7 @@ let pending: Promise<SignerAgent> | null = null;
 
 export function getSelectedAgentKind(): AgentKind {
   const k = (localStorage.getItem(KEY) as AgentKind | null) || 'local';
-  if (k !== 'local' && k !== 'metamask' && k !== 'walletconnect') return 'local';
+  if (k !== 'local' && k !== 'metamask' && k !== 'walletconnect' && k !== 'ton') return 'local';
   return k;
 }
 
@@ -32,6 +32,9 @@ export async function getAgent(): Promise<SignerAgent> {
     } else if (sel === 'metamask') {
       const { MetaMaskAgent } = await import('./metamask');
       agent = new MetaMaskAgent();
+    } else if (sel === 'ton') {
+      const { TonAgent } = await import('./ton');
+      agent = new TonAgent();
     } else {
       const { WalletConnectAgent } = await import('./walletconnect');
       agent = new WalletConnectAgent();

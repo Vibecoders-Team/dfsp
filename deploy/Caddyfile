@@ -1,39 +1,205 @@
 # Caddy HTTPS reverse proxy for dfsp.app
-# Assumes DNS A record for dfsp.app, rpc.dfsp.app, ipfs.dfsp.app point to this server.
-# Provides automatic Let's Encrypt certificates.
-
 {
     email admin@dfsp.app
 }
 
 (dfsp_common_headers) {
     header {
-               Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-               X-Frame-Options "DENY"
-               X-Content-Type-Options "nosniff"
-               Referrer-Policy "no-referrer"
-               # Content Security Policy tuned for the frontend and related services
-               Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://*.walletconnect.com; font-src 'self' data: https://*.walletconnect.com; connect-src 'self' https://ipfs.dfsp.app https://rpc.dfsp.app https://ipfs.dev.dfsp.app https://rpc.dev.dfsp.app https://dev.dfsp.app https://*.walletconnect.com wss://*.walletconnect.com; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://*.walletconnect.com; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests"
-           }
+        # сначала гарантированно убираем любой уже существующий CSP
+        -Content-Security-Policy
+
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        # X-Frame-Options не нужен, frame-ancestors управляет встраиванием
+
+        # ОБЩИЙ CSP для фронта (prod + dev, mini, Telegram WebApp и TonConnect)
+        Content-Security-Policy "
+            default-src 'self';
+            base-uri 'self';
+            object-src 'none';
+            frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://t.me;
+
+            script-src
+                'self'
+                https://telegram.org
+                https://*.telegram.org
+                https://js.tlgrm.app;
+
+            style-src
+                'self'
+                'unsafe-inline';
+
+            style-src-attr
+                'unsafe-inline';
+
+            img-src
+                'self'
+                data:
+                blob:
+                https://*.walletconnect.com
+                https://config.ton.org
+                https://t.me
+                https://*.telegram.org
+                https://js.tlgrm.app
+                https://*.tg.dev
+                https://raw.githubusercontent.com;
+
+            font-src
+                'self'
+                data:
+                https://*.walletconnect.com;
+
+            connect-src
+                'self'
+                https://ipfs.dfsp.app
+                https://rpc.dfsp.app
+                https://ipfs.dev.dfsp.app
+                https://rpc.dev.dfsp.app
+                https://dfsp.app
+                https://dev.dfsp.app
+                https://*.walletconnect.com
+                wss://*.walletconnect.com
+                https://walletbot.me
+                https://connect.tonhubapi.com
+                https://tonconnectbridge.tonapi.io
+                https://config.ton.org
+                https://events-gateway.walletteam.org
+                https://bridge.tonapi.io
+                https://tonconnectbridge.mytonwallet.org
+                https://ton-connect-bridge.bgwapi.io
+                https://wallet.binance.com
+                https://web3.okx.com
+                https://www.okx.com
+                https://sse-bridge.hot-labs.org;
+
+            worker-src
+                'self'
+                blob:;
+
+            child-src
+                'self'
+                blob:;
+
+            frame-src
+                'self'
+                https://*.walletconnect.com;
+
+            manifest-src 'self';
+
+            form-action 'self';
+
+            upgrade-insecure-requests;
+        "
+    }
 }
 
 (dfsp_explorer_csp) {
     header {
-               -Content-Security-Policy
-               Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://*.walletconnect.com; font-src 'self' data: https://*.walletconnect.com https://fonts.gstatic.com; connect-src 'self' https://ipfs.dfsp.app https://rpc.dfsp.app https://ipfs.dev.dfsp.app https://rpc.dev.dfsp.app https://dev.dfsp.app https://*.walletconnect.com wss://*.walletconnect.com; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'self' https://*.walletconnect.com; manifest-src 'self'; form-action 'self'; upgrade-insecure-requests"
-           }
+        # тоже сначала чистим CSP, потом ставим свой
+        -Content-Security-Policy
+
+        Content-Security-Policy "
+            default-src 'self';
+            base-uri 'self';
+            object-src 'none';
+            frame-ancestors 'none';
+
+            script-src
+                'self'
+                'unsafe-inline'
+                https://js.tlgrm.app;
+
+            style-src
+                'self'
+                'unsafe-inline'
+                https://fonts.googleapis.com;
+
+            style-src-attr
+                'unsafe-inline';
+
+            img-src
+                'self'
+                data:
+                blob:
+                https://*.walletconnect.com
+                https://config.ton.org
+                https://t.me
+                https://*.telegram.org
+                https://js.tlgrm.app
+                https://*.tg.dev
+                https://raw.githubusercontent.com;
+
+            font-src
+                'self'
+                data:
+                https://*.walletconnect.com
+                https://fonts.gstatic.com;
+
+            connect-src
+                'self'
+                https://ipfs.dfsp.app
+                https://rpc.dfsp.app
+                https://ipfs.dev.dfsp.app
+                https://rpc.dev.dfsp.app
+                https://dfsp.app
+                https://dev.dfsp.app
+                https://*.walletconnect.com
+                wss://*.walletconnect.com
+                https://walletbot.me
+                https://connect.tonhubapi.com
+                https://tonconnectbridge.tonapi.io
+                https://config.ton.org
+                https://events-gateway.walletteam.org
+                https://bridge.tonapi.io
+                https://tonconnectbridge.mytonwallet.org
+                https://ton-connect-bridge.bgwapi.io
+                https://wallet.binance.com
+                https://web3.okx.com
+                https://www.okx.com
+                https://sse-bridge.hot-labs.org;
+
+            worker-src
+                'self'
+                blob:;
+
+            child-src
+                'self'
+                blob:;
+
+            frame-src
+                'self'
+                https://*.walletconnect.com;
+
+            manifest-src 'self';
+
+            form-action 'self';
+
+            upgrade-insecure-requests;
+        "
+    }
 }
 
 dfsp.app {
     import dfsp_common_headers
 
     route {
-        # API proxy must match first
+        # API proxy
         handle_path /api/* {
             reverse_proxy api:8000
         }
 
-        # Telegram bot webhook (only webhook/healthz paths; UI link handled by SPA)
+        # tonconnect manifest
+        handle /tonconnect-manifest.json {
+            root * /usr/share/caddy/html
+            header Access-Control-Allow-Origin "*"
+            header Access-Control-Allow-Methods "GET, OPTIONS"
+            header Access-Control-Allow-Headers "*"
+            header Cache-Control "public, max-age=300"
+            file_server
+        }
+
+        # Telegram bot webhook/health
         handle_path /tg/webhook* {
             reverse_proxy telegram-bot:8080
         }
@@ -41,7 +207,21 @@ dfsp.app {
             reverse_proxy telegram-bot:8080
         }
 
-        # Static frontend with SPA fallback
+        # --- Static assets (Vite hashed) ---
+        @assets path /assets/*
+        handle @assets {
+            root * /usr/share/caddy/html
+            header Cache-Control "public, max-age=31536000, immutable"
+            header X-DFSP-Assets "1"
+            file_server
+        }
+
+        # index.html must not be cached aggressively (it references hashed assets)
+        @index path /index.html
+        header @index Cache-Control "no-cache"
+        header @index X-DFSP-Index "1"
+
+        # Static SPA
         handle {
             root * /usr/share/caddy/html
             try_files {path} /index.html
@@ -50,37 +230,31 @@ dfsp.app {
     }
 }
 
-# www redirect to apex
 www.dfsp.app {
     redir * https://dfsp.app{uri}
 }
 
-# Public HTTPS RPC endpoint (JSON-RPC over HTTP)
 rpc.dfsp.app {
     import dfsp_common_headers
     reverse_proxy chain:8545
 }
 
-# Public IPFS gateway
 ipfs.dfsp.app {
     import dfsp_common_headers
     reverse_proxy ipfs:8080
 }
 
-# Public Blockscout explorer
 explorer.dfsp.app {
     import dfsp_common_headers
     import dfsp_explorer_csp
+
     route {
-        # Blockscout backend (API + websocket)
         handle /api/* {
             reverse_proxy explorer-indexer:4000
         }
         handle /socket/* {
             reverse_proxy explorer-indexer:4000
         }
-
-        # Blockscout frontend
         handle {
             reverse_proxy explorer-web:3000
         }
@@ -95,7 +269,7 @@ registry.dfsp.app {
     reverse_proxy registry:5000
 }
 
-# --- Dev stack routed via the same Caddy instance ---
+# --- Dev stack ---
 
 dev.dfsp.app {
     import dfsp_common_headers
@@ -104,7 +278,29 @@ dev.dfsp.app {
         handle_path /api/* {
             reverse_proxy dfsp-api-dev:8000
         }
+        handle /tonconnect-manifest.json {
+            root * /usr/share/caddy/html-dev
+            header Access-Control-Allow-Origin "*"
+            header Access-Control-Allow-Methods "GET, OPTIONS"
+            header Access-Control-Allow-Headers "*"
+            header Cache-Control "public, max-age=60"
+            file_server
+        }
 
+        # --- Static assets (Vite hashed) ---
+        @assets path /assets/*
+        handle @assets {
+            root * /usr/share/caddy/html-dev
+            header Cache-Control "public, max-age=31536000, immutable"
+            header X-DFSP-Assets "1"
+            file_server
+        }
+
+        @index path /index.html
+        header @index Cache-Control "no-cache"
+        header @index X-DFSP-Index "1"
+
+        # Static SPA
         handle {
             root * /usr/share/caddy/html-dev
             try_files {path} /index.html
@@ -130,6 +326,7 @@ ipfs.dev.dfsp.app {
 explorer.dev.dfsp.app {
     import dfsp_common_headers
     import dfsp_explorer_csp
+
     route {
         handle /api/* {
             reverse_proxy blockscout-indexer-dev:4000

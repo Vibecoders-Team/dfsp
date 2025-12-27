@@ -276,7 +276,10 @@ class Chain:
         key = f"file_meta:{_hex32(item_id)}"
         cached = Cache.get_json(key)
         if isinstance(cached, dict) and cached:
-            return cached
+            # If cached entry already has checksum, assume full meta; otherwise fetch fresh.
+            checksum_cached = cached.get("checksum")
+            if checksum_cached:
+                return cached
         if "metaOf" not in self._fn:
             raise RuntimeError("Registry has no metaOf")
         fn = self._fn["metaOf"]

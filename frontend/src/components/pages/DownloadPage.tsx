@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui
 import { Alert, AlertDescription } from '../ui/alert';
 import { Progress } from '../ui/progress';
 import { ArrowLeft, Download, Key, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { notify } from '@/lib/toast';
 import { fetchDownload, fetchGrantByCapId, submitMetaTx, type ForwardTyped } from '@/lib/api';
 import { ensureRSA } from '@/lib/keychain';
 import { getErrorMessage } from '@/lib/errors';
@@ -15,6 +15,7 @@ import { isAxiosError } from 'axios';
 import { getAgent } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
 import { decryptStream } from '@/lib/cryptoClient';
+import { sanitizeFilename, parseContentDisposition } from '@/lib/sanitize.ts';
 
 const IPFS_GATEWAY =
   ((import.meta as unknown as { env?: { VITE_IPFS_PUBLIC_GATEWAY?: string } }).env?.VITE_IPFS_PUBLIC_GATEWAY)
@@ -115,7 +116,7 @@ export default function DownloadPage() {
           if (detail && detail.startsWith('pow_')) {
             powHeader = await getOptionalPowHeader(true);
             const res2 = await fetchDownload(capId, powHeader);
-            encK = res2.encK; ipfsPath = res2.ipfsPath; requestId = res2.requestId; typedData = res2.typedData as unknown as ForwardTyped | undefined;
+            encK = res2.encK; ipfsPath = res2.ipfsPath; requestId = res2.requestId; typedData = res2.typedData as unknown as ForwardTyped | undefined; fileName = res2.fileName;
           } else {
             throw e;
           }
@@ -176,6 +177,11 @@ export default function DownloadPage() {
       const resp = await fetch(url);
       if (!resp.ok || !resp.body) throw new Error(`Download failed: ${resp.status} ${resp.statusText}`);
 
+      // Try to get filename from Content-Disposition header first
+      const contentDisposition = resp.headers.get('Content-Disposition');
+      const headerFilename = parseContentDisposition(contentDisposition);
+      const finalFilename = headerFilename || fileName;
+
       let blob: Blob;
       if (K_file) {
         try {
@@ -193,13 +199,13 @@ export default function DownloadPage() {
       setPhase('saving');
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = fileName || 'downloaded-file';
+      a.download = sanitizeFilename(finalFilename) || 'downloaded-file';
       a.click();
       URL.revokeObjectURL(a.href);
 
       setProgress(100);
       setPhase('done');
-      toast.success('Download complete');
+      notify.success('Download complete', { dedupeId: `dl-complete-${capId}` });
     } catch (e) {
       setErr(getErrorMessage(e, 'Download failed'));
       setPhase('error');

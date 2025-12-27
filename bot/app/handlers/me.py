@@ -8,6 +8,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from ..services.dfsp_api import get_bot_profile
+from ..services.message_store import get_message
 
 router = Router(name="profile_me")
 logger = logging.getLogger(__name__)
@@ -38,38 +39,26 @@ async def cmd_me(message: Message) -> None:
         logger.info("DFSP /bot/me result: %r", profile)
     except Exception:
         logger.exception("Failed to get bot profile from DFSP")
-        await message.answer("😔 Не удалось получить профиль.\nПопробуй ещё раз чуть позже.")
+        await message.answer(await get_message("profile.fetch_error"))
         return
 
     if profile is None:
         # 404 от API — чат не привязан
         from .start import get_main_keyboard
 
-        keyboard = get_main_keyboard(is_linked=False)
-        await message.answer(
-            "❌ К этому чату ещё не привязан кошелёк.\n\n"
-            "Чтобы привязать кошелёк:\n"
-            "1. Нажми кнопку «🔗 Привязать аккаунт» ниже\n"
-            "2. Открой ссылку в браузере\n"
-            "3. Войди и подпиши сообщение своим кошельком.",
-            reply_markup=keyboard,
-        )
+        keyboard = await get_main_keyboard(is_linked=False)
+        await message.answer(await get_message("profile.not_linked"), reply_markup=keyboard)
         return
 
     masked = mask_address(profile.address)
-    display_name = profile.display_name or "без имени"
+    display_name = profile.display_name or await get_message("profile.no_name")
 
     from .start import get_main_keyboard
 
-    text = (
-        "👤 <b>Твой профиль</b>\n\n"
-        f"Имя: <b>{display_name}</b>\n"
-        f"Адрес: <code>{masked}</code>\n\n"
-        "Если хочешь отвязать текущий кошелёк — используй команду /unlink.\n"
-        "Чтобы привязать другой кошелёк:\n"
-        "1. Сначала /unlink\n"
-        "2. Затем снова /link и пройди привязку с новым адресом."
+    text = await get_message(
+        "profile.details",
+        variables={"display_name": display_name, "address": masked},
     )
 
-    keyboard = get_main_keyboard(is_linked=True)
+    keyboard = await get_main_keyboard(is_linked=True)
     await message.answer(text, reply_markup=keyboard)

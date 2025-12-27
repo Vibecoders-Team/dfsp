@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import base64
 import logging
-import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, cast
 
 from eth_typing import HexStr
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -19,11 +18,16 @@ from app.config import settings
 from app.deps import get_chain, get_db, rds
 from app.models import File, FileVersion, Grant, User
 from app.quotas import protect_meta_tx
+from app.repos.telegram_repo import get_active_chat_ids_for_addresses
 from app.repos.user_repo import get_by_eth_address
 from app.schemas.auth import FileCreateIn, TypedDataOut
+from app.schemas.common import OkResponse
 from app.schemas.grants import DuplicateOut, ShareIn, ShareItemOut, ShareOut
-from app.security import parse_token
+from app.security import get_current_user
 from app.services.event_logger import EventLogger
+from app.services.event_publisher import EventPublisher
+from app.services.notification_publisher import NotificationPublisher
+from app.validators import sanitize_filename
 
 router = APIRouter(prefix="/files", tags=["files"])
 logger = logging.getLogger(__name__)
@@ -32,20 +36,8 @@ AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 
 
 # ---- auth helper: достаём текущего пользователя из Bearer-токена ----
-def require_user(authorization: AuthorizationHeader, db: Annotated[Session, Depends(get_db)]) -> User:
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(401, "auth_required")
-    try:
-        payload = parse_token(token)
-        sub = getattr(payload, "sub", None) or payload.get("sub")
-        user_id = uuid.UUID(str(sub))
-    except Exception as e:
-        raise HTTPException(401, "bad_token") from e
-    user_obj: User | None = db.get(User, user_id)
-    if user_obj is None:
-        raise HTTPException(401, "user_not_found")
-    return user_obj
+def require_user(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+    return current_user
 
 
 # ---- NEW: Schema for file list response ----
@@ -82,7 +74,11 @@ def list_my_files(
     # Count total files and per-user count for diagnostics
     total_files = db.query(File).count()
     user_files_q = (
-        select(File).where(File.owner_id == user.id).order_by(File.created_at.desc()).limit(limit).offset(offset)
+        select(File)
+        .where(File.owner_id == user.id, File.deleted_at.is_(None))
+        .order_by(File.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     files = db.scalars(user_files_q).all()
     per_user_count = len(files)
@@ -93,7 +89,7 @@ def list_my_files(
             fallback_q = (
                 select(File)
                 .join(User, File.owner_id == User.id)
-                .where(User.eth_address == user.eth_address.lower())
+                .where(User.eth_address == user.eth_address.lower(), File.deleted_at.is_(None))
                 .order_by(File.created_at.desc())
             )
             fb_files = db.scalars(fallback_q).all()
@@ -110,7 +106,9 @@ def list_my_files(
 
     # Log owner_ids of a few recent files for visibility
     try:
-        sample = db.execute(select(File.owner_id, File.id).order_by(File.created_at.desc()).limit(5)).all()
+        sample = db.execute(
+            select(File.owner_id, File.id).where(File.deleted_at.is_(None)).order_by(File.created_at.desc()).limit(5)
+        ).all()
         sample_str = ", ".join([f"(owner={row[0]}, id={row[1].hex()})" for row in sample])
     except Exception as e:
         logger.debug("list_my_files: failed to compose sample_str: %s", e, exc_info=True)
@@ -118,9 +116,10 @@ def list_my_files(
 
     try:
         logger.info(
-            "list_my_files: dsn=%s user=%s total_files=%d per_user=%d recent=%s",
+            "list_my_files: dsn=%s user=%s (addr=%s) total_files=%d per_user=%d recent=%s",
             dsn,
             str(user.id),
+            user.eth_address,
             total_files,
             per_user_count,
             sample_str,
@@ -319,7 +318,7 @@ def share_file(
                 capIds = []
         else:
             capIds = []
-        return {"status": "duplicate", "capIds": capIds}
+        return DuplicateOut(status="duplicate", capIds=capIds)
 
     addr_lower_to_input = {a.lower(): a for a in body.users}
     enc_map = {k.lower(): v for k, v in (body.encK_map or {}).items()}
@@ -409,11 +408,135 @@ def share_file(
     except Exception as e:
         logger.warning(f"Failed to log grant_created events: {e}")
 
+    # Publish notification events for grantor/grantee if chat_id known
+    try:
+        publisher = NotificationPublisher()
+        addr_map = get_active_chat_ids_for_addresses(
+            db,
+            [user.eth_address] + [ga for ga, _ in grantees],
+        )
+        for (grantee_addr, _grantee_user), cap_b in zip(grantees, cap_ids_bytes, strict=False):
+            cap_hex = "0x" + cap_b.hex()
+            grantor_chat = addr_map.get(user.eth_address.lower())
+            if grantor_chat:
+                publisher.publish(
+                    "grant_created",
+                    chat_id=grantor_chat,
+                    payload={
+                        "capId": cap_hex,
+                        "fileId": id,
+                        "grantor": user.eth_address,
+                        "grantee": grantee_addr,
+                        "ttlDays": int(body.ttl_days),
+                        "maxDownloads": int(body.max_dl),
+                        "expiresAt": expires_at.isoformat(),
+                    },
+                    event_id=f"grant_created:{cap_hex}:{grantor_chat}",
+                )
+            grantee_chat = addr_map.get(grantee_addr.lower())
+            if grantee_chat:
+                publisher.publish(
+                    "grant_received",
+                    chat_id=grantee_chat,
+                    payload={
+                        "capId": cap_hex,
+                        "fileId": id,
+                        "grantor": user.eth_address,
+                        "grantee": grantee_addr,
+                        "ttlDays": int(body.ttl_days),
+                        "maxDownloads": int(body.max_dl),
+                        "expiresAt": expires_at.isoformat(),
+                    },
+                    event_id=f"grant_received:{cap_hex}:{grantee_chat}",
+                )
+                # Сразу отправляем download_allowed для генерации одноразовой ссылки
+                try:
+                    file_obj = db.get(File, file_id_bytes)
+                    file_name = file_obj.name if file_obj else None
+                    publisher.publish(
+                        "download_allowed",
+                        chat_id=grantee_chat,
+                        payload={
+                            "capId": cap_hex,
+                            "fileId": id,
+                            "fileName": file_name,
+                        },
+                        event_id=f"download_allowed:{cap_hex}:{grantee_chat}",
+                    )
+                except Exception as e:
+                    logger.debug("Failed to publish download_allowed for %s: %s", cap_hex, e)
+    except Exception as e:
+        logger.warning("Failed to publish notification events for grants: %s", e, exc_info=True)
+
     items = [
         ShareItemOut(grantee=addr_lower_to_input[ga.lower()], capId=ch, status="queued")
         for (ga, _), ch in zip(grantees, cap_ids_hex, strict=False)
     ]
     return ShareOut(items=items, typedDataList=typed_list)
+
+
+@router.delete("/{id}", response_model=OkResponse)
+def delete_file(
+    id: str,
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
+    chain: Annotated[Chain, Depends(get_chain)],
+) -> OkResponse:
+    """
+    Soft-delete file: mark deleted_at, revoke active grants, publish event.
+    """
+    if not (isinstance(id, str) and id.startswith("0x") and len(id) == 66):
+        raise HTTPException(400, "bad_file_id")
+    try:
+        file_id_bytes = Web3.to_bytes(hexstr=cast(HexStr, id))
+    except Exception as e:
+        raise HTTPException(400, "bad_file_id") from e
+
+    file_obj: File | None = db.get(File, file_id_bytes)
+    if file_obj is None or file_obj.deleted_at is not None:
+        raise HTTPException(404, "file_not_found")
+    if file_obj.owner_id != user.id:
+        raise HTTPException(403, "not_owner")
+
+    now = datetime.now(UTC)
+    file_obj.deleted_at = now
+
+    # Revoke active grants
+    active_grants = db.query(Grant).filter(Grant.file_id == file_id_bytes, Grant.revoked_at.is_(None)).all()
+    for g in active_grants:
+        g.revoked_at = now
+        g.status = "revoked"
+        db.add(g)
+
+    db.add(file_obj)
+    db.commit()
+
+    # Publish notification to owner chat if available
+    try:
+        publisher = NotificationPublisher()
+        chat_map = get_active_chat_ids_for_addresses(db, [user.eth_address])
+        chat_id = chat_map.get(user.eth_address.lower())
+        if chat_id:
+            publisher.publish(
+                "file_deleted",
+                chat_id=chat_id,
+                payload={"fileId": id},
+                event_id=f"file_deleted:{id}:{chat_id}",
+            )
+    except Exception as e:
+        logger.warning("Failed to publish file_deleted notification: %s", e, exc_info=True)
+
+    try:
+        EventPublisher().publish(
+            "file_deleted",
+            subject={"fileId": id, "owner": user.eth_address},
+            payload={"ts": now.isoformat()},
+            event_id=f"file_deleted:{id}",
+        )
+    except Exception as e:
+        logger.debug("Failed to log file_deleted event: %s", e, exc_info=True)
+
+    return OkResponse()
 
 
 @router.get("/{id}/grants")
@@ -435,6 +558,8 @@ def list_file_grants(
     file_row: File | None = db.get(File, file_id_bytes)
     if file_row is None:
         raise HTTPException(404, "file_not_found")
+    if file_row.deleted_at is not None:
+        raise HTTPException(404, "file_not_found")
     if file_row.owner_id != user.id:
         raise HTTPException(403, "not_owner")
 
@@ -442,7 +567,7 @@ def list_file_grants(
     rows = db.execute(
         select(Grant, User.eth_address)
         .join(User, Grant.grantee_id == User.id)
-        .where(Grant.file_id == file_id_bytes)
+        .where(Grant.file_id == file_id_bytes, Grant.revoked_at.is_(None))
         .order_by(Grant.created_at.desc())
     ).all()
 
@@ -512,3 +637,72 @@ def list_file_grants(
         )
 
     return {"items": items}
+
+
+class FileRenameIn(BaseModel):
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def _v_name(cls, v: str) -> str:
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("bad_name")
+        return sanitize_filename(v)
+
+
+@router.patch("/{id}")
+def rename_file(
+    id: str,
+    body: FileRenameIn,
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, object]:
+    """Allow file owner to rename a file's display name.
+
+    Does not modify history/versions or public link snapshots.
+    """
+    if not (isinstance(id, str) and id.startswith("0x") and len(id) == 66):
+        raise HTTPException(400, "bad_file_id")
+    try:
+        file_id = Web3.to_bytes(hexstr=cast(HexStr, id))
+    except Exception as e:
+        raise HTTPException(400, "bad_file_id") from e
+
+    file_row: File | None = db.get(File, file_id)
+    if file_row is None:
+        raise HTTPException(404, "file_not_found")
+    if file_row.owner_id != user.id:
+        raise HTTPException(403, "forbidden")
+
+    old_name = file_row.name
+    new_name = body.name
+    # Update only display name
+    file_row.name = new_name
+    db.add(file_row)
+    db.commit()
+
+    # Audit log
+    try:
+        ev = EventLogger(db)
+        ev.log_event(
+            event_type="file_renamed",
+            payload={
+                "file_id": file_row.id.hex(),
+                "old_name": str(old_name),
+                "new_name": str(new_name),
+                "user_id": str(user.id),
+            },
+            user_id=user.id,
+        )
+    except Exception:
+        logger.debug("rename_file: failed to log event", exc_info=True)
+
+    return {
+        "idHex": "0x" + file_row.id.hex(),
+        "name": file_row.name,
+        "size": file_row.size,
+        "mime": file_row.mime,
+        "cid": file_row.cid,
+        "checksum": "0x" + (file_row.checksum.hex() if file_row.checksum else ""),
+        "createdAt": int(file_row.created_at.timestamp()) if file_row.created_at else 0,
+    }

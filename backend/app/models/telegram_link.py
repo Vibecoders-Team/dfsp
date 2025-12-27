@@ -14,6 +14,7 @@ class TelegramLink(Base):
 
     chat_id: Mapped[int] = mapped_column(BIGINT, primary_key=True)
     wallet_address: Mapped[str] = mapped_column(sa.Text, primary_key=True)
+    is_active: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.false(), nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False

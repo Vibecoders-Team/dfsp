@@ -29,3 +29,10 @@ export function getOrCreateFileKey(fileId: string): Uint8Array {
   setFileKey(fileId, key);
   return key;
 }
+
+export function clearAllFileKeys(): void {
+  try {
+    const keys = Object.keys(localStorage).filter((k) => k.startsWith(LS_PREFIX));
+    for (const k of keys) localStorage.removeItem(k);
+  } catch { /* ignore */ }
+}

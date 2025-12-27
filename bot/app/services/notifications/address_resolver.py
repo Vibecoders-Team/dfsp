@@ -64,7 +64,7 @@ class AddressResolver:
 
         Events may contain grantor/grantee/user fields that we can use.
         """
-        subject = event.subject or {}
+        subject = getattr(event, "payload", {}) or {}
 
         # For grant events, check grantor and grantee
         grantor = subject.get("grantor")

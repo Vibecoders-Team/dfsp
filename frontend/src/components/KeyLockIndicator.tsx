@@ -13,13 +13,20 @@ export default function KeyLockIndicator() {
     const onUnlocked = () => setUnlocked(true);
     const onLocked = () => setUnlocked(false);
     const onCancel = () => setUnlocked(isEOAUnlocked());
+    const onStatus = (e: Event) => {
+      const detail = (e as CustomEvent<{ status?: string }>).detail;
+      if (detail?.status === 'locked') setUnlocked(false);
+      if (detail?.status === 'unlocked') setUnlocked(true);
+    };
     window.addEventListener('dfsp:unlocked', onUnlocked);
     window.addEventListener('dfsp:locked', onLocked);
     window.addEventListener('dfsp:unlock-cancel', onCancel);
+    window.addEventListener('dfsp:key-status', onStatus as EventListener);
     return () => {
       window.removeEventListener('dfsp:unlocked', onUnlocked);
       window.removeEventListener('dfsp:locked', onLocked);
       window.removeEventListener('dfsp:unlock-cancel', onCancel);
+      window.removeEventListener('dfsp:key-status', onStatus as EventListener);
     };
   }, []);
 

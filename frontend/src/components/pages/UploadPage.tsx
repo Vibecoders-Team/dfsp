@@ -9,12 +9,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui
 import { Alert, AlertDescription } from '../ui/alert';
 import { Progress } from '../ui/progress';
 import { Upload, File, X, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { notify } from '@/lib/toast';
 import { getErrorMessage } from '@/lib/errors.ts';
 import { encryptFile, keccak } from '@/lib/cryptoClient.ts';
 import { storeEncrypted } from '@/lib/api.ts';
 import { getOrCreateFileKey, renameFileKey } from '@/lib/fileKey.ts';
 import type * as React from "react";
+import { sanitizeFilename } from '@/lib/sanitize.ts';
 
 type UploadState = 'empty' | 'encrypting' | 'uploading' | 'registering' | 'done' | 'error';
 
@@ -41,8 +42,14 @@ export default function UploadPage() {
 
   const handleFileSelect = (file: File) => {
     if (file.size > MAX_FILE_SIZE) {
-      setError(`File size exceeds the maximum limit of ${formatBytes(MAX_FILE_SIZE)}`);
+      setUploadedFile(null);
+      setDescription('');
+      setProgress(0);
       setState('error');
+      setError(`File size exceeds the maximum limit of ${formatBytes(MAX_FILE_SIZE)}`);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       return;
     }
 
@@ -119,14 +126,14 @@ export default function UploadPage() {
       setUploadSpeed(speed);
 
       setState('done');
-      toast.success('File uploaded successfully!', { description: `File ID: ${res.id_hex.slice(0,10)}...` });
+      notify.success('File uploaded successfully!', { description: `File ID: ${res.id_hex.slice(0,10)}...`, dedupeId: `upload-${res.id_hex}` });
 
       setTimeout(() => { navigate('/files'); }, 1500);
     } catch (err) {
       setState('error');
       const errorMsg = getErrorMessage(err, 'Upload failed');
       setError(errorMsg);
-      toast.error('Upload failed', { description: errorMsg });
+      notify.error('Upload failed', { description: errorMsg, dedupeId: 'upload-error' });
     }
   };
 
@@ -159,7 +166,7 @@ export default function UploadPage() {
       <div className="max-w-2xl mx-auto space-y-6">
         <div>
           <h1>Upload File</h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 dark:text-gray-400">
             Encrypt and upload your file to IPFS
           </p>
         </div>
@@ -170,15 +177,15 @@ export default function UploadPage() {
               <div
                 className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
                   isDragging
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-300 hover:border-gray-400'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                    : 'border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600'
                 }`}
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
               >
                 <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600 mb-4">
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
                   Drag and drop your file here, or click to browse
                 </p>
                 <input
@@ -191,6 +198,7 @@ export default function UploadPage() {
                 <Button
                   onClick={() => fileInputRef.current?.click()}
                   variant="outline"
+                  aria-label="Choose file to upload"
                 >
                   Choose File
                 </Button>
@@ -207,33 +215,34 @@ export default function UploadPage() {
             <CardHeader>
               <CardTitle>File Information</CardTitle>
             </CardHeader>
+            <form onSubmit={e => { e.preventDefault(); handleSubmit(); }}>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <File className="h-8 w-8 text-blue-600" />
-                  <div>
-                    <div>{uploadedFile.name}</div>
-                    <div className="text-sm text-gray-500">
-                      {formatBytes(uploadedFile.size)}
+                <div className="flex items-center justify-between p-4 bg-muted rounded-lg border border-border">
+                  <div className="flex items-center gap-3">
+                    <File className="h-8 w-8 text-blue-600" />
+                    <div>
+                      <div className="text-foreground">{sanitizeFilename(uploadedFile.name)}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {formatBytes(uploadedFile.size)}
+                      </div>
                     </div>
                   </div>
+                  {!isProcessing && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={removeFile}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
-                {!isProcessing && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={removeFile}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>File Name</Label>
                   <Input
-                    value={uploadedFile.name}
+                    value={sanitizeFilename(uploadedFile.name)}
                     disabled
                   />
                 </div>
@@ -267,8 +276,36 @@ export default function UploadPage() {
                 />
               </div>
             </CardContent>
+            <div className="flex gap-3 justify-end p-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate('/files')}
+                disabled={isProcessing}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isProcessing || !uploadedFile}
+                className="gap-2"
+              >
+                {isProcessing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4" />
+                    Upload & Register
+                  </>
+                )}
+              </Button>
+            </div>
+            </form>
           </Card>
-        )}
+         )}
 
         {state === 'encrypting' && (
           <Card>
@@ -326,37 +363,24 @@ export default function UploadPage() {
         {state === 'error' && error && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription className="flex items-start justify-between gap-3">
+              <span>{error}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setUploadedFile(null);
+                  setDescription('');
+                  setError('');
+                  setState('empty');
+                  setProgress(0);
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+                }}
+              >
+                Choose another file
+              </Button>
+            </AlertDescription>
           </Alert>
-        )}
-
-        {uploadedFile && state !== 'done' && (
-          <div className="flex gap-3 justify-end">
-            <Button
-              variant="outline"
-              onClick={() => navigate('/files')}
-              disabled={isProcessing}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={isProcessing || !uploadedFile}
-              className="gap-2"
-            >
-              {isProcessing ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Upload className="h-4 w-4" />
-                  Upload & Register
-                </>
-              )}
-            </Button>
-          </div>
         )}
       </div>
     </Layout>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useTheme } from "next-themes";
+import { useTheme } from "../ThemeContext";
 import { Toaster as Sonner, ToasterProps } from "sonner";
 import type * as React from "react";
 
@@ -11,6 +11,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      position="bottom-right"
       style={
         {
           "--normal-bg": "var(--popover)",

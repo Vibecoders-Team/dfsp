@@ -1,21 +1,27 @@
 from __future__ import annotations
 
+import json
 import logging
+import os
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from web3 import Web3
 
 from app.blockchain.web3_client import Chain
-from app.deps import get_chain, get_db
+from app.deps import get_chain, get_db, rds
 from app.models import File, Grant, User
 from app.models.action_intent import ActionIntent
 from app.models.anchors import Anchor
 from app.repos import telegram_repo
 from app.repos.user_repo import get_by_eth_address
+from app.routers.download import _build_download_payload
 from app.schemas.action_intent import (
     ActionIntentConsumeIn,
     ActionIntentConsumeOut,
@@ -28,6 +34,8 @@ from app.security import parse_token
 router = APIRouter(prefix="/bot", tags=["Bot"])
 
 ACTION_INTENT_TTL_SECONDS = 15 * 60  # 10–15 min as per task; we pick 15
+DL_ONCE_TTL = int(os.getenv("DL_ONCE_TTL", "300"))
+PUBLIC_WEB_ORIGIN = os.getenv("PUBLIC_WEB_ORIGIN", "http://localhost:3000").rstrip("/")
 
 AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 DbSessionDep = Annotated[Session, Depends(get_db)]
@@ -138,6 +146,203 @@ def _datetime_to_cursor(dt: datetime | None) -> str | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return str(dt.timestamp())
+
+
+# =========================
+# Models for links
+# =========================
+
+
+class BotLinkItem(BaseModel):
+    address: str
+    is_active: bool
+
+
+class BotLinksResponse(BaseModel):
+    links: list[BotLinkItem]
+
+
+class BotLinkCreateIn(BaseModel):
+    address: str
+    make_active: bool | None = False
+
+
+class BotLinkSwitchIn(BaseModel):
+    address: str
+
+
+class BotPrepareDownloadIn(BaseModel):
+    capId: str | None = None
+    fileId: str | None = None
+
+
+class BotPrepareDownloadOut(BaseModel):
+    url: str
+    ttl: int
+    fileName: str | None = None
+
+
+# =========================
+# /bot/links CRUD
+# =========================
+
+
+def _links_response(db: Session, chat_id: int) -> BotLinksResponse:
+    links = telegram_repo.list_links_by_chat(db, chat_id)
+    items = [BotLinkItem(address=link.wallet_address.lower(), is_active=bool(link.is_active)) for link in links or []]
+    return BotLinksResponse(links=items)
+
+
+@router.get("/links", response_model=BotLinksResponse)
+def bot_list_links(
+    db: DbSessionDep,
+    x_tg_chat_id: str = Header(..., alias="X-TG-Chat-Id"),
+) -> BotLinksResponse:
+    chat_id = _parse_chat_id(x_tg_chat_id)
+    return _links_response(db, chat_id)
+
+
+@router.post("/links", response_model=BotLinksResponse, status_code=201)
+def bot_add_link(
+    body: BotLinkCreateIn,
+    db: DbSessionDep,
+    x_tg_chat_id: str = Header(..., alias="X-TG-Chat-Id"),
+) -> BotLinksResponse:
+    chat_id = _parse_chat_id(x_tg_chat_id)
+    try:
+        addr = Web3.to_checksum_address(body.address)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="bad_address") from exc
+
+    user = get_by_eth_address(db, addr)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+
+    telegram_repo.upsert_link(db, chat_id, addr, bool(body.make_active))
+    return _links_response(db, chat_id)
+
+
+@router.post("/links/switch", response_model=BotLinksResponse)
+def bot_switch_active_link(
+    body: BotLinkSwitchIn,
+    db: DbSessionDep,
+    x_tg_chat_id: str = Header(..., alias="X-TG-Chat-Id"),
+) -> BotLinksResponse:
+    chat_id = _parse_chat_id(x_tg_chat_id)
+    try:
+        addr = Web3.to_checksum_address(body.address)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="bad_address") from exc
+
+    try:
+        telegram_repo.set_active_link(db, chat_id, addr)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="link_not_found") from None
+
+    return _links_response(db, chat_id)
+
+
+@router.delete("/links/{address}", response_model=BotLinksResponse)
+def bot_delete_link(
+    address: str,
+    db: DbSessionDep,
+    x_tg_chat_id: str = Header(..., alias="X-TG-Chat-Id"),
+) -> BotLinksResponse:
+    chat_id = _parse_chat_id(x_tg_chat_id)
+    try:
+        addr = Web3.to_checksum_address(address)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="bad_address") from exc
+
+    telegram_repo.revoke_link(db, chat_id, addr)
+    return _links_response(db, chat_id)
+
+
+# =========================
+# POST /bot/prepare-download
+# =========================
+
+
+@router.post("/prepare-download", response_model=BotPrepareDownloadOut)
+def bot_prepare_download(
+    body: BotPrepareDownloadIn,
+    db: DbSessionDep,
+    chain: Annotated[Chain, Depends(get_chain)],
+    x_tg_chat_id: str = Header(..., alias="X-TG-Chat-Id"),
+) -> BotPrepareDownloadOut:
+    chat_id = _parse_chat_id(x_tg_chat_id)
+    user = _resolve_user_by_chat_id_value(chat_id, db)
+
+    cap_id = body.capId
+    file_id = body.fileId
+
+    if not cap_id and not file_id:
+        raise HTTPException(status_code=400, detail="capId_or_fileId_required")
+
+    grant: Grant | None = None
+    file_obj: File | None = None
+    file_id_bytes: bytes | None = None
+
+    if cap_id:
+        if not (isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66):
+            raise HTTPException(status_code=400, detail="bad_cap_id")
+        try:
+            cap_b = Web3.to_bytes(hexstr=cap_id)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="bad_cap_id") from exc
+
+        grant = db.scalar(select(Grant).where(Grant.cap_id == cap_b))
+        if grant is None:
+            raise HTTPException(status_code=404, detail="grant_not_found")
+        if grant.grantee_id != user.id:
+            raise HTTPException(status_code=403, detail="not_grantee")
+        payload = _build_download_payload(db, chain, user, grant, cap_id)
+    else:
+        # fileId путь: владелец файла или первый доступный грант для пользователя
+        fid = file_id or ""
+        if fid.startswith("0x"):
+            fid_hex = fid
+        else:
+            fid_hex = f"0x{fid}"
+        if len(fid_hex) != 66 or not fid_hex.startswith("0x"):
+            raise HTTPException(status_code=400, detail="bad_file_id")
+        try:
+            file_id_bytes = Web3.to_bytes(hexstr=fid_hex)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="bad_file_id") from exc
+
+        file_obj = db.get(File, file_id_bytes)
+        if file_obj is None:
+            raise HTTPException(status_code=404, detail="file_not_found")
+
+        if file_obj.owner_id == user.id:
+            # Владелец файла: готовим одноразовую ссылку без гранта
+            try:
+                cid = chain.cid_of(file_id_bytes) or file_obj.cid
+            except Exception:
+                cid = file_obj.cid
+            if not cid:
+                raise HTTPException(status_code=502, detail="registry_unavailable")
+            payload = {
+                "fileId": fid_hex,
+                "ipfsPath": f"/ipfs/{cid}",
+                "fileName": file_obj.name,
+                "owner": user.eth_address,
+            }
+        else:
+            grant = db.scalar(select(Grant).where(Grant.file_id == file_id_bytes, Grant.grantee_id == user.id).limit(1))
+            if grant is None:
+                raise HTTPException(status_code=403, detail="not_grantee")
+            cap_hex = "0x" + bytes(grant.cap_id).hex()
+            payload = _build_download_payload(db, chain, user, grant, cap_hex)
+            cap_id = cap_hex
+
+    token = secrets.token_urlsafe(20)
+    key = f"dl:once:{token}"
+    rds.setex(key, DL_ONCE_TTL, json.dumps(payload, separators=(",", ":")))
+
+    url = f"{PUBLIC_WEB_ORIGIN}/dl/one-time/{token}"
+    return BotPrepareDownloadOut(url=url, ttl=DL_ONCE_TTL, fileName=payload.get("fileName"))
 
 
 # =========================

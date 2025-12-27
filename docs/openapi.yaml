@@ -1,0 +1,1907 @@
+openapi: 3.1.0
+info:
+  title: DFSP API
+  description: |
+    Decentralized File Sharing Platform API.
+  version: 1.0.0
+  contact:
+    name: DFSP Team
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+  - url: https://api.dfsp.app
+    description: Production
+
+tags:
+  - name: health
+    description: Health and readiness checks
+  - name: auth
+    description: Authentication (EIP-712, TON Connect)
+  - name: files
+    description: File management
+  - name: grants
+    description: Access grants management
+  - name: download
+    description: File download endpoints
+  - name: verify
+    description: On-chain/off-chain verification
+  - name: meta-tx
+    description: Meta-transaction relay
+  - name: storage
+    description: IPFS storage operations
+  - name: anchors
+    description: Merkle tree anchoring
+  - name: pow
+    description: Proof of Work challenges
+  - name: users
+    description: User information
+  - name: admin
+    description: Admin operations
+  - name: intents
+    description: Action intents
+  - name: chain
+    description: Blockchain information
+  - name: Telegram
+    description: Telegram integration
+  - name: Bot
+    description: Bot API endpoints
+  - name: public_links
+    description: Public file links
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    TelegramChatId:
+      type: apiKey
+      in: header
+      name: X-TG-Chat-Id
+      description: Telegram chat ID for bot endpoints
+
+  schemas:
+    # Common
+    OkResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+
+    # Auth schemas
+    ChallengeOut:
+      type: object
+      required: [challenge_id, nonce, exp_sec]
+      properties:
+        challenge_id:
+          type: string
+          example: "a1b2c3d4e5f6..."
+        nonce:
+          type: string
+          description: "Hex 32 bytes (0x...)"
+          example: "0x1234567890abcdef..."
+        exp_sec:
+          type: integer
+          example: 300
+
+    RegisterIn:
+      type: object
+      required: [challenge_id, eth_address, rsa_public, typed_data, signature]
+      properties:
+        challenge_id:
+          type: string
+        eth_address:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{40}$"
+        rsa_public:
+          type: string
+          description: RSA public key in SPKI PEM format
+        display_name:
+          type: string
+          nullable: true
+        typed_data:
+          $ref: '#/components/schemas/TypedData'
+        signature:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{130}$"
+
+    LoginIn:
+      type: object
+      required: [challenge_id, eth_address, typed_data, signature]
+      properties:
+        challenge_id:
+          type: string
+        eth_address:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{40}$"
+        typed_data:
+          $ref: '#/components/schemas/TypedData'
+        signature:
+          type: string
+
+    Tokens:
+      type: object
+      required: [access, refresh]
+      properties:
+        access:
+          type: string
+        refresh:
+          type: string
+
+    TypedData:
+      type: object
+      required: [domain, types, primaryType, message]
+      properties:
+        domain:
+          type: object
+        types:
+          type: object
+        primaryType:
+          type: string
+        message:
+          type: object
+
+    TypedDataOut:
+      type: object
+      properties:
+        typedData:
+          $ref: '#/components/schemas/TypedData'
+
+    # File schemas
+    FileCreateIn:
+      type: object
+      required: [fileId, name, size, mime, cid, checksum]
+      properties:
+        fileId:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{64}$"
+        name:
+          type: string
+          maxLength: 255
+        size:
+          type: integer
+          minimum: 0
+          maximum: 209715200
+        mime:
+          type: string
+        cid:
+          type: string
+        checksum:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{64}$"
+
+    FileListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "0x1234..."
+        name:
+          type: string
+        size:
+          type: integer
+        mime:
+          type: string
+        cid:
+          type: string
+        checksum:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    ShareIn:
+      type: object
+      required: [request_id, users, encK_map, ttl_days, max_dl]
+      properties:
+        request_id:
+          type: string
+        users:
+          type: array
+          items:
+            type: string
+        encK_map:
+          type: object
+          additionalProperties:
+            type: string
+        ttl_days:
+          type: integer
+        max_dl:
+          type: integer
+
+    ShareOut:
+      type: object
+      properties:
+        typedData:
+          type: array
+          items:
+            $ref: '#/components/schemas/TypedData'
+        capIds:
+          type: array
+          items:
+            type: string
+
+    DuplicateOut:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "duplicate"
+        capIds:
+          type: array
+          items:
+            type: string
+
+    # Grant schemas
+    GrantItem:
+      type: object
+      properties:
+        fileId:
+          type: string
+        capId:
+          type: string
+        grantor:
+          type: string
+        grantee:
+          type: string
+        maxDownloads:
+          type: integer
+        usedDownloads:
+          type: integer
+        status:
+          type: string
+          enum: [pending, confirmed, revoked, expired, exhausted]
+        expiresAt:
+          type: string
+          format: date-time
+        fileName:
+          type: string
+
+    GrantsListOut:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GrantItem'
+
+    # Verify schemas
+    FileMeta:
+      type: object
+      properties:
+        cid:
+          type: string
+        checksum:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{64}$"
+        size:
+          type: integer
+        mime:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+
+    VerifyOut:
+      type: object
+      properties:
+        onchain:
+          $ref: '#/components/schemas/FileMeta'
+          nullable: true
+        offchain:
+          $ref: '#/components/schemas/FileMeta'
+          nullable: true
+        match:
+          type: boolean
+
+    # Meta-tx schemas
+    MetaTxSubmitIn:
+      type: object
+      required: [request_id, typed_data, signature]
+      properties:
+        request_id:
+          type: string
+        typed_data:
+          $ref: '#/components/schemas/TypedData'
+        signature:
+          type: string
+
+    MetaTxSubmitOut:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [queued, executed]
+        task_id:
+          type: string
+
+    # Anchor schemas
+    AnchorResponse:
+      type: object
+      properties:
+        period_id:
+          type: integer
+        merkle_root:
+          type: string
+        anchored_at:
+          type: string
+          format: date-time
+        tx_hash:
+          type: string
+          nullable: true
+
+    AnchorDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/AnchorResponse'
+        - type: object
+          properties:
+            event_count:
+              type: integer
+
+    # PoW schemas
+    PowChallengeOut:
+      type: object
+      properties:
+        challenge:
+          type: string
+        difficulty:
+          type: integer
+        ttl:
+          type: integer
+
+    # Download schemas
+    DownloadInfoOut:
+      type: object
+      properties:
+        encK:
+          type: string
+          description: Base64 encoded encryption key
+        ipfsPath:
+          type: string
+        capId:
+          type: string
+        fileName:
+          type: string
+        requestId:
+          type: string
+        typedData:
+          $ref: '#/components/schemas/TypedData'
+
+    # Storage schemas
+    StoreOut:
+      type: object
+      properties:
+        id_hex:
+          type: string
+        cid:
+          type: string
+        tx_hash:
+          type: string
+        url:
+          type: string
+
+    # Intent schemas
+    IntentCreateIn:
+      type: object
+      required: [action, payload]
+      properties:
+        action:
+          type: string
+          enum: [share, revoke, delete_file]
+        payload:
+          type: object
+
+    IntentCreateOut:
+      type: object
+      properties:
+        intent_id:
+          type: string
+          format: uuid
+        url:
+          type: string
+        ttl:
+          type: integer
+
+    IntentConsumeOut:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        action:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          nullable: true
+
+    # Chain info
+    ChainInfoOut:
+      type: object
+      properties:
+        chain_id:
+          type: integer
+        forwarder:
+          type: string
+          nullable: true
+        public_rpc_url:
+          type: string
+
+    # Telegram schemas
+    TgLinkStartRequest:
+      type: object
+      required: [chat_id]
+      properties:
+        chat_id:
+          type: integer
+
+    TgLinkStartResponse:
+      type: object
+      properties:
+        link_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    TgLinkCompleteRequest:
+      type: object
+      required: [link_token]
+      properties:
+        link_token:
+          type: string
+
+    WebAppAuthIn:
+      type: object
+      required: [initData]
+      properties:
+        initData:
+          type: string
+
+    WebAppAuthOut:
+      type: object
+      properties:
+        session:
+          type: string
+        exp:
+          type: integer
+
+    # Public links schemas
+    PublicLinkCreateIn:
+      type: object
+      properties:
+        version:
+          type: integer
+          nullable: true
+        name_override:
+          type: string
+          nullable: true
+        mime_override:
+          type: string
+          nullable: true
+        ttl_sec:
+          type: integer
+          nullable: true
+        max_downloads:
+          type: integer
+          nullable: true
+        pow:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            difficulty:
+              type: integer
+
+    PublicLinkCreateOut:
+      type: object
+      properties:
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        policy:
+          $ref: '#/components/schemas/PublicLinkPolicy'
+
+    PublicLinkPolicy:
+      type: object
+      properties:
+        max_downloads:
+          type: integer
+          nullable: true
+        pow_difficulty:
+          type: integer
+          nullable: true
+        one_time:
+          type: boolean
+
+    PublicMetaOut:
+      type: object
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+        mime:
+          type: string
+          nullable: true
+        cid:
+          type: string
+          nullable: true
+        fileId:
+          type: string
+        version:
+          type: integer
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        policy:
+          $ref: '#/components/schemas/PublicLinkPolicy'
+
+    PowIn:
+      type: object
+      required: [nonce, solution]
+      properties:
+        nonce:
+          type: string
+        solution:
+          type: string
+
+    # Bot schemas
+    BotLinkItem:
+      type: object
+      properties:
+        address:
+          type: string
+        is_active:
+          type: boolean
+
+    BotLinksResponse:
+      type: object
+      properties:
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/BotLinkItem'
+
+    BotPrepareDownloadIn:
+      type: object
+      properties:
+        capId:
+          type: string
+          nullable: true
+        fileId:
+          type: string
+          nullable: true
+
+    BotPrepareDownloadOut:
+      type: object
+      properties:
+        url:
+          type: string
+        ttl:
+          type: integer
+        fileName:
+          type: string
+          nullable: true
+
+    # Health schemas
+    HealthOut:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+        db:
+          oneOf:
+            - type: string
+            - type: object
+        redis:
+          oneOf:
+            - type: string
+            - type: object
+        chain:
+          type: object
+        contracts:
+          type: object
+        ipfs:
+          type: object
+
+    # User schemas
+    UserPubkeyOut:
+      type: object
+      properties:
+        address:
+          type: string
+        rsa_public:
+          type: string
+          nullable: true
+        display_name:
+          type: string
+          nullable: true
+
+    # Admin schemas
+    DenylistIn:
+      type: object
+      required: [checksum]
+      properties:
+        checksum:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{64}$"
+
+paths:
+  # Health
+  /health:
+    get:
+      tags: [health]
+      summary: Health check
+      operationId: health
+      responses:
+        '200':
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthOut'
+
+  /ready:
+    get:
+      tags: [health]
+      summary: Readiness check
+      operationId: ready
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+        '503':
+          description: Not ready
+
+  /metrics:
+    get:
+      tags: [health]
+      summary: Prometheus metrics
+      operationId: metrics
+      responses:
+        '200':
+          description: Prometheus metrics in text format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  # Auth
+  /auth/challenge:
+    post:
+      tags: [auth]
+      summary: Request authentication challenge
+      operationId: authChallenge
+      responses:
+        '200':
+          description: Challenge created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChallengeOut'
+
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register new user with EIP-712 signature
+      operationId: authRegister
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterIn'
+      responses:
+        '200':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tokens'
+        '400':
+          description: Invalid input
+        '409':
+          description: User already exists
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login with EIP-712 signature
+      operationId: authLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginIn'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tokens'
+        '401':
+          description: Invalid signature
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Refresh access token
+      operationId: authRefresh
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: New tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tokens'
+
+  /auth/ton/challenge:
+    post:
+      tags: [auth]
+      summary: Request TON authentication challenge
+      operationId: tonChallenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              properties:
+                address:
+                  type: string
+      responses:
+        '200':
+          description: TON challenge created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  challenge_id:
+                    type: string
+                  payload:
+                    type: object
+
+  /auth/ton/login:
+    post:
+      tags: [auth]
+      summary: Login with TON signature
+      operationId: tonLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_id, address, signature, public_key]
+              properties:
+                challenge_id:
+                  type: string
+                address:
+                  type: string
+                signature:
+                  type: string
+                public_key:
+                  type: string
+                cell_boc:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tokens'
+
+  # Files
+  /files:
+    get:
+      tags: [files]
+      summary: List user's files
+      operationId: listFiles
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: List of files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FileListItem'
+        '401':
+          description: Unauthorized
+
+    post:
+      tags: [files]
+      summary: Create file metadata
+      operationId: createFile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileCreateIn'
+      responses:
+        '200':
+          description: File created, returns typed data for signing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TypedDataOut'
+        '400':
+          description: Invalid input
+        '409':
+          description: File already exists or duplicate checksum
+
+  /files/{id}:
+    delete:
+      tags: [files]
+      summary: Delete file (soft delete)
+      operationId: deleteFile
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^0x[0-9a-fA-F]{64}$"
+      responses:
+        '200':
+          description: File deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '403':
+          description: Not owner
+        '404':
+          description: File not found
+
+  /files/{id}/share:
+    post:
+      tags: [files]
+      summary: Share file with other users
+      operationId: shareFile
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareIn'
+      responses:
+        '200':
+          description: Share prepared
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ShareOut'
+                  - $ref: '#/components/schemas/DuplicateOut'
+        '400':
+          description: Invalid input
+        '403':
+          description: Not owner
+        '404':
+          description: File not found
+
+  /files/{file_id_hex}/public-links:
+    post:
+      tags: [public_links]
+      summary: Create public link for file
+      operationId: createPublicLink
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: file_id_hex
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicLinkCreateIn'
+      responses:
+        '201':
+          description: Public link created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicLinkCreateOut'
+
+    get:
+      tags: [public_links]
+      summary: List public links for file
+      operationId: listPublicLinks
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: file_id_hex
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of public links
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+
+  # Grants
+  /grants:
+    get:
+      tags: [grants]
+      summary: List grants
+      operationId: listGrants
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [received, granted]
+            default: received
+      responses:
+        '200':
+          description: List of grants
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantsListOut'
+
+  /grants/{cap_id}:
+    get:
+      tags: [grants]
+      summary: Get grant status
+      operationId: getGrant
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: cap_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Grant details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantItem'
+        '404':
+          description: Grant not found
+
+  /grants/{cap_id}/revoke:
+    post:
+      tags: [grants]
+      summary: Revoke grant
+      operationId: revokeGrant
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: cap_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Revoke prepared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  requestId:
+                    type: string
+                  typedData:
+                    $ref: '#/components/schemas/TypedData'
+        '403':
+          description: Not grantor
+        '404':
+          description: Grant not found
+
+  # Download
+  /download/{cap_id}:
+    get:
+      tags: [download]
+      summary: Get download info for grant
+      operationId: getDownloadInfo
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: cap_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-PoW-Nonce
+          in: header
+          schema:
+            type: string
+        - name: X-PoW-Solution
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Download info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadInfoOut'
+        '403':
+          description: Access denied (revoked, expired, exhausted)
+        '404':
+          description: Grant not found
+        '428':
+          description: PoW required
+
+  /download/once/{token}:
+    get:
+      tags: [download]
+      summary: Get one-time download payload
+      operationId: getOneTimePayload
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Download payload
+          content:
+            application/json:
+              schema:
+                type: object
+        '410':
+          description: Link expired
+
+  # One-time download
+  /dl/one-time/{token}:
+    get:
+      tags: [download]
+      summary: Consume one-time download link
+      operationId: consumeOneTime
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Download payload (JSON) or file stream
+          content:
+            application/json:
+              schema:
+                type: object
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '302':
+          description: Redirect to frontend
+        '410':
+          description: Link expired
+
+  # Verify
+  /verify/{file_id_hex}:
+    get:
+      tags: [verify]
+      summary: Verify file on-chain vs off-chain
+      operationId: verifyFile
+      parameters:
+        - name: file_id_hex
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^0x[0-9a-fA-F]{64}$"
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyOut'
+        '400':
+          description: Bad file ID
+        '404':
+          description: File not found
+
+  # Meta-tx
+  /meta-tx/submit:
+    post:
+      tags: [meta-tx]
+      summary: Submit signed meta-transaction
+      operationId: submitMetaTx
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MetaTxSubmitIn'
+      responses:
+        '202':
+          description: Transaction queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetaTxSubmitOut'
+        '200':
+          description: Transaction executed (dev mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetaTxSubmitOut'
+
+  # Storage
+  /storage/store:
+    post:
+      tags: [storage]
+      summary: Upload and store file to IPFS + chain
+      operationId: storeFile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                id_hex:
+                  type: string
+                checksum:
+                  type: string
+                plain_size:
+                  type: integer
+                orig_name:
+                  type: string
+                orig_mime:
+                  type: string
+      responses:
+        '200':
+          description: File stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreOut'
+        '400':
+          description: Invalid input
+        '413':
+          description: File too large
+
+  # Anchors
+  /anchors/latest:
+    get:
+      tags: [anchors]
+      summary: Get latest anchor
+      operationId: getLatestAnchor
+      responses:
+        '200':
+          description: Latest anchor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnchorResponse'
+        '404':
+          description: No anchors found
+
+  /anchors/{period_id}:
+    get:
+      tags: [anchors]
+      summary: Get anchor by period
+      operationId: getAnchorByPeriod
+      parameters:
+        - name: period_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Anchor details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnchorDetailResponse'
+        '404':
+          description: Anchor not found
+
+  /anchors/trigger/{period_id}:
+    post:
+      tags: [anchors]
+      summary: Trigger anchoring for period
+      operationId: triggerAnchoring
+      parameters:
+        - name: period_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Anchoring triggered or already exists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [queued, already_anchored]
+                  task_id:
+                    type: string
+                  period_id:
+                    type: string
+
+  # PoW
+  /pow/challenge:
+    post:
+      tags: [pow]
+      summary: Get PoW challenge
+      operationId: getPowChallenge
+      responses:
+        '200':
+          description: PoW challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PowChallengeOut'
+
+  # Users
+  /users/{addr}/pubkey:
+    get:
+      tags: [users]
+      summary: Get user's public key
+      operationId: getUserPubkey
+      parameters:
+        - name: addr
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^0x[0-9a-fA-F]{40}$"
+      responses:
+        '200':
+          description: User public key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPubkeyOut'
+        '400':
+          description: Bad address
+        '404':
+          description: User not found
+
+  # Admin
+  /admin/denylist:
+    post:
+      tags: [admin]
+      summary: Add checksum to denylist
+      operationId: addToDenylist
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DenylistIn'
+      responses:
+        '200':
+          description: Added to denylist
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  checksum:
+                    type: string
+        '403':
+          description: Forbidden
+
+  # Intents
+  /intents:
+    post:
+      tags: [intents]
+      summary: Create action intent
+      operationId: createIntent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntentCreateIn'
+      responses:
+        '201':
+          description: Intent created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentCreateOut'
+
+  /intents/{intent_id}/consume:
+    post:
+      tags: [intents]
+      summary: Consume intent
+      operationId: consumeIntent
+      parameters:
+        - name: intent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Intent consumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentConsumeOut'
+        '404':
+          description: Intent not found
+        '409':
+          description: Already used
+        '410':
+          description: Expired
+
+  # Chain
+  /chain/info:
+    get:
+      tags: [chain]
+      summary: Get chain information
+      operationId: getChainInfo
+      responses:
+        '200':
+          description: Chain info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChainInfoOut'
+
+  # Telegram
+  /tg/link-start:
+    post:
+      tags: [Telegram]
+      summary: Start Telegram account linking
+      operationId: tgLinkStart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TgLinkStartRequest'
+      responses:
+        '200':
+          description: Link token created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TgLinkStartResponse'
+        '429':
+          description: Too many requests
+
+  /tg/link-complete:
+    post:
+      tags: [Telegram]
+      summary: Complete Telegram account linking
+      operationId: tgLinkComplete
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TgLinkCompleteRequest'
+      responses:
+        '200':
+          description: Link completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          description: Invalid or expired token
+
+  /tg/link:
+    delete:
+      tags: [Telegram]
+      summary: Unlink Telegram account
+      operationId: tgUnlink
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Unlinked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+
+  /tg/webapp/auth:
+    post:
+      tags: [Telegram]
+      summary: Authenticate via Telegram WebApp
+      operationId: tgWebAppAuth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebAppAuthIn'
+      responses:
+        '200':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebAppAuthOut'
+        '403':
+          description: Invalid signature or not linked
+
+  # TonConnect manifest
+  /tonconnect-manifest.json:
+    get:
+      tags: [Telegram]
+      summary: TonConnect manifest
+      operationId: tonconnectManifest
+      responses:
+        '200':
+          description: TonConnect manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                  name:
+                    type: string
+                  iconUrl:
+                    type: string
+                  termsOfUseUrl:
+                    type: string
+
+  # Bot endpoints
+  /bot/links:
+    get:
+      tags: [Bot]
+      summary: List linked wallets
+      operationId: botListLinks
+      security:
+        - TelegramChatId: []
+      responses:
+        '200':
+          description: List of links
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotLinksResponse'
+
+    post:
+      tags: [Bot]
+      summary: Create wallet link
+      operationId: botCreateLink
+      security:
+        - TelegramChatId: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              properties:
+                address:
+                  type: string
+                make_active:
+                  type: boolean
+      responses:
+        '200':
+          description: Link created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotLinksResponse'
+
+  /bot/links/switch:
+    post:
+      tags: [Bot]
+      summary: Switch active wallet
+      operationId: botSwitchLink
+      security:
+        - TelegramChatId: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              properties:
+                address:
+                  type: string
+      responses:
+        '200':
+          description: Switched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotLinksResponse'
+
+  /bot/links/{address}:
+    delete:
+      tags: [Bot]
+      summary: Remove wallet link
+      operationId: botRemoveLink
+      security:
+        - TelegramChatId: []
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Link removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotLinksResponse'
+
+  /bot/files:
+    get:
+      tags: [Bot]
+      summary: List user's files (via Telegram)
+      operationId: botListFiles
+      security:
+        - TelegramChatId: []
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of files
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                  next_cursor:
+                    type: string
+                    nullable: true
+
+  /bot/grants:
+    get:
+      tags: [Bot]
+      summary: List user's grants (via Telegram)
+      operationId: botListGrants
+      security:
+        - TelegramChatId: []
+      parameters:
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [received, granted]
+            default: received
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of grants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                  next_cursor:
+                    type: string
+                    nullable: true
+
+  /bot/prepare-download:
+    post:
+      tags: [Bot]
+      summary: Prepare download URL
+      operationId: botPrepareDownload
+      security:
+        - TelegramChatId: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BotPrepareDownloadIn'
+      responses:
+        '200':
+          description: Download URL prepared
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotPrepareDownloadOut'
+        '404':
+          description: Not found
+
+  /bot/profile:
+    get:
+      tags: [Bot]
+      summary: Get user profile
+      operationId: botProfile
+      security:
+        - TelegramChatId: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  address:
+                    type: string
+                  display_name:
+                    type: string
+                    nullable: true
+                  files_count:
+                    type: integer
+                  grants_received:
+                    type: integer
+                  grants_given:
+                    type: integer
+
+  /bot/action-intents:
+    post:
+      tags: [Bot]
+      summary: Create action intent (JWT auth)
+      operationId: botCreateActionIntent
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, payload]
+              properties:
+                action:
+                  type: string
+                payload:
+                  type: object
+      responses:
+        '201':
+          description: Intent created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  url:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+
+  /bot/action-intents/{intent_id}/consume:
+    post:
+      tags: [Bot]
+      summary: Consume action intent
+      operationId: botConsumeActionIntent
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: intent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirm:
+                  type: boolean
+      responses:
+        '200':
+          description: Intent consumed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  action:
+                    type: string
+                  result:
+                    type: object
+
+  # Public links
+  /public/{token}/meta:
+    get:
+      tags: [public_links]
+      summary: Get public link metadata
+      operationId: publicMeta
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Public link metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicMetaOut'
+        '404':
+          description: Not found
+        '410':
+          description: Expired or revoked
+
+  /public/{token}/pow:
+    post:
+      tags: [public_links]
+      summary: Submit PoW solution for public link
+      operationId: publicPow
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PowIn'
+      responses:
+        '200':
+          description: PoW accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          description: Bad solution
+
+  /public/{token}/content:
+    get:
+      tags: [public_links]
+      summary: Download public link content
+      operationId: publicContent
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '403':
+          description: PoW required
+        '410':
+          description: Expired or revoked
+

@@ -105,6 +105,18 @@ def health(db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
     }
 
 
+@router.get("/time", status_code=status.HTTP_200_OK)
+def server_time() -> dict[str, Any]:
+    """Return server time for client-side time skew diagnostics."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    return {
+        "server_time_iso": now.isoformat(),
+        "server_time_unix": int(now.timestamp()),
+        "server_time_unix_ms": int(now.timestamp() * 1000),
+    }
+
+
 @router.get("/live", status_code=status.HTTP_200_OK)
 def live() -> dict[str, str]:
     return {"status": "alive"}

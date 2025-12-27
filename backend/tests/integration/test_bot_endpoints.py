@@ -73,7 +73,7 @@ def setup_user_with_files(client: httpx.Client, file_count: int) -> tuple[int, d
             "/meta-tx/submit",
             json={"request_id": str(uuid.uuid4()), "typed_data": td_file, "signature": sig_file},
         )
-        assert exec_resp.status_code == 200
+        assert exec_resp.status_code in (200, 202)
         time.sleep(0.5)
 
     return chat_id, auth_headers, signer

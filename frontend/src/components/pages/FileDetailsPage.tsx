@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../Layout';
 import { Button } from '../ui/button';
 import {
@@ -22,13 +22,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { ArrowLeft, Copy, Share2, CheckCircle2, XCircle, AlertCircle, Download } from 'lucide-react';
-import { toast } from 'sonner';
-import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx, type ForwardTyped, fetchMyFiles } from '@/lib/api.ts';
+import { ArrowLeft, Copy, Share2, CheckCircle2, XCircle, AlertCircle, Download, Edit2 } from 'lucide-react';
+import { notify } from '@/lib/toast';
+import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx, type ForwardTyped, fetchMyFiles, createPublicLink, listPublicLinks, revokePublicLink, type PublicLinkItem, renameFile } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
-import { getAgent } from '@/lib/agent/manager';
+import { getAgent, getSelectedAgentKind } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
 import { Alert, AlertDescription } from '../ui/alert';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { sanitizeFilename, parseContentDisposition } from '@/lib/sanitize.ts';
+import { useAuth } from '../useAuth';
 
 interface VersionRow {
   cid: string;
@@ -61,12 +66,31 @@ interface FileDetailsModel {
 export default function FileDetailsPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
 
   const [file, setFile] = useState<FileDetailsModel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [selectedCapId, setSelectedCapId] = useState<string | null>(null);
+  const [intentAutoOpened, setIntentAutoOpened] = useState(false);
+  const [pubModalOpen, setPubModalOpen] = useState(false);
+  const [publicLinks, setPublicLinks] = useState<PublicLinkItem[]>([]);
+  const [ttlSec, setTtlSec] = useState<string>('86400');
+  const [maxDownloads, setMaxDownloads] = useState<string>('0');
+  const [powEnabled, setPowEnabled] = useState<boolean>(false);
+  const [powDiff, setPowDiff] = useState<string>('0');
+  const [nameOverride, setNameOverride] = useState<string>('');
+  const [mimeOverride, setMimeOverride] = useState<string>('');
+  const [creating, setCreating] = useState(false);
+  const intentId = searchParams.get('intent');
+  const revokeCapParam = searchParams.get('revoke');
+
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [extensionWarning, setExtensionWarning] = useState(false);
+  const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
     const onLogout = () => {
@@ -80,7 +104,7 @@ export default function FileDetailsPage() {
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
-    toast.success(`${label} copied to clipboard`);
+    notify.success(`${label} copied to clipboard`, { dedupeId: `copy-${label}-${text}` });
   };
 
   const formatSize = (bytes?: number) => {
@@ -117,23 +141,81 @@ export default function FileDetailsPage() {
       const url = gw.replace(/\/+$/, '') + `/ipfs/${file.cid}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
+
+      // Try to get filename from Content-Disposition header
+      const contentDisposition = res.headers.get('Content-Disposition');
+      const headerFilename = parseContentDisposition(contentDisposition);
+      const finalFilename = headerFilename || file.name;
+
       const blob = await res.blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = file.name || file.id;
+      a.download = sanitizeFilename(finalFilename) || file.id;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
-      toast.success('Download started');
+      notify.success('Download started', { dedupeId: `download-${file?.id ?? 'unknown'}` });
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Download failed'));
+      notify.error(getErrorMessage(e, 'Download failed'), { dedupeId: `download-err-${file?.id ?? 'unknown'}` });
     }
   };
 
   const handleRevokeAsk = (capId: string) => {
     setSelectedCapId(capId);
     setRevokeDialogOpen(true);
+  };
+
+  const handleRenameOpen = () => {
+    setNewName(file?.name || '');
+    setExtensionWarning(false);
+    setRenameDialogOpen(true);
+  };
+
+  const getFileExtension = (filename: string) => {
+    const parts = filename.split('.');
+    return parts.length > 1 ? parts[parts.length - 1] : '';
+  };
+
+  const handleRename = async () => {
+    if (!newName.trim()) {
+      notify.error('File name cannot be empty', { dedupeId: 'rename-empty' });
+      return;
+    }
+
+    // Check if extension was removed
+    const oldExt = getFileExtension(file?.name || '');
+    const newExt = getFileExtension(newName);
+    if (oldExt && oldExt !== newExt && !extensionWarning) {
+      setExtensionWarning(true);
+      return;
+    }
+
+    const oldName = file?.name;
+    try {
+      setRenaming(true);
+
+      // Optimistic update
+      if (file) {
+        setFile({ ...file, name: newName });
+      }
+
+      await renameFile(id, newName);
+      notify.success('File renamed successfully', { dedupeId: `rename-${file?.id}` });
+      setRenameDialogOpen(false);
+      setExtensionWarning(false);
+
+      // Reload to confirm server state
+      await load();
+    } catch (e) {
+      // Rollback on error
+      if (file && oldName !== undefined) {
+        setFile({ ...file, name: oldName });
+      }
+      notify.error(getErrorMessage(e, 'Failed to rename file'), { dedupeId: 'rename-error' });
+    } finally {
+      setRenaming(false);
+    }
   };
 
   const confirmRevoke = async () => {
@@ -143,22 +225,35 @@ export default function FileDetailsPage() {
       const agent = await getAgent();
       if (agent.kind === 'local') {
         try { await ensureUnlockedOrThrow(); } catch { throw new Error('Unlock cancelled'); }
+      } else {
+        // Check address mismatch for external wallets
+        if (user?.address) {
+          try {
+            const agentAddr = await agent.getAddress();
+            if (agentAddr.toLowerCase() !== user.address.toLowerCase()) {
+              throw new Error(`Wallet address mismatch: logged in as ${user.address.slice(0,6)}...${user.address.slice(-4)}, but ${getSelectedAgentKind()} wallet is ${agentAddr.slice(0,6)}...${agentAddr.slice(-4)}. Please switch to the correct wallet or re-login.`);
+            }
+          } catch (e) {
+            if ((e as Error).message?.includes('mismatch')) throw e;
+            console.warn('Could not verify agent address:', e);
+          }
+        }
       }
       const sig = await agent.signTypedData((prep.typedData as ForwardTyped).domain, (prep.typedData as ForwardTyped).types, (prep.typedData as ForwardTyped).message);
       await submitMetaTx(prep.requestId, prep.typedData as ForwardTyped, sig);
-      toast.success('Revoke submitted');
+      notify.success('Revoke submitted', { dedupeId: `revoke-${selectedCapId}` });
       setRevokeDialogOpen(false);
       setSelectedCapId(null);
       await load();
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Failed to revoke grant'));
+      notify.error(getErrorMessage(e, 'Failed to revoke grant'), { dedupeId: 'revoke-error' });
     }
   };
 
   const statusBadge = (status: GrantRow['status']) => {
     switch (status) {
       case 'confirmed':
-        return <Badge className="bg-green-100 text-green-800">Active</Badge>;
+        return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Active</Badge>;
       case 'expired':
         return <Badge variant="secondary">Expired</Badge>;
       case 'revoked':
@@ -215,10 +310,23 @@ export default function FileDetailsPage() {
     }
   };
 
+  const loadPublicLinks = async () => {
+    try { const items = await listPublicLinks(file!.id); setPublicLinks(items); } catch {/* ignore */}
+  };
+
   useEffect(() => {
-    if (id) load();
+    if (id) { load(); loadPublicLinks(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    if (!revokeCapParam || !file || intentAutoOpened) return;
+    const exists = file.grants.some((g) => g.capId === revokeCapParam);
+    if (exists) {
+      setIntentAutoOpened(true);
+      handleRevokeAsk(revokeCapParam);
+    }
+  }, [revokeCapParam, file, intentAutoOpened]);
 
   if (loading) {
     return (
@@ -249,6 +357,12 @@ export default function FileDetailsPage() {
   return (
     <Layout>
       <div className="space-y-6">
+        {intentId && (
+          <div className="rounded border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+            Открыто из intent {truncate(intentId, 16)}.{" "}
+            {revokeCapParam ? `Запрос на revoke ${truncate(revokeCapParam, 18)}.` : "Продолжайте действие."}
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
@@ -260,7 +374,13 @@ export default function FileDetailsPage() {
               <ArrowLeft className="h-4 w-4" />
               Back to Files
             </Button>
-            <h1>{file.name || file.id}</h1>
+            <div className="flex items-center gap-2">
+              <h1>{sanitizeFilename(file.name) || file.id}</h1>
+              <Button variant="ghost" size="sm" onClick={handleRenameOpen} className="gap-1">
+                <Edit2 className="h-3.5 w-3.5" />
+                Rename
+              </Button>
+            </div>
           </div>
           <div className="flex gap-2">
             <Link to={`/verify/${file.id}`}>
@@ -289,9 +409,9 @@ export default function FileDetailsPage() {
           <CardContent>
             <div className="grid grid-cols-2 gap-4 items-center">
               <div>
-                <div className="text-sm text-gray-500 mb-1">File ID</div>
+                <div className="text-sm text-muted-foreground mb-1">File ID</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded whitespace-nowrap">{file.id}</code>
+                  <code className="text-sm bg-muted px-2 py-1 rounded whitespace-nowrap">{file.id}</code>
                   <Button variant="ghost" size="sm" onClick={() => copyToClipboard(file.id, 'File ID')}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
@@ -299,14 +419,14 @@ export default function FileDetailsPage() {
               </div>
 
               <div>
-                <div className="text-sm text-gray-500 mb-1">Size</div>
+                <div className="text-sm text-muted-foreground mb-1">Size</div>
                 <div>{formatSize(file.size)}</div>
               </div>
 
               <div>
-                <div className="text-sm text-gray-500 mb-1">CID</div>
+                <div className="text-sm text-muted-foreground mb-1">CID</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded whitespace-nowrap">{file.cid || ''}</code>
+                  <code className="text-sm bg-muted px-2 py-1 rounded whitespace-nowrap">{file.cid || ''}</code>
                   <Button variant="ghost" size="sm" onClick={() => copyToClipboard(file.cid || '', 'CID')}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
@@ -314,14 +434,14 @@ export default function FileDetailsPage() {
               </div>
 
               <div>
-                <div className="text-sm text-gray-500 mb-1">Created</div>
+                <div className="text-sm text-muted-foreground mb-1">Created</div>
                 <div>{formatDate(file.created)}</div>
               </div>
 
               <div className="col-span-2">
-                <div className="text-sm text-gray-500 mb-1">Checksum</div>
+                <div className="text-sm text-muted-foreground mb-1">Checksum</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded whitespace-nowrap">{file.checksum}</code>
+                  <code className="text-sm bg-muted px-2 py-1 rounded whitespace-nowrap">{file.checksum}</code>
                   <Button variant="ghost" size="sm" onClick={() => copyToClipboard(file.checksum || '', 'Checksum')}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
@@ -329,14 +449,14 @@ export default function FileDetailsPage() {
               </div>
 
               <div>
-                <div className="text-sm text-gray-500 mb-1">MIME Type</div>
+                <div className="text-sm text-muted-foreground mb-1">MIME Type</div>
                 <div className="text-sm">{file.mimeType || '-'}</div>
               </div>
 
               <div>
-                <div className="text-sm text-gray-500 mb-1">Owner</div>
+                <div className="text-sm text-muted-foreground mb-1">Owner</div>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm bg-gray-100 px-2 py-1 rounded whitespace-nowrap">{truncate(file.owner || '-', 16)}</code>
+                  <code className="text-sm bg-muted px-2 py-1 rounded whitespace-nowrap">{truncate(file.owner || '-', 16)}</code>
                   <Button variant="ghost" size="sm" onClick={() => copyToClipboard(file.owner || '', 'Owner address')}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
@@ -352,7 +472,7 @@ export default function FileDetailsPage() {
           </CardHeader>
           <CardContent>
             {file.versions.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 No versions yet
               </div>
             ) : (
@@ -369,12 +489,12 @@ export default function FileDetailsPage() {
                     <TableRow key={idx}>
                       <TableCell>{formatDate(version.created)}</TableCell>
                       <TableCell>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                        <code className="text-xs bg-muted px-2 py-1 rounded">
                           {truncate(version.cid, 32)}
                         </code>
                       </TableCell>
                       <TableCell>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                        <code className="text-xs bg-muted px-2 py-1 rounded">
                           {truncate(version.checksum, 44)}
                         </code>
                       </TableCell>
@@ -392,7 +512,7 @@ export default function FileDetailsPage() {
           </CardHeader>
           <CardContent>
             {file.grants.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 No grants yet. Share this file to create grants.
               </div>
             ) : (
@@ -411,12 +531,12 @@ export default function FileDetailsPage() {
                   {file.grants.map((grant) => (
                     <TableRow key={grant.capId}>
                       <TableCell>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                        <code className="text-xs bg-muted text-foreground px-2 py-1 rounded">
                           {truncate(grant.grantee, 12)}
                         </code>
                       </TableCell>
                       <TableCell>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">
+                        <code className="text-xs bg-muted text-foreground px-2 py-1 rounded break-all">
                           {grant.capId}
                         </code>
                       </TableCell>
@@ -445,6 +565,66 @@ export default function FileDetailsPage() {
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Public Links</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {publicLinks.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">No public links</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Token</TableHead>
+                    <TableHead>Expires</TableHead>
+                    <TableHead>Policy</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {publicLinks.map((pl) => (
+                    <TableRow key={pl.token}>
+                      <TableCell>
+                        <code className="text-xs bg-muted text-foreground px-2 py-1 rounded break-all">{pl.token}</code>
+                      </TableCell>
+                      <TableCell>{pl.expires_at ? formatDate(new Date(pl.expires_at)) : '-'}</TableCell>
+                      <TableCell>
+                        <code className="text-xs bg-muted text-foreground px-2 py-1 rounded">
+                          {JSON.stringify(pl.policy || {})}
+                        </code>
+                      </TableCell>
+                      <TableCell className="text-right flex gap-2 justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const _IM = (import.meta as unknown) as { env?: Record<string,string> };
+                            const origin = _IM.env?.VITE_PUBLIC_ORIGIN || window.location.origin;
+                            const pubUrl = origin.replace(/\/$/, '') + `/public/${pl.token}`;
+                            copyToClipboard(pubUrl + (nameOverride ? `#k=${encodeURIComponent(nameOverride)}` : ''), 'Public link');
+                          }}
+                          className="gap-1.5"
+                        >
+                          <Copy className="h-3.5 w-3.5" /> Copy
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={async () => { try { await revokePublicLink(pl.token); notify.success('Revoked', { dedupeId: `pub-revoke-${pl.token}` }); await loadPublicLinks(); } catch(e){ notify.error(getErrorMessage(e,'Failed to revoke link'), { dedupeId: 'pub-revoke-err' }); } }}
+                          className="gap-1.5 text-red-600 hover:text-red-700"
+                        >
+                          <XCircle className="h-3.5 w-3.5" /> Revoke
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <AlertDialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
@@ -463,6 +643,105 @@ export default function FileDetailsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={pubModalOpen} onOpenChange={setPubModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share public link</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={async (e) => { e.preventDefault(); try {
+            setCreating(true);
+            const payload = {
+              ttl_sec: ttlSec? Number(ttlSec): undefined,
+              max_downloads: maxDownloads? Number(maxDownloads): undefined,
+              pow: powEnabled? { enabled: true, difficulty: powDiff? Number(powDiff): undefined }: undefined,
+              name_override: nameOverride || undefined,
+              mime_override: mimeOverride || undefined,
+            };
+            const resp = await createPublicLink(file.id, payload);
+            const origin = (import.meta as unknown) as { env?: Record<string,string> };
+            const pubUrl = origin.env?.VITE_PUBLIC_ORIGIN.replace(/\/$/, '') + `/public/${resp.token}`;
+            copyToClipboard(pubUrl + (nameOverride? `#k=${encodeURIComponent(nameOverride)}`: ''), 'Public link');
+            notify.success('Public link created', { dedupeId: 'pub-created' });
+            setPubModalOpen(false);
+            await loadPublicLinks();
+          } catch (err) { notify.error(getErrorMessage(err, 'Failed to create public link'), { dedupeId: 'pub-create-err' }); } finally { setCreating(false); } }}>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1">
+              <Label>TTL (seconds)</Label>
+              <Input value={ttlSec} onChange={e=>setTtlSec(e.target.value)} placeholder="86400" />
+            </div>
+            <div className="grid gap-1">
+              <Label>Max downloads (0 for unlimited)</Label>
+              <Input value={maxDownloads} onChange={e=>setMaxDownloads(e.target.value)} placeholder="0" />
+            </div>
+            <div className="flex items-center gap-2">
+              <input id="powEnabled" type="checkbox" checked={powEnabled} onChange={e=>setPowEnabled(e.target.checked)} />
+              <Label htmlFor="powEnabled">Enable PoW</Label>
+              <Input className="ml-2 w-24" value={powDiff} onChange={e=>setPowDiff(e.target.value)} placeholder="difficulty" />
+            </div>
+            <div className="grid gap-1">
+              <Label>Name override</Label>
+              <Input value={nameOverride} onChange={e=>setNameOverride(e.target.value)} placeholder={sanitizeFilename(file.name) || ''} />
+            </div>
+            <div className="grid gap-1">
+              <Label>MIME override</Label>
+              <Input value={mimeOverride} onChange={e=>setMimeOverride(e.target.value)} placeholder={file.mimeType || ''} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={()=>setPubModalOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={creating}>{creating? 'Creating…' : 'Create & Copy'}</Button>
+          </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename File</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1">
+              <Label htmlFor="newName">New name</Label>
+              <Input
+                id="newName"
+                value={newName}
+                onChange={e => {
+                  setNewName(e.target.value);
+                  setExtensionWarning(false);
+                }}
+                placeholder="Enter new file name"
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    handleRename();
+                  }
+                }}
+              />
+            </div>
+            {extensionWarning && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Warning: You are removing or changing the file extension. Click Rename again to confirm.
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setRenameDialogOpen(false);
+              setExtensionWarning(false);
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={handleRename} disabled={renaming || !newName.trim()}>
+              {renaming ? 'Renaming...' : 'Rename'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

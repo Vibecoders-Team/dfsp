@@ -1,7 +1,7 @@
 // SignerAgent interface and helpers
 import type { TypedDataDomain, TypedDataField } from 'ethers';
 
-export type AgentKind = 'local' | 'metamask' | 'walletconnect';
+export type AgentKind = 'local' | 'metamask' | 'walletconnect' | 'ton';
 
 export interface SignerAgent {
   kind: AgentKind;

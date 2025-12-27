@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from app.quotas import PoWValidator
+from app.quotas import PoWValidator, get_pow_validator
 
 router = APIRouter(prefix="/pow", tags=["pow"])
 
@@ -17,7 +17,7 @@ class ChallengeOut(BaseModel):
 
 
 @router.post("/challenge", response_model=ChallengeOut)
-def get_pow_challenge(pow_validator: Annotated[PoWValidator, Depends(PoWValidator)]) -> dict[str, int | str]:
+def get_pow_challenge(pow_validator: Annotated[PoWValidator, Depends(get_pow_validator)]) -> dict[str, int | str]:
     """
     Создает и возвращает новую PoW-задачу для клиента.
     """

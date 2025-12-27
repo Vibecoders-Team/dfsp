@@ -109,8 +109,9 @@ class Settings(BaseSettings):
     # --- Security/JWT ---
     jwt_secret: str = Field("dev_secret", alias="JWT_SECRET")
     jwt_algorithm: str = Field("HS256", alias="JWT_ALGORITHM")
-    jwt_access_ttl_minutes: PositiveInt = Field(15, alias="JWT_ACCESS_TTL_MINUTES")
-    jwt_refresh_ttl_days: PositiveInt = Field(7, alias="JWT_REFRESH_TTL_DAYS")
+    jwt_access_ttl_minutes: int = Field(default=30, alias="JWT_ACCESS_TTL_MINUTES")
+    jwt_refresh_ttl_days: PositiveInt = Field(default=7, alias="JWT_REFRESH_TTL_DAYS")
+    jwt_leeway_seconds: int = Field(default=600, alias="JWT_LEEWAY_SECONDS")
 
     # --- Auth challenge ---
     auth_nonce_ttl: timedelta | int = Field(default=timedelta(minutes=5), alias="AUTH_NONCE_TTL")

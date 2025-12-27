@@ -1,5 +1,13 @@
 name: dfsp-prod
 
+# --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
+# Драйвер "local" (сжатый бинарный формат, быстрый) + ротация
+x-logging: &default-logging
+  driver: "local"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-backend-build: &backend-build
   context: ../backend
   dockerfile: Dockerfile
@@ -24,6 +32,7 @@ services:
   db:
     image: postgres:17-alpine
     container_name: dfsp-db
+    logging: *default-logging  # <--- Применено
     env_file:
       - .env.prod
     environment:
@@ -46,6 +55,7 @@ services:
     image: dfsp-backend:prod
     build: *backend-build
     container_name: dfsp-migrator
+    logging: *default-logging  # <--- Применено
     restart: "no"
     env_file:
       - .env.prod
@@ -64,6 +74,7 @@ services:
   chain:
     image: ghcr.io/foundry-rs/foundry:latest
     container_name: dfsp-anvil
+    logging: *default-logging  # <--- Применено
     environment:
       CHAIN_ID: ${CHAIN_ID:-31337}
       ANVIL_IP_ADDR: 0.0.0.0
@@ -102,6 +113,7 @@ services:
   contracts:
     image: node:${NODE_VERSION:-22}
     container_name: dfsp-contracts
+    logging: *default-logging  # <--- Применено
     working_dir: /app
     depends_on:
       chain:
@@ -131,6 +143,7 @@ services:
     image: dfsp-backend:prod
     build: *backend-build
     container_name: dfsp-api
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     env_file:
       - .env.prod
@@ -141,7 +154,7 @@ services:
       - "${API_PORT:-8000}:8000"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/ready || exit 1"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
       start_period: 10s
@@ -163,6 +176,7 @@ services:
     image: dfsp-backend:prod
     build: *backend-build
     container_name: dfsp-celery-worker
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     env_file:
       - .env.prod
@@ -189,6 +203,7 @@ services:
     image: dfsp-backend:prod
     build: *backend-build
     container_name: dfsp-celery-beat
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     env_file:
       - .env.prod
@@ -217,6 +232,7 @@ services:
       context: ../bot
       dockerfile: Dockerfile
     container_name: dfsp-telegram-bot
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     env_file:
       - .env.prod
@@ -229,9 +245,12 @@ services:
       PUBLIC_WEB_ORIGIN: "${PUBLIC_WEB_ORIGIN:-https://dfsp.app}"
       REDIS_DSN: "${BOT_REDIS_DSN:-${REDIS_URL:-redis://redis:6379/0}}"
       QUEUE_DSN: "${BOT_QUEUE_DSN:-${REDIS_URL:-redis://redis:6379/0}}"
+      BOT_DB_DSN: "${BOT_DB_DSN:-postgresql://dfsp:${DB_PASSWORD:-dfsp}@db:5432/dfsp_bot}"
       APP_HOST: "${BOT_APP_HOST:-0.0.0.0}"
       APP_PORT: "${BOT_APP_PORT:-8080}"
       PROM_PORT: "${BOT_PROM_PORT:-8001}"
+      BOT_MESSAGES_DB_PATH: "${BOT_MESSAGES_DB_PATH:-/app/dfsp-bot.db}"
+      BOT_DEFAULT_LANGUAGE: "${BOT_DEFAULT_LANGUAGE:-ru}"
     ports:
       - "${BOT_APP_PORT:-8080}:8080"
       - "${BOT_PROM_PORT:-8001}:8001"
@@ -240,12 +259,15 @@ services:
         condition: service_started
       redis:
         condition: service_started
+      db:
+        condition: service_healthy
     networks: [ dfsp ]
 
   # ---------------- Redis ----------------
   redis:
     image: redis:7.2-alpine
     container_name: dfsp-redis
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     volumes: [ redis_data:/data ]
     networks: [ dfsp ]
@@ -260,6 +282,7 @@ services:
   ipfs:
     image: ipfs/kubo:${IPFS_VERSION:-latest}
     container_name: dfsp-ipfs
+    logging: *default-logging  # <--- Применено
     env_file:
       - .env.prod
     environment:
@@ -283,6 +306,7 @@ services:
   caddy:
     image: caddy:2.8
     container_name: dfsp-caddy
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     env_file:
       - .env.prod
@@ -315,6 +339,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     container_name: dfsp-nginx
+    logging: *default-logging  # <--- Применено
     ports:
       - "80:80"
     volumes:
@@ -330,12 +355,14 @@ services:
   explorer-db:
     image: postgres:17-alpine
     container_name: blockscout-db
+    logging: *default-logging  # <--- Применено
     environment:
       POSTGRES_USER: blockscout
       POSTGRES_PASSWORD: ${EXPLORER_DB_PASSWORD:-blockpass}
       POSTGRES_DB: blockscout
-    volumes:
-      - explorer_db:/var/lib/postgresql/data
+    # Use tmpfs to make DB ephemeral (reset on restart/down)
+    tmpfs:
+      - /var/lib/postgresql/data:rw,size=512m
     networks: [ dfsp ]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U blockscout -p 5432 || exit 1"]
@@ -347,6 +374,7 @@ services:
   explorer-indexer:
     image: ghcr.io/blockscout/blockscout:latest
     container_name: blockscout-indexer
+    logging: *default-logging  # <--- Применено
     working_dir: /app
     command: >
       sh -lc "
@@ -386,6 +414,7 @@ services:
   explorer-web:
     image: ghcr.io/blockscout/frontend:latest
     container_name: blockscout-web
+    logging: *default-logging  # <--- Применено
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_NETWORK_NAME: DFSP Localnet
