@@ -22,9 +22,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
-import { ArrowLeft, Copy, Share2, CheckCircle2, XCircle, AlertCircle, Download, Edit2 } from 'lucide-react';
+import { ArrowLeft, Copy, Share2, CheckCircle2, XCircle, AlertCircle, Download, Edit2, Trash2 } from 'lucide-react';
 import { notify } from '@/lib/toast';
-import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx, type ForwardTyped, fetchMyFiles, createPublicLink, listPublicLinks, revokePublicLink, type PublicLinkItem, renameFile } from '@/lib/api.ts';
+import { fetchMeta, fetchVersions, listGrants, prepareRevoke, submitMetaTx, type ForwardTyped, fetchMyFiles, createPublicLink, listPublicLinks, revokePublicLink, type PublicLinkItem, renameFile, deleteFile } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
 import { getAgent, getSelectedAgentKind } from '@/lib/agent/manager';
 import { ensureUnlockedOrThrow } from '@/lib/unlock';
@@ -91,6 +91,8 @@ export default function FileDetailsPage() {
   const [newName, setNewName] = useState('');
   const [extensionWarning, setExtensionWarning] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const onLogout = () => {
@@ -250,6 +252,21 @@ export default function FileDetailsPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!file) return;
+    try {
+      setDeleting(true);
+      await deleteFile(file.id);
+      notify.success('File deleted', { dedupeId: `file-del-${file.id}` });
+      navigate('/files');
+    } catch (e) {
+      notify.error(getErrorMessage(e, 'Failed to delete file'), { dedupeId: `file-del-err-${file.id}` });
+    } finally {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
+    }
+  };
+
   const statusBadge = (status: GrantRow['status']) => {
     switch (status) {
       case 'confirmed':
@@ -379,6 +396,10 @@ export default function FileDetailsPage() {
               <Button variant="ghost" size="sm" onClick={handleRenameOpen} className="gap-1">
                 <Edit2 className="h-3.5 w-3.5" />
                 Rename
+              </Button>
+              <Button variant="ghost" size="sm" className="gap-1 text-red-600 hover:text-red-700" onClick={()=>setDeleteDialogOpen(true)}>
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
               </Button>
             </div>
           </div>
@@ -742,6 +763,23 @@ export default function FileDetailsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={(open)=>{ if(!open && !deleting) setDeleteDialogOpen(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete file</AlertDialogTitle>
+            <AlertDialogDescription>
+              Deleting removes this file and revokes all grants. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" disabled={deleting} onClick={handleDelete}>
+              {deleting ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
 }

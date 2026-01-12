@@ -427,6 +427,10 @@ export async function fetchMyFiles(): Promise<FileListItem[]> {
   return data;
 }
 
+export async function deleteFile(fileIdHex: string): Promise<void> {
+  await api.delete(`/files/${fileIdHex}`);
+}
+
 export async function updateProfile(displayName: string): Promise<{ display_name: string }> {
   const { data } = await api.patch<{ display_name: string }>("/users/me", { display_name: displayName });
   return data;

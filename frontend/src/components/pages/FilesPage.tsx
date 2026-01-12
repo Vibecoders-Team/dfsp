@@ -21,8 +21,9 @@ import {
 } from '../ui/select';
 import { Skeleton } from '../ui/skeleton';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Upload, Search, Eye, Share2, CheckCircle2, AlertCircle, Download, RefreshCw } from 'lucide-react';
-import { fetchMyFiles, type FileListItem } from '@/lib/api.ts';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
+import { Upload, Search, Eye, Share2, CheckCircle2, AlertCircle, Download, RefreshCw, Trash2 } from 'lucide-react';
+import { fetchMyFiles, deleteFile, type FileListItem } from '@/lib/api.ts';
 import { getErrorMessage } from '@/lib/errors.ts';
 import { notify } from '@/lib/toast';
 import { getFileKey } from '@/lib/fileKey.ts';
@@ -51,6 +52,8 @@ export default function FilesPage() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const { isSlowConnection, effectiveType } = useConnectionSpeed();
   const isFirstLoadRef = useRef(true);
+  const [fileToDelete, setFileToDelete] = useState<FileItem | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Debug: track mount/unmount
   useEffect(() => {
@@ -177,6 +180,22 @@ export default function FilesPage() {
     if (!value) return;
     navigator.clipboard.writeText(value);
     notify.success(`${label} copied to clipboard`, { dedupeId: `copy-${label}-${value}` });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!fileToDelete) return;
+    const targetId = fileToDelete.id;
+    try {
+      setDeletingId(targetId);
+      await deleteFile(targetId);
+      setFiles((prev) => prev.filter((f) => f.id !== targetId));
+      notify.success('File deleted', { dedupeId: `file-del-${targetId}` });
+    } catch (e) {
+      notify.error(getErrorMessage(e, 'Failed to delete file'), { dedupeId: `file-del-err-${targetId}` });
+    } finally {
+      setDeletingId(null);
+      setFileToDelete(null);
+    }
   };
 
   const handleDownloadOwn = async (file: FileItem) => {
@@ -375,6 +394,17 @@ export default function FilesPage() {
                             <Download className="h-3.5 w-3.5" />
                             Download
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1.5 text-red-600 hover:text-red-700"
+                            onClick={() => setFileToDelete(file)}
+                            disabled={deletingId === file.id}
+                            aria-label={`Delete ${file.safeName}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -385,6 +415,29 @@ export default function FilesPage() {
           </div>
         ) : null}
       </div>
+
+      <AlertDialog open={!!fileToDelete} onOpenChange={(open) => {
+        if (!open && !deletingId) setFileToDelete(null);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete file</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action permanently removes the file and revokes all of its grants. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!deletingId}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={!fileToDelete || deletingId === fileToDelete.id}
+            >
+              {deletingId === fileToDelete?.id ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
 }
