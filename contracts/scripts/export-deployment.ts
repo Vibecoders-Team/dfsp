@@ -11,7 +11,7 @@ async function readArtifactSafe(name: string) {
   try {
     return await hre.artifacts.readArtifact(name);
   } catch {
-    // Fallback на FQN под src/
+    // Fallback to FQN under src/
     const fqn = `src/${name}.sol:${name}`;
     try {
       return await hre.artifacts.readArtifact(fqn);
@@ -22,11 +22,11 @@ async function readArtifactSafe(name: string) {
 }
 
 async function main() {
-  // По умолчанию ищем тот файл, который создаёт deploy-local.ts: ../deploy/chain-config.json
+  // By default, look for the file created by deploy-local.ts: ../deploy/chain-config.json
   const defaultCfg = path.resolve(__dirname, "../deploy/chain-config.json");
   const configPath = process.env.CHAIN_CONFIG_PATH || defaultCfg;
 
-  // Куда писать итог (можно переопределить DEPLOY_OUT)
+  // Output path (can be overridden via DEPLOY_OUT)
   const defaultOut = path.resolve("deployments/deployment.json");
   const outPath = process.env.DEPLOY_OUT || defaultOut;
 

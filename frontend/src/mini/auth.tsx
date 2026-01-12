@@ -44,7 +44,7 @@ export function MiniAuthProvider({ children }: { children: ReactNode }) {
     const initData = readInitData();
     if (!initData) {
       setStatus("error");
-      setError("Отсутствует initData из Telegram WebApp.");
+      setError("Missing initData from Telegram WebApp.");
       return;
     }
     try {
@@ -80,15 +80,15 @@ export function MiniAuthProvider({ children }: { children: ReactNode }) {
               error?.message?.includes?.('TON_CONNECT_SDK_ERROR') ||
               error?.code === 'USER_CANCELLED' ||
               error?.code === 'CANCELLED_BY_USER') {
-            throw new Error('Подключение кошелька было отменено');
+            throw new Error('Wallet connection was canceled');
           }
-          throw new Error(`Не удалось подключить кошелёк: ${error?.message || 'Неизвестная ошибка'}`);
+          throw new Error(`Failed to connect wallet: ${error?.message || 'Unknown error'}`);
         }
       }
 
       const account = ton.wallet?.account;
       const pubkeyHex = account?.publicKey;
-      if (!pubkeyHex) throw new Error("TON кошелёк не подключён");
+      if (!pubkeyHex) throw new Error("TON wallet is not connected");
 
       const pubB64 = toBase64(hexToBytes(pubkeyHex));
       const challenge = await miniTonChallenge(pubB64);
@@ -104,9 +104,9 @@ export function MiniAuthProvider({ children }: { children: ReactNode }) {
             error?.message?.includes?.('rejected') ||
             error?.code === 'USER_CANCELLED' ||
             error?.code === 'CANCELLED_BY_USER') {
-          throw new Error('Подписание было отменено');
+          throw new Error('Signing was canceled');
         }
-        throw new Error(`Не удалось подписать челлендж: ${error?.message || 'Неизвестная ошибка'}`);
+        throw new Error(`Failed to sign challenge: ${error?.message || 'Unknown error'}`);
       }
 
       const tokens = await miniTonLogin({
@@ -114,8 +114,8 @@ export function MiniAuthProvider({ children }: { children: ReactNode }) {
         signature: signed.signature,
         domain: signed.domain || "",
         timestamp: signed.timestamp,
-        payload: { type: "binary", bytes: challenge.nonce }, // отправляем исходный nonce
-        address: account?.address || "", // добавлено поле address
+        payload: { type: "binary", bytes: challenge.nonce }, // send original nonce
+        address: account?.address || "", // added address field
       });
 
       setMiniSession(tokens.access);
@@ -172,15 +172,15 @@ function resolveErrorMessage(err: unknown): string {
   const normalized = normalizeMiniError(err);
   if (normalized.status === 403) {
     if (normalized.message === "tg_not_linked" || normalized.code === "tg_not_linked") {
-      return "Аккаунт Telegram не привязан к DFSP. Завершите линк в основном вебе.";
+      return "Telegram account is not linked to DFSP. Complete linking in the main web app.";
     }
     if (normalized.message === "user_not_found" || normalized.code === "user_not_found") {
-      return "Пользователь для этого чата не найден.";
+      return "User for this chat not found.";
     }
-    return "Неверная подпись initData (403).";
+    return "Invalid initData signature (403).";
   }
-  if (normalized.status === 401) return "Сессия истекла, обновите WebApp.";
-  return normalized.message || "Неизвестная ошибка авторизации";
+  if (normalized.status === 401) return "Session expired, refresh the WebApp.";
+  return normalized.message || "Unknown authorization error";
 }
 
 function resolveTonError(err: unknown): string {
@@ -189,29 +189,29 @@ function resolveTonError(err: unknown): string {
   // Handle cancellation errors first
   if (err instanceof Error) {
     const msg = err.message;
-    if (msg.includes('Подключение кошелька было отменено') ||
-        msg.includes('Подписание было отменено')) {
+    if (msg.includes('Wallet connection was canceled') ||
+        msg.includes('Signing was canceled')) {
       return msg;
     }
-    if (msg.includes('Не удалось подключить кошелёк') ||
-        msg.includes('Не удалось подписать челлендж')) {
+    if (msg.includes('Failed to connect wallet') ||
+        msg.includes('Failed to sign challenge')) {
       return msg;
     }
     // Handle generic cancellation patterns
     if (msg.includes('cancelled') || msg.includes('Cancelled') ||
         msg.includes('rejected') || msg.includes('declined') ||
         msg.includes('TON_CONNECT_SDK_ERROR') && msg.includes('Wallet was not connected')) {
-      return 'Действие было отменено пользователем';
+      return 'Action was canceled by the user';
     }
   }
 
-  if (normalized.status === 410 || normalized.message === "challenge_expired") return "Челлендж истёк, попробуйте снова.";
-  if (normalized.status === 401 || normalized.message === "bad_signature") return "Подпись TON не прошла проверку.";
+  if (normalized.status === 410 || normalized.message === "challenge_expired") return "Challenge expired, please try again.";
+  if (normalized.status === 401 || normalized.message === "bad_signature") return "TON signature verification failed.";
   if (normalized.message === "pubkey_required" || normalized.message === "bad_pubkey") {
-    return "TON кошелёк не вернул публичный ключ.";
+    return "TON wallet did not return a public key.";
   }
   if (err instanceof Error) return err.message;
-  return normalized.message || "Не удалось войти через TON.";
+  return normalized.message || "Failed to sign in with TON.";
 }
 
 function readExp(jwt: string | null): number | null {

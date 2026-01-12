@@ -7,7 +7,7 @@ branch_labels = None
 depends_on = None
 
 def upgrade():
-    # no-op — схема уже пересоздана в 7d1e66
+    # no-op — schema was already recreated in 7d1e66
     pass
 
 def downgrade():

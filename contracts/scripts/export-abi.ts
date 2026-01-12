@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function main() {
-  // FQN только для форвардера; остальные имена уникальны
+  // FQN is only needed for the forwarder; other names are unique
   const entries = [
     { fq: "src/MinimalForwarder.sol:MinimalForwarder", out: "MinimalForwarder" },
     { fq: "FileRegistry", out: "FileRegistry" },

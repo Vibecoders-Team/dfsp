@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def link_user_to_chat(db: Session, wallet_address: str, chat_id: int) -> TelegramLink:
     """
-    Создает или обновляет (UPSERT) связь между wallet_address и chat_id.
+    Create or update (UPSERT) the link between wallet_address and chat_id.
     """
     normalized_address = (wallet_address or "").lower()
 
@@ -46,8 +46,8 @@ def link_user_to_chat(db: Session, wallet_address: str, chat_id: int) -> Telegra
 
 def revoke_links_by_address(db: Session, wallet_address: str) -> int:
     """
-    Деактивирует все активные привязки для указанного wallet_address
-    (revoked_at = NOW() где revoked_at IS NULL).
+    Deactivate all active links for the given wallet_address
+    (revoked_at = NOW() where revoked_at IS NULL).
     """
     normalized_address = (wallet_address or "").lower()
 
@@ -64,8 +64,8 @@ def revoke_links_by_address(db: Session, wallet_address: str) -> int:
 
 def get_active_chat_ids_for_addresses(db: Session, addresses: list[str]) -> dict[str, int]:
     """
-    Возвращает mapping address(lower) -> chat_id для активных привязок.
-    Берём последний по created_at для каждого адреса.
+    Return mapping address(lower) -> chat_id for active links.
+    Take the latest by created_at for each address.
     """
     if not addresses:
         return {}
@@ -90,7 +90,7 @@ def get_active_chat_ids_for_addresses(db: Session, addresses: list[str]) -> dict
 
 
 def get_active_chat_id_for_user(db: Session, user: User) -> int | None:
-    """Возвращает chat_id по eth_address пользователя, если есть активная привязка."""
+    """Return chat_id by user's eth_address if an active link exists."""
     if not user or not user.eth_address:
         return None
     mapping = get_active_chat_ids_for_addresses(db, [user.eth_address])
@@ -99,9 +99,9 @@ def get_active_chat_id_for_user(db: Session, user: User) -> int | None:
 
 def get_wallet_by_chat_id(db: Session, chat_id: int) -> str | None:
     """
-    Возвращает wallet_address по Telegram chat_id
-    для *активной* привязки (revoked_at IS NULL),
-    либо None, если привязки нет.
+    Return wallet_address by Telegram chat_id
+    for an *active* link (revoked_at IS NULL),
+    or None if no link exists.
     """
     wallet = (
         db.query(TelegramLink.wallet_address)

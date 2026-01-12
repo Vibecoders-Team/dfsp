@@ -12,7 +12,7 @@ type Status = 'pending' | 'success' | 'error';
 export default function TelegramLinkPage() {
   const location = useLocation();
   const [status, setStatus] = useState<Status>('pending');
-  const [message, setMessage] = useState<string>('Привязываю аккаунт к Telegram...');
+  const [message, setMessage] = useState<string>('Linking account to Telegram...');
 
   const linkToken = useMemo(() => {
     const params = new URLSearchParams(location.search);
@@ -25,21 +25,21 @@ export default function TelegramLinkPage() {
     const run = async () => {
       if (!linkToken) {
         setStatus('error');
-        setMessage('Ссылка не содержит token для привязки.');
+        setMessage('Link does not contain a token for linking.');
         return;
       }
 
       try {
         setStatus('pending');
-        setMessage('Привязываю аккаунт к Telegram...');
+        setMessage('Linking account to Telegram...');
         await completeTelegramLink(linkToken);
         if (cancelled) return;
         setStatus('success');
-        setMessage('Telegram успешно привязан к вашему аккаунту.');
+        setMessage('Telegram successfully linked to your account.');
       } catch (err) {
         if (cancelled) return;
         setStatus('error');
-        setMessage(getErrorMessage(err, 'Не удалось завершить привязку Telegram.'));
+        setMessage(getErrorMessage(err, 'Failed to complete Telegram linking.'));
       }
     };
 
@@ -62,8 +62,8 @@ export default function TelegramLinkPage() {
         <div className="flex items-center gap-3">
           {renderIcon()}
           <div>
-            <h1 className="text-xl font-semibold">Привязка Telegram</h1>
-            <p className="text-gray-600 text-sm">Закрывайте окно после успешной привязки.</p>
+            <h1 className="text-xl font-semibold">Telegram linking</h1>
+            <p className="text-gray-600 text-sm">You can close this window after successful linking.</p>
           </div>
         </div>
 
@@ -78,7 +78,7 @@ export default function TelegramLinkPage() {
           <Button asChild variant="outline">
             <Link to="/files">
               <ArrowLeft className="h-4 w-4" />
-              Назад к файлам
+              Back to files
             </Link>
           </Button>
         </div>

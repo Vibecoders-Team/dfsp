@@ -34,7 +34,7 @@ LOGIN_DOMAIN: dict[str, str] = {"name": "DFSP-Login", "version": "1"}
 EXPECTED_CHAIN_ID = int(getenv("CHAIN_ID", "0") or 0) or None
 TON_CHALLENGE_TTL = 300
 
-# --- Валидаторы (ETH) ---
+# --- Validators (ETH) ---
 ADDR_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 NONCE_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
 SIG_RE = re.compile(r"^0x[0-9a-fA-F]{130}$")
@@ -65,16 +65,16 @@ def _left_pad32(b: bytes) -> bytes:
 
 
 def _eip712_digest_login(eth_address: str, nonce_hex: str) -> bytes:
-    # домен: EIP712Domain(string name,string version)
+    # domain: EIP712Domain(string name,string version)
     typehash_domain = keccak(text="EIP712Domain(string name,string version)")
     name_hash = keccak(text=LOGIN_DOMAIN["name"])
     version_hash = keccak(text=LOGIN_DOMAIN["version"])
     domain_sep = keccak(typehash_domain + name_hash + version_hash)
 
-    # тип: LoginChallenge(address address,bytes32 nonce)
+    # type: LoginChallenge(address address,bytes32 nonce)
     typehash_login = keccak(text="LoginChallenge(address address,bytes32 nonce)")
     addr_word = _left_pad32(to_canonical_address(eth_address))
-    nonce32 = bytes.fromhex(nonce_hex[2:])  # уже проверен форматом
+    nonce32 = bytes.fromhex(nonce_hex[2:])  # already validated by format
     struct_hash = keccak(typehash_login + addr_word + nonce32)
 
     return keccak(b"\x19\x01" + domain_sep + struct_hash)
@@ -98,7 +98,7 @@ def _recover_login_with_nonce(eth_address: str, nonce_hex: str, signature: str) 
     digest = _eip712_digest_login(eth_address, nonce_hex)
 
     try:
-        sig_bytes = bytes.fromhex(signature[2:])  # 65 байт
+        sig_bytes = bytes.fromhex(signature[2:])  # 65 bytes
         sig = Signature(sig_bytes)
         pub = sig.recover_public_key_from_msg_hash(digest)
         return pub.to_checksum_address()
@@ -158,13 +158,13 @@ def challenge() -> ChallengeOut:
     return ChallengeOut(challenge_id=challenge_id, nonce=nonce, exp_sec=exp_sec)
 
 
-# ---------- Общие хелперы для TON ----------
+# ---------- Shared helpers for TON ----------
 
 
 def _parse_ton_address(addr: str) -> tuple[int, bytes]:
     """
-    Разбираем raw-адрес вида "<workchain>:<hex32>" → (wc, hash32).
-    Пример: "0:348bcf82..."
+    Parse raw address "<workchain>:<hex32>" -> (wc, hash32).
+    Example: "0:348bcf82..."
     """
     try:
         wc_str, hash_hex = addr.split(":", 1)
@@ -205,7 +205,7 @@ def _b64decode_loose(s: str) -> bytes:
 
 def _decode_signature(sig: str) -> bytes:
     """
-    TonConnect signData.signature — base64, но на всякий случай принимаем и hex.
+    TonConnect signData.signature is base64, but accept hex just in case.
     """
     try:
         return _b64decode_loose(sig)
@@ -229,7 +229,7 @@ def _derive_eth_from_ton_pub(pubkey: bytes) -> str:
 
 def _ton_payload_bytes(payload: dict) -> bytes:
     """
-    Достаём именно байты, которые TonConnect подписывает.
+    Get the exact bytes that TonConnect signs.
     """
     ptype = payload.get("type")
     if ptype == "binary":
@@ -250,8 +250,8 @@ def _ton_payload_bytes(payload: dict) -> bytes:
 
 def _parse_raw_ton_address(addr: str) -> tuple[int, bytes]:
     """
-    raw-адрес формата "<workchain>:<hex32>" -> (wc, hash32)
-    Пример: "0:0e92..."
+    Raw address format "<workchain>:<hex32>" -> (wc, hash32)
+    Example: "0:0e92..."
     """
     try:
         wc_str, hash_hex = addr.split(":", 1)
@@ -273,27 +273,27 @@ def _ton_sign_data_message_variants(
     ptype: str | None,
 ) -> list[bytes]:
     """
-    Генерируем множество разумных вариантов сообщения для signData:
+    Generate a set of reasonable message variants for signData:
 
       message ~= [0xffff?] ++ prefix_str ++ Address ++ DomainPart ++ TimestampPart ++ PayloadPart
 
-    Где:
+    Where:
       Address      = wc_be(int32) ++ hash32
-      DomainPart   = либо le32(len)+dom, либо be32(len)+dom, либо просто dom, либо пусто
-      TimestampPart= ts_le64 / ts_be64 / ts_le32 / ts_be32 / пусто
-      PayloadPart  = один из:
+      DomainPart   = le32(len)+dom, or be32(len)+dom, or just dom, or empty
+      TimestampPart= ts_le64 / ts_be64 / ts_le32 / ts_be32 / empty
+      PayloadPart  = one of:
                      - "txt"/"bin" + le32(len) + data
                      - "txt"/"bin" + be32(len) + data
                      - "txt"/"bin" + data
-                     - просто data
+                     - raw data
 
-    prefix_str варианты:
+    prefix_str variants:
       "ton-connect/sign-data/",
       "ton-connect/sign-data",
       "ton-connect-sign-data/",
       "ton-connect-sign-data"
 
-    И с/без префикса 0xffff.
+    With/without 0xffff prefix.
     """
     wc, addr_hash = _parse_raw_ton_address(address)
     wc_bytes = int(wc).to_bytes(4, "big", signed=True)
@@ -324,14 +324,14 @@ def _ton_sign_data_message_variants(
     ]
 
     domain_parts = [
-        b"",  # без домена
-        dom_bytes,  # только домен
-        dom_le + dom_bytes,  # длина LE + домен
-        dom_be + dom_bytes,  # длина BE + домен
+        b"",  # no domain
+        dom_bytes,  # domain only
+        dom_le + dom_bytes,  # LE length + domain
+        dom_be + dom_bytes,  # BE length + domain
     ]
 
     ts_parts = [
-        b"",  # без timestamp
+        b"",  # no timestamp
         ts_le64,
         ts_be64,
         ts_le32,
@@ -381,12 +381,12 @@ def _verify_ton_sign_data(
     payload: dict,
 ) -> tuple[bool, bytes]:
     """
-    Перебираем множество реалистичных вариантов формата signData и
-    пытаемся проверить подпись:
+    Try many realistic signData format variants and
+    verify the signature:
 
       sig = Ed25519( sha256( message_variant ) )
 
-    Если ни один вариант не подходит — возвращаем False.
+    If none match, return False.
     """
     ptype = payload.get("type")
     payload_raw = _ton_payload_bytes(payload)
@@ -401,7 +401,7 @@ def _verify_ton_sign_data(
 
     pub = Ed25519PublicKey.from_public_bytes(pubkey)
 
-    # Сначала пробуем сигнатуру по sha256(message)
+    # First try signature over sha256(message)
     for idx, msg in enumerate(variants, start=1):
         digest = hashlib.sha256(msg).digest()
         try:
@@ -421,7 +421,7 @@ def _verify_ton_sign_data(
             )
             continue
 
-    # На всякий пожарный — пробуем, вдруг кошелёк подписывает сырое message
+    # As a fallback, try raw message in case the wallet signs it directly
     for idx, msg in enumerate(variants, start=1):
         try:
             pub.verify(signature, msg)
@@ -457,7 +457,7 @@ def ton_challenge(body: dict) -> ChallengeOut:
         raise HTTPException(400, "bad_pubkey")
 
     challenge_id = str(uuidlib.uuid4())
-    # nonce как base64(32 байт), чтобы удобно класть в signData.payload.bytes
+    # nonce as base64(32 bytes), so it fits nicely into signData.payload.bytes
     nonce_bytes = secrets.token_bytes(32)
     nonce = base64.b64encode(nonce_bytes).decode()
 
@@ -538,7 +538,7 @@ def ton_login(body: dict, db: Annotated[Session, Depends(get_db)]) -> Tokens:
         len(signature),
     )
 
-    # Проверка подписи по TonConnect SignData spec
+    # Verify signature per TonConnect SignData spec
     ok, payload_raw = _verify_ton_sign_data(
         pubkey,
         signature,
@@ -550,8 +550,8 @@ def ton_login(body: dict, db: Annotated[Session, Depends(get_db)]) -> Tokens:
 
     logger.warning("TON /ton/login: verify result ok=%s payload_len=%d", ok, len(payload_raw))
 
-    # Жёстко сверяем, что payload соответствует выданному challenge.nonce
-    # (для binary-пейлоада)
+    # Strictly verify that payload matches the issued challenge.nonce
+    # (for binary payload)
     if payload_obj.get("type") == "binary":
         try:
             nonce_from_payload = _ton_payload_bytes(payload_obj)

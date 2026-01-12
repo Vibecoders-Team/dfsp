@@ -11,7 +11,7 @@ export const LOGIN_TYPES: Record<string, TypedDataField[]> = {
 
 export type LoginMessage = { address: `0x${string}`; nonce: `0x${string}` };
 
-/** ---- EIP-1193 provider (без any) ---- */
+/** ---- EIP-1193 provider (no any) ---- */
 type EIP1193Provider = {
     request(args: { method: string; params?: unknown[] | Record<string, unknown> }): Promise<unknown>;
 };

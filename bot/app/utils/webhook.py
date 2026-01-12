@@ -1,12 +1,12 @@
-"""Утилиты для работы с webhook URL бота."""
+"""Utilities for working with bot webhook URLs."""
 
 
 def build_webhook_url(origin: str, secret: str) -> str:
-    """Собирает полный URL webhook по origin и секрету."""
+    """Build full webhook URL from origin and secret."""
     base = str(origin).rstrip("/")
     return f"{base}/tg/webhook/{secret}"
 
 
 def mask_webhook_url(url: str, secret: str) -> str:
-    """Маскирует секрет в webhook URL для безопасного логирования."""
+    """Mask secret in webhook URL for safe logging."""
     return url.replace(secret, "***") if secret else url

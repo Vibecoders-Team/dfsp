@@ -35,14 +35,14 @@ export function MiniGrantsPage() {
             alignItems: "center",
             gap: "8px"
           }}>
-            🔐 Управление доступами
+            🔐 Access management
           </p>
           <p style={{
             fontSize: "14px",
             opacity: 0.9,
             lineHeight: 1.5
           }}>
-            Гранты и разрешения для ваших файлов с блокчейн-верификацией
+            Grants and permissions for your files with blockchain verification
           </p>
         </div>
       </div>
@@ -73,7 +73,7 @@ export function MiniGrantsPage() {
               color: "var(--mini-text)",
               marginBottom: "6px"
             }}>
-              Функционал в разработке
+              Feature in development
             </p>
             <p style={{
               fontSize: "13px",
@@ -81,7 +81,7 @@ export function MiniGrantsPage() {
               lineHeight: 1.5,
               marginBottom: "12px"
             }}>
-              Здесь будет UI для управления грантами и ревоками после подключения API.
+              UI for managing grants and revokes will appear after API is connected.
             </p>
             <div style={{
               display: "inline-flex",
@@ -99,7 +99,7 @@ export function MiniGrantsPage() {
                 borderRadius: "50%",
                 background: "var(--mini-success)"
               }} />
-              Авторизация через webapp JWT активна
+              Webapp JWT auth is active
             </div>
           </div>
         </div>
@@ -112,10 +112,10 @@ export function MiniGrantsPage() {
         gap: "12px"
       }}>
         {[
-          { icon: "📤", title: "Выдать доступ", desc: "Поделиться файлом" },
-          { icon: "📥", title: "Полученные", desc: "Доступы от других" },
-          { icon: "🔄", title: "Активные", desc: "Текущие гранты" },
-          { icon: "❌", title: "Отозвать", desc: "Revoke грантов" }
+          { icon: "📤", title: "Grant access", desc: "Share file" },
+          { icon: "📥", title: "Received", desc: "Access from others" },
+          { icon: "🔄", title: "Active", desc: "Current grants" },
+          { icon: "❌", title: "Revoke", desc: "Revoke grants" }
         ].map((item) => (
           <div
             key={item.title}

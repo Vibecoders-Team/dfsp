@@ -16,11 +16,11 @@ export const ACCESS_TOKEN_KEY = "ACCESS_TOKEN";
 
 export const api = axios.create({baseURL: API_BASE});
 
-/** ---- Auth header interceptor (без any) ---- */
+/** ---- Auth header interceptor (no any) ---- */
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     const tok = localStorage.getItem(ACCESS_TOKEN_KEY);
     if (tok) {
-        // Превращаем headers в AxiosHeaders и ставим Authorization
+        // Convert headers to AxiosHeaders and set Authorization
         const headers = AxiosHeaders.from(config.headers);
         headers.set("Authorization", `Bearer ${tok}`);
         config.headers = headers;
@@ -155,7 +155,7 @@ export type HistoryOut = {
     }>;
 };
 
-/** общий тип для EIP-712 блока, который ты отправляешь на бэк */
+/** common type for EIP-712 block sent to backend */
 export type TypedLoginData = {
     domain: TypedDataDomain;
     types: Record<string, TypedDataField[]>;
@@ -300,11 +300,11 @@ export async function fetchGranteePubKey(addr: string): Promise<string> {
     return publicPem;
   }
 
-  // чужой адрес -> ищем в локальном каталоге
+  // foreign address -> look in local directory
   const pem = findKey(a);
   if (pem) return pem;
 
-  // нет локально — пытаемся получить с бэка и закешировать
+  // not local - try to fetch from backend and cache
   try {
     const { data } = await api.get<{ address: string; rsa_public: string; display_name?: string }>(`/users/${a}/pubkey`);
     if (data?.rsa_public) {
@@ -312,7 +312,7 @@ export async function fetchGranteePubKey(addr: string): Promise<string> {
       return data.rsa_public;
     }
   } catch (err: unknown) {
-    // если 404 — оставим как PUBLIC_PEM_NOT_FOUND; остальные ошибки прокинем наружу
+    // if 404 - keep as PUBLIC_PEM_NOT_FOUND; otherwise rethrow
     if (isAxiosError(err) && err.response?.status === 404) {
       // fall-through
     } else {
@@ -320,7 +320,7 @@ export async function fetchGranteePubKey(addr: string): Promise<string> {
     }
   }
 
-  // источника нет — дальше перехватим в UI и предложим импорт
+  // no source - UI will handle and propose import
   throw new Error("PUBLIC_PEM_NOT_FOUND");
 }
 

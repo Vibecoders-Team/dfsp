@@ -19,6 +19,6 @@ class ChallengeOut(BaseModel):
 @router.post("/challenge", response_model=ChallengeOut)
 def get_pow_challenge(pow_validator: Annotated[PoWValidator, Depends(get_pow_validator)]) -> dict[str, int | str]:
     """
-    Создает и возвращает новую PoW-задачу для клиента.
+    Create and return a new PoW challenge for the client.
     """
     return pow_validator.get_challenge()

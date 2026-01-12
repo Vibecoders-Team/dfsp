@@ -268,14 +268,14 @@ export function MiniFilesPage() {
             alignItems: "center",
             gap: "8px"
           }}>
-            📁 Мои файлы
+            📁 My files
           </p>
           <p style={{
             fontSize: "14px",
             opacity: 0.9,
             lineHeight: 1.5
           }}>
-            Шаринг и revoke через одноразовый intent с подписью на основном вебе
+            Sharing and revoke via one-time intent signed in the main web app
           </p>
         </div>
       </div>
@@ -307,7 +307,7 @@ export function MiniFilesPage() {
                 color: "var(--mini-warning-text)",
                 marginBottom: "4px"
               }}>
-                Вход через TON Connect
+                Signed in via TON Connect
               </p>
               <p style={{
                 fontSize: "13px",
@@ -315,7 +315,7 @@ export function MiniFilesPage() {
                 opacity: 0.8,
                 marginBottom: "12px"
               }}>
-                Для EVM-подписи (grant/revoke) перейдите на веб и свяжите EVM-адрес.
+                For EVM signing (grant/revoke), go to the web app and link an EVM address.
               </p>
               <button
                 onClick={() => openWebAppLink("/files")}
@@ -330,7 +330,7 @@ export function MiniFilesPage() {
                   cursor: "pointer"
                 }}
               >
-                Открыть веб-версию →
+                Open web version →
               </button>
             </div>
           </div>
@@ -359,7 +359,7 @@ export function MiniFilesPage() {
               alignItems: "center",
               gap: "6px"
             }}>
-              📂 Ваши файлы
+              📂 Your files
               {files.length > 0 && (
                 <span style={{
                   padding: "2px 8px",
@@ -397,7 +397,7 @@ export function MiniFilesPage() {
               color: "var(--mini-text-muted)"
             }}>
               <span style={{ fontSize: "32px", display: "block", marginBottom: "8px" }}>📭</span>
-              <p style={{ fontSize: "14px" }}>Файлы не найдены</p>
+              <p style={{ fontSize: "14px" }}>No files found</p>
             </div>
           ) : (
             <div style={{
@@ -460,7 +460,7 @@ export function MiniFilesPage() {
                               cursor: "pointer"
                             }}
                           >
-                            Сохранить
+                            Save
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleCancelRename(); }}
@@ -474,7 +474,7 @@ export function MiniFilesPage() {
                               cursor: "pointer"
                             }}
                           >
-                            Отмена
+                            Cancel
                           </button>
                         </div>
                       </div>
@@ -491,7 +491,7 @@ export function MiniFilesPage() {
                             color: active ? "var(--mini-primary)" : "var(--mini-text)",
                             marginBottom: "2px"
                           }}>
-                            {f.name || "Без имени"}
+                            {f.name || "Untitled"}
                           </p>
                           <p style={{
                             fontSize: "12px",
@@ -539,7 +539,7 @@ export function MiniFilesPage() {
               alignItems: "center",
               gap: "6px"
             }}>
-              📄 Детали файла
+              📄 File details
             </p>
 
             <div style={{
@@ -549,10 +549,10 @@ export function MiniFilesPage() {
               marginBottom: "16px"
             }}>
               {[
-                { label: "Имя", value: selectedFile.name || "Без имени" },
-                { label: "Размер", value: formatBytes(selectedFile.size) },
+                { label: "Name", value: selectedFile.name || "Untitled" },
+                { label: "Size", value: formatBytes(selectedFile.size) },
                 { label: "CID", value: truncate(selectedFile.cid, 16), mono: true },
-                { label: "Создан", value: formatDate(selectedFile.created_at) }
+                { label: "Created", value: formatDate(selectedFile.created_at) }
               ].map((item) => (
                 <div key={item.label} style={{
                   padding: "10px",
@@ -608,10 +608,10 @@ export function MiniFilesPage() {
                     borderTopColor: "var(--mini-text)",
                     borderRadius: "50%"
                   }} className="mini-animate-spin" />
-                  Готовим intent...
+                  Preparing intent...
                 </>
               ) : (
-                <>🔗 Создать intent для шаринга</>
+                <>🔗 Create intent for sharing</>
               )}
             </button>
 
@@ -649,7 +649,7 @@ export function MiniFilesPage() {
                 alignItems: "center",
                 gap: "6px"
               }}>
-                🔗 Публичные ссылки
+                🔗 Public links
               </p>
               <button
                 onClick={() => setShowPublicModal(true)}
@@ -664,7 +664,7 @@ export function MiniFilesPage() {
                   cursor: "pointer"
                 }}
               >
-                + Создать
+                + Create
               </button>
             </div>
 
@@ -675,7 +675,7 @@ export function MiniFilesPage() {
                 textAlign: "center",
                 padding: "16px"
               }}>
-                Нет публичных ссылок
+                No public links
               </p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -698,7 +698,7 @@ export function MiniFilesPage() {
                       color: "var(--mini-text-secondary)",
                       marginBottom: "8px"
                     }}>
-                      Скачиваний: {pl.downloads_count ?? 0}
+                      Downloads: {pl.downloads_count ?? 0}
                       {pl.policy?.max_downloads && pl.policy.max_downloads > 0
                         ? ` / ${pl.policy.max_downloads}`
                         : " / ∞"}
@@ -723,7 +723,7 @@ export function MiniFilesPage() {
                           cursor: "pointer"
                         }}
                       >
-                        📋 Копировать
+                        📋 Copy
                       </button>
                       <button
                         onClick={() => handleRevokePublicLink(pl.token)}
@@ -737,7 +737,7 @@ export function MiniFilesPage() {
                           cursor: "pointer"
                         }}
                       >
-                        Отозвать
+                        Revoke
                       </button>
                     </div>
                   </div>
@@ -764,7 +764,7 @@ export function MiniFilesPage() {
                 alignItems: "center",
                 gap: "6px"
               }}>
-                🔐 Активные гранты
+                🔐 Active grants
               </p>
               {currentGrants.loading && (
                 <div style={{
@@ -797,7 +797,7 @@ export function MiniFilesPage() {
                 textAlign: "center",
                 padding: "16px"
               }}>
-                Грантов пока нет
+                No grants yet
               </p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -847,7 +847,7 @@ export function MiniFilesPage() {
                         color: "var(--mini-text-secondary)",
                         marginBottom: "10px"
                       }}>
-                        DL {g.usedDownloads}/{g.maxDownloads} · до {formatDate(g.expiresAt)}
+                        DL {g.usedDownloads}/{g.maxDownloads} · until {formatDate(g.expiresAt)}
                       </p>
                       <button
                         onClick={() => handleRevokeIntent(g.capId)}
@@ -864,7 +864,7 @@ export function MiniFilesPage() {
                           cursor: busy ? "not-allowed" : "pointer"
                         }}
                       >
-                        {busy ? "Готовим intent..." : "❌ Отозвать"}
+                        {busy ? "Preparing intent..." : "❌ Revoke"}
                       </button>
                     </div>
                   );
@@ -908,14 +908,14 @@ export function MiniFilesPage() {
               color: "var(--mini-text)",
               marginBottom: "8px"
             }}>
-              Создать публичную ссылку
+              Create public link
             </p>
             <p style={{
               fontSize: "13px",
               color: "var(--mini-text-secondary)",
               marginBottom: "16px"
             }}>
-              Будет создана ссылка с безлимитными скачиваниями для файла «{selectedFile?.name || ""}»
+              A link with unlimited downloads will be created for file “{selectedFile?.name || ""}”
             </p>
             <div style={{ display: "flex", gap: "8px" }}>
               <button
@@ -933,7 +933,7 @@ export function MiniFilesPage() {
                   cursor: creatingPublic ? "not-allowed" : "pointer"
                 }}
               >
-                {creatingPublic ? "Создаём..." : "Создать"}
+                {creatingPublic ? "Creating..." : "Create"}
               </button>
               <button
                 onClick={() => setShowPublicModal(false)}
@@ -947,7 +947,7 @@ export function MiniFilesPage() {
                   cursor: "pointer"
                 }}
               >
-                Отмена
+                Cancel
               </button>
             </div>
           </div>
@@ -970,10 +970,10 @@ function IntentCallout({ intent, openLink }: { intent: IntentPreview; openLink: 
   const expired = remainingSec <= 0;
   const minutes = Math.max(1, Math.ceil(remainingSec / 60));
   const expiresAt = new Date(intent.createdAt + intent.ttl * 1000);
-  const expiresAtLabel = expiresAt.toLocaleTimeString("ru-RU", { timeStyle: "short" });
+  const expiresAtLabel = expiresAt.toLocaleTimeString("en-US", { timeStyle: "short" });
   const expiryLabel = expired
-    ? "Intent истёк, создайте новый"
-    : `≈${minutes} мин (до ${expiresAtLabel})`;
+    ? "Intent expired, create a new one"
+    : `≈${minutes} min (until ${expiresAtLabel})`;
 
   return (
     <div style={{
@@ -992,7 +992,7 @@ function IntentCallout({ intent, openLink }: { intent: IntentPreview; openLink: 
         alignItems: "center",
         gap: "6px"
       }}>
-        {expired ? "⏰ Intent истёк" : "✓ Intent готов"}
+        {expired ? "⏰ Intent expired" : "✓ Intent ready"}
       </p>
       <p style={{
         fontSize: "12px",
@@ -1008,7 +1008,7 @@ function IntentCallout({ intent, openLink }: { intent: IntentPreview; openLink: 
         color: "var(--mini-text-muted)",
         marginBottom: "12px"
       }}>
-        {intent.action === "share" ? "Шаринг" : "Отзыв"} · {expiryLabel} · одноразовый
+        {intent.action === "share" ? "Sharing" : "Revoke"} · {expiryLabel} · one-time
       </p>
       <div style={{ display: "flex", gap: "8px" }}>
         <button
@@ -1026,7 +1026,7 @@ function IntentCallout({ intent, openLink }: { intent: IntentPreview; openLink: 
             cursor: expired ? "not-allowed" : "pointer"
           }}
         >
-          Открыть
+          Open
         </button>
         <button
           onClick={() => !expired && navigator.clipboard.writeText(intent.url)}
@@ -1050,7 +1050,7 @@ function IntentCallout({ intent, openLink }: { intent: IntentPreview; openLink: 
           fontSize: "12px",
           color: "var(--mini-danger-text)"
         }}>
-          Intent истёк — создайте новый (они одноразовые)
+          Intent expired - create a new one (they are one-time)
         </p>
       )}
     </div>
@@ -1059,9 +1059,9 @@ function IntentCallout({ intent, openLink }: { intent: IntentPreview; openLink: 
 
 function resolveError(err: unknown): string {
   const normalized = normalizeMiniError(err);
-  if (normalized.status === 410 || normalized.code === "expired") return "Intent истёк, создайте новый.";
-  if (normalized.status === 409 || normalized.code === "already_used") return "Intent уже использован (одноразовый).";
-  return normalized.message || "Неизвестная ошибка";
+  if (normalized.status === 410 || normalized.code === "expired") return "Intent expired, create a new one.";
+  if (normalized.status === 409 || normalized.code === "already_used") return "Intent already used (one-time).";
+  return normalized.message || "Unknown error";
 }
 
 function calcRemaining(intent: IntentPreview): number {

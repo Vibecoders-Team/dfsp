@@ -14,25 +14,22 @@ is_dev_branch() {
 
 FAILED=0
 
-# Проверяем только если есть папка backend
 if [ -d "backend" ]; then
   pushd backend >/dev/null
 
-  # Если нет uv — предупреждаем (на dev), фейлим (на остальных)
   if ! command -v uv >/dev/null 2>&1; then
     echo "[warn] 'uv' not found. Install: https://github.com/astral-sh/uv"
     if ! is_dev_branch; then
       FAILED=1
     fi
   else
-    # Если нет .venv — предупреждаем (на dev), фейлим (на остальных)
     if [ ! -d ".venv" ]; then
       echo "[warn] backend/.venv not found. Run: 'make -C backend venv dev-deps'"
       if ! is_dev_branch; then
         FAILED=1
       fi
     else
-      # format check, lint, typecheck (pytest оставим в CI)
+      # format check, lint, typecheck
       uv run ruff format --check . || FAILED=1
       uv run ruff check . || FAILED=1
       uv run pyright || FAILED=1

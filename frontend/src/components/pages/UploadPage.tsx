@@ -98,16 +98,16 @@ export default function UploadPage() {
       setState('encrypting');
       setProgress(0);
 
-      // Вычисляем idHex (sha256 plaintext) и checksum (keccak plaintext) до шифрования
+      // Compute idHex (sha256 plaintext) and checksum (keccak plaintext) before encryption
       const buf = await uploadedFile.file.arrayBuffer();
       const sha = await crypto.subtle.digest('SHA-256', buf);
       const idHex = '0x' + Array.from(new Uint8Array(sha)).map(b=>b.toString(16).padStart(2,'0')).join('');
       const kch = (await keccak(new Uint8Array(buf))).replace(/^0x/, '');
 
-      // Генерируем/получаем K_file, привязывая к idHex
+      // Generate/get K_file, binding it to idHex
       const K_file = getOrCreateFileKey(idHex);
 
-      // Шифруем исходный файл
+      // Encrypt the source file
       const enc = await encryptFile(uploadedFile.file, K_file, 64*1024, (done, total) => setProgress(Math.round((done/total)*100)));
 
       setState('uploading');
@@ -116,7 +116,7 @@ export default function UploadPage() {
       const start = performance.now();
       const res = await storeEncrypted(enc.blob, { idHex, checksum: kch, plainSize: uploadedFile.size, filename: uploadedFile.name + '.enc', origName: uploadedFile.name, origMime: uploadedFile.mimeType });
       const elapsedMs = performance.now() - start;
-      // Если бэкенд изменил id (например, коллизия персонифицирована), перенесём ключ
+      // If backend changed id (e.g. personalized collision), move the key
       if (res.id_hex && res.id_hex !== idHex) {
         renameFileKey(idHex, res.id_hex);
       }

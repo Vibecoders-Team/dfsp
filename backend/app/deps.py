@@ -58,7 +58,7 @@ def get_chain() -> Chain:
             deploy_json_path=os.getenv("CONTRACTS_DEPLOYMENT_JSON", "/app/shared/deployment.json"),
             relayer_private_key=os.getenv("RELAYER_PRIVATE_KEY") or settings.relayer_private_key,
         )
-    # если инстанс уже жив, но контрактов нет — попробуем перечитать файл
+    # if the instance is already live, but there are no contracts, let's try to re-read the file
     if not _chain_instance.contracts and os.path.exists(_chain_instance.deployment_json):
         _chain_instance.reload_contracts()
     return _chain_instance

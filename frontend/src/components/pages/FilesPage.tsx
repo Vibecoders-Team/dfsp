@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
-// import { TableVirtuoso } from 'react-virtuoso'; // Временно отключено для тестирования
+// import { TableVirtuoso } from 'react-virtuoso'; // Temporarily disabled for testing
 import {
   Select,
   SelectContent,
@@ -104,7 +104,7 @@ export default function FilesPage() {
 
   useEffect(() => {
     console.log('[FilesPage] useEffect triggered, location.key:', location.key, 'isFirstLoad:', isFirstLoadRef.current);
-    // При первой загрузке - полный loading, при последующих - refresh
+    // On first load - full loading, on subsequent loads - refresh
     loadFiles(!isFirstLoadRef.current);
     isFirstLoadRef.current = false;
   }, [location.key]);
@@ -214,7 +214,7 @@ export default function FilesPage() {
       const headerFilename = parseContentDisposition(contentDisposition);
       const finalFilename = headerFilename || file.name;
 
-      // Попробуем расшифровать, если есть K_file
+      // Try to decrypt if K_file is available
       const k = getFileKey(file.id);
       let blob: Blob;
       if (k) {

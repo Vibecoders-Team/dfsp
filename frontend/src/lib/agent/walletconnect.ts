@@ -60,7 +60,7 @@ export class WalletConnectAgent implements SignerAgent {
 
   private async ensureExpectedChain(strict = false): Promise<void> {
     const expected = this.expectedChain;
-    if (!this.chainEnforcementEnabled) return; // временно отключено (например во время первого login)
+    if (!this.chainEnforcementEnabled) return; // temporarily disabled (e.g. during first login)
     if (!expected) return;
     // Ensure we have an HTTPS RPC to allow wallet_addEthereumChain if needed
     if (!this.httpsRpc) {
@@ -230,11 +230,11 @@ export class WalletConnectAgent implements SignerAgent {
   }
 
   private async ensureConnected(withModal = false): Promise<void> {
-    // WalletConnect EthereumProvider требует enable()/connect перед request()
+    // WalletConnect EthereumProvider requires enable()/connect before request()
     if (this.connected) return;
-    // ensureWcProvider(withModal) инициализирует this.wc
+    // ensureWcProvider(withModal) initializes this.wc
     await this.ensureWcProvider(withModal);
-    // Попробуем быстро определить уже существующую сессию
+    // Try to quickly detect an existing session
     try {
       const acc: string[] = await (this.wc as any)?.request?.({ method: 'eth_accounts', params: [] }) || [];
       this.accounts = acc;
@@ -243,12 +243,12 @@ export class WalletConnectAgent implements SignerAgent {
     } catch {
       // ignore
     }
-    // Если не подключены — запускаем connect() (покажет QR при необходимости)
+    // If not connected - call connect() (shows QR if needed)
     await this.connect();
   }
 
   async getAddress(): Promise<`0x${string}`> {
-    // Используем прямые EIP-1193 вызовы
+    // Use direct EIP-1193 calls
     await this.ensureConnected(false);
     const wcAny = this.wc as any;
     for (let attempt=0; attempt<3; attempt++) {
@@ -275,10 +275,10 @@ export class WalletConnectAgent implements SignerAgent {
   }
 
   async signTypedData(domain: TypedDataDomain, types: Record<string, TypedDataField[]>, message: Record<string, unknown>): Promise<string> {
-    // Для WC подписываем напрямую через eth_signTypedData_v4
+    // For WC, sign directly via eth_signTypedData_v4
     await this.ensureConnected(false);
     const wcAny = this.wc as any;
-    // Гарантируем наличие описания EIP712Domain (wallets требуют для корректного хеша и контракт будет ожидать те же поля)
+    // Ensure EIP712Domain description is present (wallets need it for proper hash, contract expects same fields)
     const domainFields: TypedDataField[] = [];
     if (domain.name) domainFields.push({ name: 'name', type: 'string' });
     if ((domain as any).version) domainFields.push({ name: 'version', type: 'string' });
@@ -325,7 +325,7 @@ export class WalletConnectAgent implements SignerAgent {
           return hex?.startsWith('0x') ? parseInt(hex, 16) : Number(hex);
         } catch { return undefined; }
       }
-      // fallback через BrowserProvider
+      // fallback via BrowserProvider
       try { const net = await (this.provider as BrowserProvider).getNetwork(); return Number(net.chainId); } catch { return undefined; }
     }
   }
@@ -375,7 +375,7 @@ export class WalletConnectAgent implements SignerAgent {
       throw (e instanceof Error ? e : new Error(String(e)));
     }
 
-    // Если уже подключено — выходим
+    // If already connected - exit
     if (this.connected) {
       try { await this.ensureExpectedChain(false); } catch { /* ignore */ }
       return;
@@ -414,8 +414,8 @@ export class WalletConnectAgent implements SignerAgent {
     if (!this.lastDisplayUriAt) {
       this.resetLocalSessionFlags();
       throw new Error(
-        'WalletConnect: QR не удалось сгенерировать (нет события display_uri). ' +
-        'Проверьте, что не блокируются соединения WalletConnect (VPN/AdBlock/Corporate proxy) и что задан VITE_WALLETCONNECT_PROJECT_ID.'
+        'WalletConnect: failed to generate QR (no display_uri event). ' +
+        'Check that WalletConnect connections are not blocked (VPN/AdBlock/Corporate proxy) and that VITE_WALLETCONNECT_PROJECT_ID is set.'
       );
     }
 
@@ -429,8 +429,8 @@ export class WalletConnectAgent implements SignerAgent {
       this.resetLocalSessionFlags();
       const msg = String(e?.message || e);
       throw new Error(/timeout/i.test(msg)
-        ? 'WalletConnect: кошелёк не ответил на запрос подключения (таймаут). Откройте кошелёк и завершите pairing, затем повторите.'
-        : 'WalletConnect: не удалось начать подключение. Проверьте кошелёк и повторите.');
+        ? 'WalletConnect: wallet did not respond to the connection request (timeout). Open wallet and complete pairing, then retry.'
+        : 'WalletConnect: failed to start connection. Check the wallet and retry.');
     }
 
     await this.ensureExpectedChain(true);
@@ -464,9 +464,8 @@ export class WalletConnectAgent implements SignerAgent {
     this.emitCloseQr();
   }
 
-  /** Включить/выключить жесткое соблюдение expectedChain (используется при первом login для подавления network changed). */
+  /** Enable/disable strict expectedChain enforcement (used on first login to suppress network changed). */
   setChainEnforcement(enabled: boolean) {
     this.chainEnforcementEnabled = enabled;
   }
 }
-

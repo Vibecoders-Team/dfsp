@@ -5,13 +5,12 @@
     "allowSyntheticDefaultImports": true,
     "strict": true,
 
-    // ИЗМЕНИТЬ: Переключиться на решатель, более подходящий для среды Node.js
-    "module": "NodeNext", // Или "CommonJS"
-    "moduleResolution": "NodeNext", // Или "node"
+    // TODO: switch to a resolver better suited for Node.js
+    "module": "NodeNext", // or "CommonJS"
+    "moduleResolution": "NodeNext", // or "node"
     
-    // Дополнительные настройки для Node.js
+    // Additional settings for Node.js
     "types": ["node"] 
   },
   "include": ["vite.config.ts"]
 }
-

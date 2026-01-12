@@ -4,29 +4,29 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy
 
-# системные пакеты для psycopg/asyncpg
+# system packages for psycopg/asyncpg
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl git libpq-dev gcc \
  && rm -rf /var/lib/apt/lists/*
 
-# ставим uv
+# install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 
-# сначала — файлы зависимостей (кэш слоёв)
+# dependency files first (layer cache)
 COPY pyproject.toml ./
 COPY uv.lock ./
 
-# создаём и синхронизируем окружение
-# --all-extras подтянет [project.optional-dependencies].dev когда понадобятся
+# create and sync the environment
+# --all-extras will include [project.optional-dependencies].dev when needed
 RUN uv sync
 
 ENV VIRTUAL_ENV=/app/.venv
 ENV PATH="/app/.venv/bin:${PATH}"
 
-# затем — код проекта (в dev будет перекрыт volume-монтом)
+# project code next (dev will be overridden by volume mount)
 COPY app/ app/
 COPY tests/ tests/
 COPY migrations/ migrations/
@@ -40,5 +40,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/ready || exit 1
 
-# команда по умолчанию — запускается через compose
+# default command (started via compose)
 CMD ["bash", "-lc", "./docker/entrypoint.sh api"]

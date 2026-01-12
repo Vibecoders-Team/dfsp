@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 class I18nMiddleware(BaseMiddleware):
     """
-    Определяет язык чата (Redis key tg:lang:<chat_id>), ставит его в контекст для message_store.
-    Фолбэк — settings.BOT_DEFAULT_LANGUAGE.
+    Determines the chat language (Redis key tg:lang:<chat_id>), sets it in the context for message_store.
+    Fallback is settings.BOT_DEFAULT_LANGUAGE.
     """
 
     def __init__(self, fallback: str | None = None) -> None:

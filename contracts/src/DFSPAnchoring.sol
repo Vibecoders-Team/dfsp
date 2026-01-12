@@ -7,7 +7,7 @@ contract DFSPAnchoring is Ownable {
     event Anchored(bytes32 indexed root, uint64 indexed periodId);
 
     constructor(address owner_) {
-        _transferOwnership(owner_); // у OZ v4.x конструктор Ownable без аргументов
+        _transferOwnership(owner_); // in OZ v4.x Ownable constructor takes no args
     }
 
     function anchorMerkleRoot(bytes32 root, uint64 periodId) external onlyOwner {

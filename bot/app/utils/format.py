@@ -3,14 +3,14 @@ from __future__ import annotations
 
 def mask_hex_id(value: int | str | None) -> str:
     """
-    Превращает число/hex-строку в вид 0x1234…abcd.
-    Используем для маскировки chat_id и прочих идентификаторов.
+    Convert number/hex string to 0x1234…abcd form.
+    Used to mask chat_id and other identifiers.
     """
     if value is None:
         return "unknown"
 
     if isinstance(value, int):
-        hex_str = f"{value:x}"  # в hex
+        hex_str = f"{value:x}"  # in hex
     else:
         hex_str = value.lower().removeprefix("0x")
 

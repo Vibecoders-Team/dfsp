@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     I18N_FALLBACK: str = "ru"
     CALLBACK_HMAC_SECRET: str | None = None
 
-    # новый конфиг
+    # new config
     BOT_MODE: Literal["dev", "prod"] = "dev"  # dev = polling, prod = webhook
     APP_HOST: str = "0.0.0.0"  # noqa: S104
     APP_PORT: int = 8080

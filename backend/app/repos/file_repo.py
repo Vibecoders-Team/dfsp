@@ -11,13 +11,13 @@ from app.models.files import File
 
 def get_files_by_owner_id(db: Session, owner_id: uuid.UUID, limit: int, cursor: datetime | None) -> list[File]:
     """
-    Получает список файлов для пользователя с курсорной пагинацией по created_at.
+    Get list of files for a user with cursor pagination by created_at.
     """
     query = db.query(File).filter(File.owner_id == owner_id)
 
     if cursor:
-        # Если есть курсор, ищем записи, которые были созданы раньше
+        # If cursor is set, fetch records created earlier
         query = query.filter(File.created_at < cursor)
 
-    # Сортируем по убыванию даты, чтобы новые были первыми
+    # Sort descending by date so newest are first
     return query.order_by(File.created_at.desc()).limit(limit).all()

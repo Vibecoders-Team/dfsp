@@ -1,22 +1,22 @@
-# Пример конфигурации Prometheus для мониторинга Telegram бота
-# Скопируйте этот файл в место, где запущен Prometheus (обычно /etc/prometheus/prometheus.yml)
-# или укажите путь к нему при запуске Prometheus через флаг --config.file
+# Example Prometheus configuration for monitoring the Telegram bot
+# Copy this file to where Prometheus is running (usually /etc/prometheus/prometheus.yml)
+# or specify the path to it when starting Prometheus with the --config.file flag
 
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
 scrape_configs:
-  # Конфигурация для Telegram бота
+  # Configuration for the Telegram bot
   - job_name: 'telegram-bot'
     static_configs:
-      - targets: ['localhost:8001']  # Порт PROM_PORT из настроек бота
+      - targets: ['localhost:8001']  # PROM_PORT from the bot settings
         labels:
           service: 'telegram-bot'
           environment: 'production'
 
-  # Если у вас несколько инстансов бота (например, в Docker Swarm или Kubernetes)
-  # можно использовать service discovery:
+  # If you have multiple bot instances (for example in Docker Swarm or Kubernetes)
+  # you can use service discovery instead:
   # - job_name: 'telegram-bot'
   #   kubernetes_sd_configs:
   #     - role: pod

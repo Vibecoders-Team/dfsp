@@ -14,12 +14,12 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Текущий язык запроса (устанавливается middleware'ом)
+# Current request language (set by middleware)
 _current_language: ContextVar[str | None] = ContextVar("current_language", default=None)
 
 
 class _SafeFormatDict(dict[str, Any]):
-    """Сохраняет неизвестные плейсхолдеры нетронутыми при форматировании."""
+    """Keeps unknown placeholders untouched during formatting."""
 
     def __missing__(self, key: str) -> str:
         return "{" + key + "}"
@@ -27,12 +27,12 @@ class _SafeFormatDict(dict[str, Any]):
 
 def _build_admin_dsn(dsn: str) -> tuple[str, str]:
     """
-    Возвращает (admin_dsn, db_name), где admin_dsn указывает на системную БД postgres
-    c теми же логином/паролем/хостом/портом.
+    Returns (admin_dsn, db_name), where admin_dsn points to the system DB postgres
+    with the same login/password/host/port.
     """
     parsed = urlparse(dsn)
     db_name = (parsed.path or "").lstrip("/")
-    admin_path = "/postgres"  # системная БД по умолчанию
+    admin_path = "/postgres"  # default system DB
     admin_dsn = urlunparse(
         (
             parsed.scheme,
@@ -47,7 +47,7 @@ def _build_admin_dsn(dsn: str) -> tuple[str, str]:
 
 
 class MessageStore:
-    """Postgres-хранилище шаблонов сообщений."""
+    """Postgres storage for message templates."""
 
     def __init__(self, db_dsn: str, seed_path: Path, default_language: str = "ru") -> None:
         self.db_dsn = db_dsn
@@ -59,7 +59,7 @@ class MessageStore:
         self._cache: dict[tuple[str, str], str] = {}
 
     async def init(self) -> None:
-        """Создаёт БД/таблицу при необходимости, заливает seed и греет кэш."""
+        """Creates the DB/table if necessary, seeds it, and warms the cache."""
         if self._initialized:
             return
 
@@ -89,12 +89,12 @@ class MessageStore:
             logger.info("Message store initialised in Postgres (%d records cached)", len(self._cache))
 
     async def _ensure_database_exists(self) -> None:
-        """Проверяет наличие базы из DSN; создаёт её через системную БД postgres при отсутствии."""
+        """Checks if the database from the DSN exists; creates it via the system DB postgres if it doesn't."""
         admin_dsn, db_name = _build_admin_dsn(self.db_dsn)
 
         last_error: Exception | None = None
 
-        # несколько попыток: база может ещё не поднялась, даём немного времени
+        # several attempts: the database may not be up yet, give it some time
         for attempt in range(1, 6):
             try:
                 conn = await asyncpg.connect(self.db_dsn, timeout=5)
@@ -117,8 +117,8 @@ class MessageStore:
         raise RuntimeError(f"Could not ensure database {db_name} exists after {attempt} attempts: {last_error}")
 
     async def _create_database(self, admin_dsn: str, db_name: str) -> None:
-        """Создаёт базу через административные подключения."""
-        # fallback: сначала postgres, затем template1 (если postgres отключён)
+        """Create database via admin connections."""
+        # fallback: postgres first, then template1 (if postgres is disabled)
         admin_candidates = (admin_dsn, admin_dsn.replace("/postgres", "/template1"))
         last_error: Exception | None = None
 
@@ -142,7 +142,7 @@ class MessageStore:
         raise RuntimeError(f"Could not create database {db_name}: {last_error}")
 
     async def _seed_from_json(self, conn: asyncpg.Connection) -> None:
-        """Загружает сообщения из JSON и делает upsert в БД."""
+        """Load messages from JSON and upsert into DB."""
         if not self.seed_path.exists():
             logger.warning("Seed file %s not found; skipping message seeding", self.seed_path)
             return
@@ -181,7 +181,7 @@ class MessageStore:
         logger.info("Seeded %d messages into bot_messages", len(rows))
 
     async def _warm_cache(self, conn: asyncpg.Connection) -> None:
-        """Греет in-memory кэш всех сообщений."""
+        """Warm in-memory cache of all messages."""
         self._cache.clear()
         rows = await conn.fetch("SELECT key, language, content FROM bot_messages")
         for row in rows:
@@ -190,7 +190,7 @@ class MessageStore:
     async def get_message(
         self, key: str, *, language: str | None = None, variables: dict[str, Any] | None = None
     ) -> str:
-        """Достаёт сообщение по ключу/языку и форматирует плейсхолдеры."""
+        """Get message by key/language and format placeholders."""
         await self.init()
 
         lang = language or _current_language.get() or self.default_language
@@ -209,7 +209,7 @@ class MessageStore:
         return content
 
     def get_cached(self, key: str, language: str | None = None) -> str | None:
-        """Синхронный просмотр кэша (после init)."""
+        """Sync view of cache (after init)."""
         if not self._initialized:
             return None
         lang = language or _current_language.get() or self.default_language
@@ -220,16 +220,16 @@ class MessageStore:
 
 
 def set_current_language(lang: str | None) -> Any:
-    """Устанавливает язык в контекст текущей обработки и возвращает token для reset."""
+    """Set language in current context and return token for reset."""
     return _current_language.set(lang)
 
 
 def reset_current_language(token: Any) -> None:
-    """Сбрасывает язык в контекстной переменной."""
+    """Reset language in the context variable."""
     try:
         _current_language.reset(token)
     except Exception:
-        # безопасно игнорируем, если токен невалиден/уже сброшен
+        # safely ignore if token is invalid/already reset
         logger.debug("Failed to reset current language context")
 
 
@@ -242,5 +242,5 @@ message_store = MessageStore(
 
 
 async def get_message(key: str, *, language: str | None = None, variables: dict[str, Any] | None = None) -> str:
-    """Шорткат для получения сообщения из глобального стора."""
+    """Shortcut to fetch message from the global store."""
     return await message_store.get_message(key, language=language, variables=variables)

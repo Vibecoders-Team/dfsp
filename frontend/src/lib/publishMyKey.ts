@@ -14,13 +14,12 @@ export async function publishMyKeyCard(): Promise<PublishOut> {
     address,
     rsa_public: publicPem,
     ts: Date.now(),
-    // sig: (можно добавить позже подпись EIP-191/712)
+    // sig: (can add EIP-191/712 signature later)
   };
 
   const blob = new Blob([JSON.stringify(card)], { type: "application/json" });
   const file = new File([blob], "pubkey.json", { type: "application/json" });
   const out = await storeFile(file); // POST /storage/store (already exists)
-  // storeFile возвращает { id_hex, cid, url } — забираем CID/URL
+  // storeFile returns { id_hex, cid, url } - take CID/URL
   return { cid: out.cid, url: out.url };
 }
-

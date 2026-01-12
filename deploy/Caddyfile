@@ -6,15 +6,15 @@
 
 (dfsp_common_headers) {
     header {
-           # сначала гарантированно убираем любой уже существующий CSP
+           # first, remove any existing CSP to avoid conflicts
                -Content-Security-Policy
 
                Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
                X-Content-Type-Options "nosniff"
                Referrer-Policy "no-referrer"
-           # X-Frame-Options не нужен, frame-ancestors управляет встраиванием
+           # X-Frame-Options is not needed; frame-ancestors controls embedding
 
-           # ОБЩИЙ CSP для фронта (prod + dev, mini, Telegram WebApp и TonConnect)
+           # COMMON CSP for the frontend (prod + dev, mini, Telegram WebApp and TonConnect)
                Content-Security-Policy "
             default-src 'self';
             base-uri 'self';
@@ -97,7 +97,7 @@
 
 (dfsp_explorer_csp) {
     header {
-           # тоже сначала чистим CSP, потом ставим свой
+           # also first clear CSP, then set our own
                -Content-Security-Policy
 
                Content-Security-Policy "

@@ -1,17 +1,17 @@
-"""EIP712 signer для тестов бота (копия из backend-test)."""
+"""EIP712 signer for bot tests (copy from backend-test)."""
 
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 
-# --- Константы ---
+# --- Constants ---
 DOMAIN_NAME = "DFSP-Login"
 DOMAIN_VERSION = "1"
 
 
 class EIP712Signer:
     """
-    Класс для создания EIP-712 подписей, СИНХРОНИЗИРОВАННЫЙ с логикой
-    сервера из app/routers/auth.py.
+    Class for creating EIP-712 signatures, KEPT IN SYNC with the server logic
+    from app/routers/auth.py.
     """
 
     def __init__(self, private_key: str):
@@ -25,12 +25,12 @@ class EIP712Signer:
 
     def sign(self, nonce: str) -> tuple[str, dict]:
         """
-        Подписывает nonce, используя структуру typed_data, идентичную серверной.
+        Signs the nonce using typed_data structure identical to the server one.
         """
         typed_data = self._build_typed_data(nonce)
 
-        # eth_account > 0.10.0 требует, чтобы full_message был dict, что у нас и есть.
-        # Эта функция теперь должна работать идентично серверной _verify_login_signature
+        # eth_account > 0.10.0 requires full_message to be a dict, which we already have.
+        # This function must now behave identically to the server _verify_login_signature
         signed_message = self.account.sign_message(encode_typed_data(full_message=typed_data))
 
         signature_hex = signed_message.signature.hex()
@@ -38,34 +38,34 @@ class EIP712Signer:
 
     def sign_generic_typed_data(self, typed_data: dict) -> str:
         """
-        Подписывает произвольную EIP-712 структуру (typed_data).
-        Используется для мета-транзакций.
+        Signs an arbitrary EIP-712 structure (typed_data).
+        Used for meta-transactions.
         """
-        # Эта логика взята из существующего метода sign(), но теперь
-        # она работает с любой структурой typed_data, а не только с логином.
+        # This logic is taken from the existing sign() method, but now
+        # it works with any typed_data structure, not just login.
         signed_message = self.account.sign_message(encode_typed_data(full_message=typed_data))
         return signed_message.signature.hex()
 
     def _build_typed_data(self, nonce_hex: str) -> dict:
         """
-        Собирает структуру данных для подписи, в точности как на сервере
-        в функции build_login_typed_data.
+        Builds the data structure for signing, exactly as on the server
+        in the build_login_typed_data function.
         """
         return {
-            # ВАЖНО: domain НЕ СОДЕРЖИТ chainId, как и на сервере
+            # IMPORTANT: domain does NOT contain chainId, same as on the server
             "domain": {
                 "name": DOMAIN_NAME,
                 "version": DOMAIN_VERSION,
             },
-            # Types должны соответствовать Pydantic-модели и серверной логике
+            # Types must match the Pydantic model and server logic
             "types": {
                 "LoginChallenge": [
                     {"name": "address", "type": "address"},
                     {"name": "nonce", "type": "bytes32"},
                 ],
-                # ВАЖНО: В отличие от eth-account по умолчанию, сервер
-                # НЕ требует здесь EIP712Domain, поэтому мы его убираем,
-                # чтобы структура была идентичной.
+                # IMPORTANT: Unlike eth-account defaults, the server
+                # does NOT require EIP712Domain here, so we remove it
+                # to keep the structure identical.
             },
             "primaryType": "LoginChallenge",
             "message": {

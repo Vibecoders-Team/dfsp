@@ -4,7 +4,7 @@ import { isAxiosError } from "axios";
 
 export type PowToken = { challenge: string; nonce: string };
 
-// Кэш в памяти
+// In-memory cache
 let cached: { token: PowToken; expiresAt: number } | null = null;
 
 function isValidCached(): boolean {
@@ -86,9 +86,9 @@ export async function getPowToken(forceNew = true): Promise<PowToken> {
 }
 
 /**
- * Возвращает строку токена для заголовка X-PoW-Token вида "challenge.nonce".
- * Если бэк не поддерживает PoW (404/501), вернет undefined.
- * Иначе при ошибке — бросит исключение (не замалчиваем, чтобы не ловить 429 на сервере).
+ * Return token string for X-PoW-Token header in "challenge.nonce" form.
+ * If backend does not support PoW (404/501), return undefined.
+ * Otherwise throw on error (do not swallow, to avoid 429 on the server).
  */
 export async function getOptionalPowHeader(forceNew = true): Promise<string | undefined> {
   try {

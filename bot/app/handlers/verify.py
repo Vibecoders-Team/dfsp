@@ -17,28 +17,28 @@ logger = logging.getLogger(__name__)
 
 def validate_file_id(file_id: str) -> str | None:
     """
-    Валидирует fileId и приводит к формату 0x + 64 hex символа.
+    Validates fileId and brings it to the format 0x + 64 hex characters.
 
-    Принимает:
-    - С префиксом 0x: "0x1234..." (должно быть 66 символов)
-    - Без префикса: "1234..." (должно быть 64 hex символа)
+    Accepts:
+    - With 0x prefix: "0x1234..." (must be 66 characters)
+    - Without prefix: "1234..." (must be 64 hex characters)
 
     Returns:
-        Нормализованный file_id в формате 0x + 64 hex или None если невалидный
+        Normalized file_id in the format 0x + 64 hex or None if invalid
     """
     if not file_id:
         return None
 
     file_id = file_id.strip()
 
-    # Проверяем формат с 0x
+    # Check format with 0x
     if file_id.startswith("0x"):
         hex_part = file_id[2:]
         if len(file_id) == 66 and re.match(r"^[0-9a-fA-F]{64}$", hex_part):
             return file_id.lower()
         return None
 
-    # Проверяем формат без 0x (64 hex символа)
+    # Check format without 0x (64 hex characters)
     if re.match(r"^[0-9a-fA-F]{64}$", file_id):
         return f"0x{file_id.lower()}"
 
@@ -48,15 +48,15 @@ def validate_file_id(file_id: str) -> str | None:
 @router.message(Command("verify"))
 async def cmd_verify(message: Message) -> None:
     """
-    Обработчик команды /verify <fileId>.
+    Handler for the /verify <fileId> command.
 
-    Валидация: hex32 (с 0x или без).
-    Показывает короткую сводку + ссылку на полную проверку.
+    Validation: hex32 (with or without 0x).
+    Shows a short summary + a link to the full verification.
     """
     chat_id = message.chat.id
     logger.info("Handling /verify for chat_id=%s", chat_id)
 
-    # Извлекаем fileId из команды
+    # Extract fileId from the command
     command_text = message.text or ""
     parts = command_text.split(maxsplit=1)
     if len(parts) < 2:
@@ -70,7 +70,7 @@ async def cmd_verify(message: Message) -> None:
         await message.answer(await get_message("verify.invalid_format"), parse_mode="Markdown")
         return
 
-    # Вызываем API для верификации
+    # Call the API for verification
     try:
         api_url = str(settings.DFSP_API_URL).rstrip("/")
         url = f"{api_url}/bot/verify/{file_id}"
@@ -97,7 +97,7 @@ async def cmd_verify(message: Message) -> None:
         match = data.get("match", False)
         last_anchor_tx = data.get("lastAnchorTx")
 
-        # Формируем короткую сводку
+        # Form a short summary
         status_icon = "✅" if match else "❌"
         status_text = await get_message("verify.status_match" if match else "verify.status_mismatch")
 
@@ -117,11 +117,11 @@ async def cmd_verify(message: Message) -> None:
                 variables={"tx": last_anchor_tx[:20]},
             )
 
-        # Формируем URL для полной проверки
+        # Build URL for full verification
         origin = str(settings.PUBLIC_WEB_ORIGIN).rstrip("/")
         full_verify_url = f"{origin}/verify/{file_id}"
 
-        # Создаем кнопку "Открыть полную проверку" и "Главное меню"
+        # Build "Open full verification" and "Main menu" buttons
         full_verify_btn = await get_message("buttons.verify_full")
         home_btn = await get_message("buttons.home")
         keyboard = InlineKeyboardMarkup(

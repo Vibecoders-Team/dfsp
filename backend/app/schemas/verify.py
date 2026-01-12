@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class FileMeta(BaseModel):
-    """Схема для представления метаданных файла (on-chain или off-chain)."""
+    """Schema for representing file metadata (on-chain or off-chain)."""
 
     cid: str
     checksum: str = Field(pattern=r"^0x[0-9a-fA-F]{64}$")
@@ -14,7 +14,7 @@ class FileMeta(BaseModel):
 
 
 class VerifyOut(BaseModel):
-    """Схема ответа для эндпоинта верификации."""
+    """Response schema for the verification endpoint."""
 
     onchain: FileMeta | None = None
     offchain: FileMeta | None = None

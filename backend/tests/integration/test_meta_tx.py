@@ -12,15 +12,15 @@ def _hex32() -> str:
 
 
 def _fake_cid() -> str:
-    # бэкенд CID не валидирует строго — для теста любой строковый плейсхолдер
+    # backend CID validation is lenient - any string placeholder is fine for tests
     return "bafy" + secrets.token_hex(16)
 
 
 def test_meta_tx_submit_queued_and_duplicate(client: httpx.Client, auth_headers: dict):
     """
-    /meta-tx/submit: базовая идемпотентность.
-    Мы осознанно отправляем "левый" typed_data и подпись — если серверная верификация выкл.,
-    получим queued; если вкл., получим 400 signature_invalid (оба поведения допустимы).
+    /meta-tx/submit: basic idempotency.
+    We intentionally send bogus typed_data and signature - if server-side verification is off,
+    we get queued; if on, we get 400 signature_invalid (both behaviors are acceptable).
     """
     req_id = "req-" + secrets.token_hex(8)
     bogus_typed = {
@@ -62,12 +62,12 @@ def test_meta_tx_submit_queued_and_duplicate(client: httpx.Client, auth_headers:
         headers=auth_headers,
     )
 
-    # допускаем 200/202 queued ИЛИ 400 signature_invalid — в зависимости от флага валидации на сервере
+    # allow 200/202 queued OR 400 signature_invalid depending on server validation flag
     assert r1.status_code in (200, 202, 400), f"unexpected {r1.status_code}: {r1.text}"
     if r1.status_code in (200, 202):
         assert r1.json().get("status") == "queued"
 
-    # повтор с тем же request_id → duplicate (если первый ушёл в очередь) либо опять 400 при валидации
+    # repeat with same request_id -> duplicate (if first queued) or 400 on validation
     r2 = client.post(
         "/meta-tx/submit",
         json={
@@ -82,4 +82,4 @@ def test_meta_tx_submit_queued_and_duplicate(client: httpx.Client, auth_headers:
         assert r2.json().get("status") in (
             "duplicate",
             "queued",
-        )  # на всякий случай, если первый отвергли на валидации
+        )  # just in case the first was rejected by validation

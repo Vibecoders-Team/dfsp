@@ -7,14 +7,14 @@ from app.schemas.auth import RegisterIn
 
 
 def get_by_eth_address(db: Session, eth_address: str) -> User | None:
-    """Найти пользователя по EVM-адресу (нормализуем к lower())."""
+    """Find user by EVM address (normalize to lower())."""
     return db.query(User).filter(User.eth_address == (eth_address or "").lower()).one_or_none()
 
 
 def create(db: Session, payload: RegisterIn) -> User:
     """
-    Создать пользователя из RegisterIn.
-    Поля схемы и модели согласованы:
+    Create user from RegisterIn.
+    Schema and model fields are aligned:
       - payload.eth_address -> User.eth_address (lower)
       - payload.rsa_public  -> User.rsa_public
       - payload.display_name -> User.display_name

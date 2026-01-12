@@ -6,10 +6,10 @@ import { useState } from "react";
 import "../styles/mini-theme.css";
 
 const links = [
-  { to: "/mini", label: "Главная", exact: true },
-  { to: "/mini/files", label: "Файлы" },
-  { to: "/mini/grants", label: "Доступы" },
-  { to: "/mini/verify", label: "Проверка" },
+  { to: "/mini", label: "Home", exact: true },
+  { to: "/mini/files", label: "Files" },
+  { to: "/mini/grants", label: "Grants" },
+  { to: "/mini/verify", label: "Verify" },
 ];
 
 export function MiniLayout({ children }: { children: ReactNode }) {
@@ -35,10 +35,10 @@ export function MiniLayout({ children }: { children: ReactNode }) {
 
   const getStatusText = () => {
     switch (status) {
-      case "ready": return "Подключено";
-      case "error": return "Ошибка";
-      case "authenticating": return "Проверка...";
-      default: return "Ожидание";
+      case "ready": return "Connected";
+      case "error": return "Error";
+      case "authenticating": return "Checking...";
+      default: return "Waiting";
     }
   };
 
@@ -238,7 +238,7 @@ export function MiniLayout({ children }: { children: ReactNode }) {
                 color: "var(--mini-text)",
                 margin: 0
               }}>
-                Настройки
+                Settings
               </h2>
               <button
                 onClick={() => setShowSettings(false)}
@@ -282,14 +282,14 @@ export function MiniLayout({ children }: { children: ReactNode }) {
                       color: "var(--mini-text)",
                       margin: 0
                     }}>
-                      Тема оформления
+                      Theme
                     </p>
                     <p style={{
                       fontSize: "12px",
                       color: "var(--mini-text-muted)",
                       margin: "4px 0 0 0"
                     }}>
-                      {theme === "system" ? "Системная" : theme === "dark" ? "Тёмная" : "Светлая"}
+                      {theme === "system" ? "System" : theme === "dark" ? "Dark" : "Light"}
                     </p>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
@@ -327,7 +327,7 @@ export function MiniLayout({ children }: { children: ReactNode }) {
                         color: theme === t ? "var(--mini-primary-text)" : "var(--mini-text-secondary)"
                       }}
                     >
-                      {t === "light" ? "Светлая" : t === "dark" ? "Тёмная" : "Авто"}
+                      {t === "light" ? "Light" : t === "dark" ? "Dark" : "Auto"}
                     </button>
                   ))}
                 </div>
@@ -345,7 +345,7 @@ export function MiniLayout({ children }: { children: ReactNode }) {
                   color: "var(--mini-text)",
                   margin: "0 0 12px 0"
                 }}>
-                  Информация об аккаунте
+                  Account info
                 </p>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -355,7 +355,7 @@ export function MiniLayout({ children }: { children: ReactNode }) {
                     alignItems: "center",
                     fontSize: "13px"
                   }}>
-                    <span style={{ color: "var(--mini-text-muted)" }}>Метод входа</span>
+                    <span style={{ color: "var(--mini-text-muted)" }}>Login method</span>
                     <span style={{
                       color: "var(--mini-text)",
                       background: "var(--mini-bg-card)",
@@ -374,7 +374,7 @@ export function MiniLayout({ children }: { children: ReactNode }) {
                       alignItems: "center",
                       fontSize: "13px"
                     }}>
-                      <span style={{ color: "var(--mini-text-muted)" }}>TON адрес</span>
+                      <span style={{ color: "var(--mini-text-muted)" }}>TON address</span>
                       <span style={{
                         color: "var(--mini-text)",
                         fontFamily: "monospace",
@@ -392,9 +392,9 @@ export function MiniLayout({ children }: { children: ReactNode }) {
                       alignItems: "center",
                       fontSize: "13px"
                     }}>
-                      <span style={{ color: "var(--mini-text-muted)" }}>Сессия истекает</span>
+                      <span style={{ color: "var(--mini-text-muted)" }}>Session expires</span>
                       <span style={{ color: "var(--mini-text)" }}>
-                        {Math.floor(expSeconds / 60)} мин
+                        {Math.floor(expSeconds / 60)} min
                       </span>
                     </div>
                   )}
@@ -436,7 +436,7 @@ export function MiniLayout({ children }: { children: ReactNode }) {
                   transition: "var(--mini-transition)"
                 }}
               >
-                Готово
+                Done
               </button>
             </div>
           </div>

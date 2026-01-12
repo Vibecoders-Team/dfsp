@@ -100,7 +100,7 @@ def get_current_user(
         logger.warning("JWT invalid: uid is empty, payload=%s", payload)
         raise HTTPException(status_code=401, detail="invalid_token")
 
-    # Явная аннотация переменной
+    # Explicit variable annotation
     user: User | None = db.get(User, uuid.UUID(str(uid)))
     if user is None:
         logger.warning("JWT invalid: user not found in DB, uid=%s", uid)
@@ -132,7 +132,7 @@ def parse_token(token: str) -> dict:
 
 def create_token(payload: dict, expires_delta: timedelta | None = None) -> str:
     """
-    Создает JWT с произвольным payload и exp.
+    Create JWT with arbitrary payload and exp.
     """
     now = datetime.now(UTC)
     payload = dict(payload)

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class AntiSpam:
-    """Ограничения: идемпотентность, дневные лимиты и контроль окна коалесинга."""
+    """Restrictions: idempotency, daily limits, and coalescing window control."""
 
     def __init__(self, redis_client: aioredis.Redis) -> None:
         self.redis = redis_client
@@ -23,9 +23,9 @@ class AntiSpam:
 
     async def is_duplicate(self, chat_id: int, event_id: str) -> bool:
         """
-        Проверяет, обрабатывали ли уже событие для чата.
+        Checks if an event has already been processed for the chat.
 
-        Хранит set `tg:event:seen:<chat_id>` c TTL=1 день.
+        Stores a set `tg:event:seen:<chat_id>` with TTL=1 day.
         """
         key = f"tg:event:seen:{chat_id}"
         try:
@@ -39,9 +39,9 @@ class AntiSpam:
 
     async def check_daily_limit(self, chat_id: int, weight: int = 1) -> bool:
         """
-        Инкрементирует дневной счётчик и говорит, превысили ли лимит.
+        Increments the daily counter and indicates if the limit has been exceeded.
 
-        Возвращает True, если нужно дропнуть событие.
+        Returns True if the event should be dropped.
         """
         today = date.today().isoformat()
         key = f"tg:daily:{chat_id}:{today}"

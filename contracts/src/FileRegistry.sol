@@ -91,7 +91,7 @@ contract FileRegistry is ERC2771Context {
 
     // --- ERC-2771 glue ---
     function _msgSender() internal view override returns (address sender) {
-        // единственный базовый — ERC2771Context
+        // only base is ERC2771Context
         return ERC2771Context._msgSender();
     }
 

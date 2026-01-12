@@ -18,7 +18,7 @@ def _hex32() -> str:
 
 
 def _fake_cid() -> str:
-    # бэкенд CID не валидирует строго — для теста любой строковый плейсхолдер
+    # backend CID validation is lenient - any string placeholder is fine for tests
     return "bafy" + secrets.token_hex(16)
 
 
@@ -30,8 +30,8 @@ def test_verify_bad_id_400(client: httpx.Client):
 
 def test_verify_offchain_created_but_not_onchain(client: httpx.Client, auth_headers: dict):
     """
-    Создаём запись через /files (пишется только off-chain в БД),
-    затем /verify показывает offchain != {}, match обычно False (на цепь ещё не записано).
+    Create a record via /files (only off-chain in DB),
+    then /verify shows offchain != {}, match is usually False (not yet on-chain).
     """
     fid = _hex32()
     payload = {
@@ -50,22 +50,22 @@ def test_verify_offchain_created_but_not_onchain(client: httpx.Client, auth_head
     body = r2.json()
 
     assert "onchain" in body and "offchain" in body and "match" in body
-    # offchain есть (запись создана), onchain может быть пустым/нулевым — match скорей всего False
+    # offchain exists (record created), onchain may be empty/zero - match likely False
     assert isinstance(body["offchain"], dict)
-    assert body["match"] in (True, False)  # но в реальности здесь должен быть False
+    assert body["match"] in (True, False)  # in practice should be False here
 
 
 def test_verify_full_storage_to_match_true(client: httpx.Client, auth_headers: dict):
     """
-    Проверяет главный AC: после полной загрузки файла через /storage/store,
-    верификация должна показать match: true.
+    Verify main AC: after full upload via /storage/store,
+    verification should show match: true.
     """
-    # Шаг 1: Готовим и загружаем файл через эндпоинт /storage/store.
-    # Этот эндпоинт должен создавать запись и в БД, и в блокчейне.
+    # Step 1: prepare and upload file via /storage/store.
+    # This endpoint should create a record in DB and on-chain.
     file_content = f"Test file content {secrets.token_hex(8)}".encode()
     files_payload = {"file": ("test_verify.txt", file_content, "text/plain")}
 
-    # Отправляем запрос на загрузку
+    # Send upload request
     r_store = client.post("/storage/store", files=files_payload, headers=auth_headers)
     assert r_store.status_code == 200, f"Failed to store file: {r_store.text}"
 
@@ -75,13 +75,13 @@ def test_verify_full_storage_to_match_true(client: httpx.Client, auth_headers: d
     assert file_id_hex is not None, "Response from /storage/store must contain file ID ('pk' or 'fileId')"
     assert is_hex_bytes32(file_id_hex), f"File ID '{file_id_hex}' is not a valid hex32 string"
 
-    # Шаг 2: Вызываем эндпоинт верификации с полученным ID
+    # Step 2: call verification endpoint with the returned ID
     r_verify = client.get(f"/verify/{file_id_hex}")
     assert r_verify.status_code == 200, f"Failed to verify file: {r_verify.text}"
 
     verify_data = r_verify.json()
 
-    # Шаг 3: Проверяем результат
+    # Step 3: check result
     assert "onchain" in verify_data
     assert "offchain" in verify_data
     assert "match" in verify_data

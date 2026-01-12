@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Добавляем корень проекта (bot/) в sys.path
+# Add project root (bot/) to sys.path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -17,7 +17,7 @@ from app.services.dfsp_api import BotFile, BotFileListResponse
 
 @pytest.fixture
 def mock_message():
-    """Создает мок Message."""
+    """Create a mock Message instance."""
     message = MagicMock()
     message.chat.id = 12345
     message.answer = AsyncMock()
@@ -26,7 +26,7 @@ def mock_message():
 
 @pytest.fixture
 def mock_callback():
-    """Создает мок CallbackQuery."""
+    """Create a mock CallbackQuery instance."""
     callback = MagicMock()
     callback.message = MagicMock()
     callback.message.chat.id = 12345
@@ -39,7 +39,7 @@ def mock_callback():
 
 @pytest.mark.asyncio
 async def test_cmd_files_success(mock_message):
-    """Тест: команда /files успешно возвращает список файлов."""
+    """Test: /files command successfully returns file list."""
     files_response = BotFileListResponse(
         files=[
             BotFile(
@@ -66,18 +66,18 @@ async def test_cmd_files_success(mock_message):
 
 @pytest.mark.asyncio
 async def test_cmd_files_not_linked(mock_message):
-    """Тест: команда /files для непривязанного чата."""
+    """Test: /files command for an unlinked chat."""
     with patch("app.handlers.files.get_bot_files", return_value=None):
         await cmd_files(mock_message)
 
     mock_message.answer.assert_called_once()
     call_args = mock_message.answer.call_args
-    assert "не привязан" in call_args[0][0].lower()
+    assert "not linked" in call_args[0][0].lower()
 
 
 @pytest.mark.asyncio
 async def test_cmd_files_empty_list(mock_message):
-    """Тест: команда /files для пустого списка."""
+    """Test: /files command for an empty file list."""
     files_response = BotFileListResponse(files=[], cursor=None)
 
     with patch("app.handlers.files.get_bot_files", return_value=files_response):
@@ -85,12 +85,12 @@ async def test_cmd_files_empty_list(mock_message):
 
     mock_message.answer.assert_called_once()
     call_args = mock_message.answer.call_args
-    assert "нет файлов" in call_args[0][0].lower()
+    assert "no files" in call_args[0][0].lower()
 
 
 @pytest.mark.asyncio
 async def test_callback_page_success(mock_callback):
-    """Тест: callback для пагинации успешно обновляет сообщение."""
+    """Test: pagination callback successfully updates the message."""
     cursor = "cursor123"
     payload = sign({"cmd": "page", "cursor": cursor}, settings.WEBHOOK_SECRET)
     mock_callback.data = payload
@@ -118,7 +118,7 @@ async def test_callback_page_success(mock_callback):
 
 @pytest.mark.asyncio
 async def test_callback_open_success(mock_callback):
-    """Тест: callback для открытия файла."""
+    """Test: callback for opening a file."""
     file_id = "1234567890abcdef"
     payload = sign({"cmd": "open", "file_id": file_id}, settings.WEBHOOK_SECRET)
     mock_callback.data = payload
@@ -128,12 +128,12 @@ async def test_callback_open_success(mock_callback):
     mock_callback.answer.assert_called_once()
     mock_callback.message.answer.assert_called_once()
     call_args = mock_callback.message.answer.call_args
-    assert "Открыть файл" in call_args[0][0] or "open" in call_args[0][0].lower()
+    assert "open file" in call_args[0][0].lower()
 
 
 @pytest.mark.asyncio
 async def test_callback_verify_success(mock_callback):
-    """Тест: callback для верификации файла."""
+    """Test: callback for file verification."""
     file_id = "1234567890abcdef"
     payload = sign({"cmd": "verify", "file_id": file_id}, settings.WEBHOOK_SECRET)
     mock_callback.data = payload
@@ -145,7 +145,7 @@ async def test_callback_verify_success(mock_callback):
         "lastAnchorTx": "0xabcdef",
     }
 
-    # Мокаем httpx.AsyncClient
+    # Mock httpx.AsyncClient
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = verify_response
@@ -176,21 +176,21 @@ async def test_callback_verify_success(mock_callback):
 
 @pytest.mark.asyncio
 async def test_callback_invalid_signature(mock_callback):
-    """Тест: callback с невалидной подписью отклоняется."""
+    """Test: callback with invalid signature gets rejected."""
     mock_callback.data = "invalid.signature"
 
     await handle_files_callback(mock_callback)
 
-    # Не должен вызывать answer, так как это не наш callback
+    # Should NOT call answer, since this is not our callback
     mock_callback.answer.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_callback_expired_signature(mock_callback):
-    """Тест: callback с просроченной подписью отклоняется."""
+    """Test: callback with expired signature gets rejected."""
     import time
 
-    # Создаем подпись с просроченным timestamp
+    # Create a signature with an expired timestamp
     payload = sign(
         {"cmd": "page", "cursor": "test", "ts": int(time.time()) - 100},
         settings.WEBHOOK_SECRET,
@@ -200,17 +200,17 @@ async def test_callback_expired_signature(mock_callback):
 
     await handle_files_callback(mock_callback)
 
-    # Не должен обрабатывать просроченный callback
+    # Should not process expired callback
     mock_callback.answer.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_callback_wrong_command(mock_callback):
-    """Тест: callback с неизвестной командой игнорируется."""
+    """Test: callback with unknown command is ignored."""
     payload = sign({"cmd": "unknown_command"}, settings.WEBHOOK_SECRET)
     mock_callback.data = payload
 
     await handle_files_callback(mock_callback)
 
-    # Не должен обрабатывать неизвестную команду
+    # Should not process unknown command
     mock_callback.answer.assert_not_called()

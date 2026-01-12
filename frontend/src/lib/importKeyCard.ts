@@ -9,13 +9,13 @@ type KeyCardV1 = {
   address: string;
   rsa_public: string;
   ts?: number;
-  sig?: string; // на будущее, можно добавить проверку подписи
+  sig?: string; // for future use, can add signature verification
 };
 
 function normalizeCidOrUrl(input: string): string {
   const v = input.trim();
   if (v.startsWith("http://") || v.startsWith("https://")) return v;
-  // допускаем только CID → собираем URL вида {gateway}/ipfs/{cid}
+  // only allow CID -> build URL {gateway}/ipfs/{cid}
   return `${IPFS.replace(/\/+$/,"")}/ipfs/${v}`;
 }
 
@@ -33,7 +33,7 @@ export async function importKeyFromCid(cidOrUrl: string): Promise<{ address: str
   if (!/^0x[0-9a-fA-F]{40}$/.test(address)) throw new Error("Bad address in key card");
   if (!pem.includes("BEGIN PUBLIC KEY")) throw new Error("Bad PEM in key card");
 
-  // TODO (позже): проверить подпись card.sig
+  // TODO (later): verify card.sig signature
   saveKey(address, pem);
   return { address };
 }

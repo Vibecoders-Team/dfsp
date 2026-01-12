@@ -22,16 +22,16 @@ router = Router()
 
 
 class UnlinkBackendError(Exception):
-    """Ошибка при вызове DFSP API для unlink."""
+    """Error when calling DFSP API for unlink operation."""
 
 
 class NotLinkedError(Exception):
-    """Аккаунт ещё не привязан к Telegram."""
+    """Account is not yet linked to Telegram."""
 
 
 async def _request_unlink(chat_id: int) -> None:
     """
-    Вызывает DFSP API: удаляет все связи через /bot/links/{address}.
+    Call DFSP API: remove all links via /bot/links/{address}.
     """
     api_url = str(settings.DFSP_API_URL).rstrip("/")
 
@@ -91,7 +91,7 @@ async def _perform_unlink(
     return True
 
 
-# --- /unlink командой ----------------------------------------------------------
+# --- /unlink by command ----------------------------------------------------------
 
 
 async def build_unlink_confirm_keyboard() -> InlineKeyboardMarkup:
@@ -124,12 +124,12 @@ async def cb_unlink_start(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# --- Callback-кнопки -----------------------------------------------------------
+# --- Callback buttons -----------------------------------------------------------
 
 
 @router.callback_query(F.data == "unlink:cancel")
 async def cb_unlink_cancel(callback: CallbackQuery) -> None:
-    # Просто закрываем "часики" и убираем клавиатуру
+    # Just close the "clock" spinner and remove the keyboard
     await callback.answer(await get_message("unlink.cancelled"))
     if callback.message:
         await callback.message.edit_reply_markup(reply_markup=None)
@@ -153,7 +153,7 @@ async def cb_unlink_confirm(callback: CallbackQuery) -> None:
 
     await callback.answer(await get_message("unlink.confirmed"))
 
-    # Показываем главное меню после отвязки
+    # Show main menu after unlink is completed
     from ..handlers import start as start_handlers
 
     keyboard = await start_handlers.get_main_keyboard(is_linked=False)

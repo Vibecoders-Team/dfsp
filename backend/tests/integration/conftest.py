@@ -9,34 +9,34 @@ import httpx
 import pytest
 from dotenv import load_dotenv
 
-# Импортируем наш класс-подписчик из корня папки tests
-# Pytest автоматически добавляет корень tests в путь
+# Import our signer class from the root of the tests folder
+# Pytest automatically adds the tests root to the path
 from ..signer import EIP712Signer
 
-# Загружаем переменные окружения (например, из .env в корне проекта)
+# Load environment variables (e.g., from .env in the project root)
 load_dotenv()
 
-# --- Константы ---
+# --- Constants ---
 DEV_CHAIN_ID = 31337
 
-# --- Базовые фикстуры ---
+# --- Base fixtures ---
 
 
 @pytest.fixture(scope="session")
 def api_base_url() -> str:
-    """Возвращает базовый URL API из .env или использует дефолтный."""
+    """Returns the base API URL from .env or uses a default."""
     return os.getenv("API_BASE", "http://localhost:8000")
 
 
 @pytest.fixture(scope="session")
 def ipfs_gateway_url() -> str:
-    """Возвращает URL IPFS шлюза для E2E тестов."""
+    """Returns the IPFS gateway URL for E2E tests."""
     return os.getenv("IPFS_GATEWAY_HOST_PORT", "http://localhost:8080")
 
 
 @pytest.fixture(scope="session")
 def client(api_base_url: str) -> httpx.Client:
-    """Основной HTTP-клиент для тестов."""
+    """Main HTTP client for tests."""
     with httpx.Client(base_url=api_base_url, timeout=30.0) as client:
         yield client
 
@@ -44,7 +44,7 @@ def client(api_base_url: str) -> httpx.Client:
 @pytest.fixture(scope="session", autouse=True)
 def wait_for_api(client: httpx.Client):
     """
-    Автоматически запускается в начале сессии и ждет, пока API станет доступен.
+    Automatically runs at the start of the session and waits for the API to become available.
     """
     ready_url = "/ready"
 
@@ -62,18 +62,18 @@ def wait_for_api(client: httpx.Client):
 
 @pytest.fixture
 def random_id_hex() -> str:
-    """Генерирует случайный 32-байтный ID в формате 0x..."""
+    """Generates a random 32-byte ID in 0x... format."""
     return "0x" + secrets.token_hex(32)
 
 
-# --- Фикстуры для аутентификации ---
+# --- Authentication fixtures ---
 
 
 @pytest.fixture(scope="session")
 def test_signer() -> EIP712Signer:
     """
-    Создает одноразовый Ethereum аккаунт и возвращает обертку-подписчик.
-    Используется во всех тестах, где нужна подпись.
+    Creates a one-time Ethereum account and returns a signer wrapper.
+    Used in all tests that require a signature.
     """
     private_key = "0x" + secrets.token_hex(32)
     return EIP712Signer(private_key)
@@ -82,19 +82,19 @@ def test_signer() -> EIP712Signer:
 @pytest.fixture
 def auth_headers(client: httpx.Client, test_signer: EIP712Signer) -> dict:
     """
-    Выполняет полный цикл регистрации/логина и возвращает заголовки
-    с валидным access-токеном для авторизованных запросов.
+    Performs a full registration/login cycle and returns headers
+    with a valid access token for authorized requests.
     """
-    # 1. Получаем challenge
+    # 1. Get challenge
     response = client.post("/auth/challenge", json={})
     assert response.status_code == 200, "Failed to get challenge"
     challenge_data = response.json()
     nonce = challenge_data["nonce"]
 
-    # 2. Подписываем
+    # 2. Sign
     signature, typed_data = test_signer.sign(nonce)
 
-    # 3. Готовим payload
+    # 3. Prepare payload
     payload = {
         "eth_address": test_signer.address,
         "challenge_id": challenge_data["challenge_id"],
@@ -104,8 +104,8 @@ def auth_headers(client: httpx.Client, test_signer: EIP712Signer) -> dict:
         "rsa_public": "test_rsa_key",
     }
 
-    # 4. Пробуем залогиниться. Если не получается - регистрируемся.
-    # Это делает фикстуру устойчивой к повторным запускам.
+    # 4. Try to log in. If it fails, register.
+    # This makes the fixture resilient to repeated runs.
     response = client.post("/auth/login", json=payload)
     if response.status_code == 401 and "user_not_found" in response.text:
         response = client.post("/auth/register", json=payload)
@@ -146,7 +146,7 @@ def make_user(client: httpx.Client) -> Callable[[], tuple[str, dict]]:
     return _create
 
 
-# --- Хелперы ---
+# --- Helpers ---
 
 
 def wait_until_ok(
@@ -156,7 +156,7 @@ def wait_until_ok(
     interval: int = 1,
     description: str = "Service is not ready",
 ):
-    """Ожидает, пока сервис не станет доступен и не удовлетворит условию."""
+    """Waits until the service is available and meets the condition."""
     start_time = time.time()
     while time.time() - start_time < timeout:
         try:
@@ -171,16 +171,16 @@ def wait_until_ok(
 
 def is_hex_bytes32(s: str) -> bool:
     """
-    Проверяет, является ли строка 32-байтной hex-строкой с префиксом 0x.
+    Checks if a string is a 32-byte hex string with a 0x prefix.
     """
     if not isinstance(s, str) or not s.startswith("0x"):
         return False
-    # 0x + 32 байта * 2 символа/байт = 66 символов
+    # 0x + 32 bytes * 2 chars/byte = 66 characters
     return len(s) == 66 and all(c in "0123456789abcdefABCDEF" for c in s[2:])
 
 
 def _solve_pow(challenge: str, difficulty: int) -> str:
-    """Решает PoW-задачу и возвращает nonce в виде строки."""
+    """Solves a PoW challenge and returns the nonce as a string."""
     prefix = "0" * ((difficulty + 3) // 4)
     nonce = 0
     while True:
@@ -193,22 +193,22 @@ def _solve_pow(challenge: str, difficulty: int) -> str:
 @pytest.fixture
 def pow_header_factory(client: httpx.Client) -> Callable[[], dict]:
     """
-    Фикстура, которая возвращает ФАБРИКУ (функцию) для генерации PoW-заголовков.
-    Эту фабрику можно вызывать много раз внутри одного теста.
+    Fixture that returns a FACTORY (function) for generating PoW headers.
+    This factory can be called multiple times within a single test.
     """
 
     def _generate() -> dict:
-        # 1. Получаем челлендж
+        # 1. Get challenge
         r = client.post("/pow/challenge")
         assert r.status_code == 200, "Failed to get PoW challenge"
         challenge_data = r.json()
         challenge = challenge_data["challenge"]
         difficulty = challenge_data["difficulty"]
 
-        # 2. Решаем его
+        # 2. Solve it
         nonce = _solve_pow(challenge, difficulty)
 
-        # 3. Возвращаем готовый заголовок
+        # 3. Return the ready header
         return {"X-PoW-Token": f"{challenge}.{nonce}"}
 
     return _generate

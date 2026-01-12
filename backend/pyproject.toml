@@ -44,7 +44,7 @@ dev = [
   "eth-account>=0.11.0",
 ]
 
-[dependency-groups]  # для uv: uv sync --group dev
+[dependency-groups]  # for uv: uv sync --group dev
 dev = [
   "httpx>=0.28.1",
   "pytest>=8.4.2",
@@ -109,7 +109,7 @@ where = ["."]
 include = ["app*", "ipfs*"]
 exclude = ["tests*", "docker*", "migrations*"]
 
-# Если в пакете есть шаблоны/статические файлы — включим их:
+# If the package has templates/static files, include them:
 [tool.setuptools]
 include-package-data = true
 

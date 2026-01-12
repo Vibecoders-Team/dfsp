@@ -3,7 +3,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-# IDs из имени файла/логов – не трогаем
+# IDs from filename/logs - do not change
 revision = "7d1e66ba21a3"
 down_revision = "aa83ff84ceaf"
 branch_labels = None
@@ -11,11 +11,11 @@ depends_on = None
 
 
 def upgrade():
-    # 1) чистим старые таблицы (если уже существуют)
+    # 1) remove old tables (if they already exist)
     op.execute("DROP TABLE IF EXISTS file_versions CASCADE")
     op.execute("DROP TABLE IF EXISTS files CASCADE")
 
-    # 2) создаём files с PK=BYTEA(32)
+    # 2) create files with PK=BYTEA(32)
     op.create_table(
         "files",
         sa.Column("id", sa.LargeBinary(length=32), primary_key=True, nullable=False),
@@ -40,7 +40,7 @@ def upgrade():
     )
     op.create_index("ix_files_owner", "files", ["owner_id"])
 
-    # 3) создаём file_versions с FK → files.id (BYTEA(32)) и снапшотом меты
+    # 3) create file_versions with FK -> files.id (BYTEA(32)) and a metadata snapshot
     op.create_table(
         "file_versions",
         sa.Column(

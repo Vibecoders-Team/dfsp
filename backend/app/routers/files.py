@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 
 
-# ---- auth helper: достаём текущего пользователя из Bearer-токена ----
+# ---- auth helper: get current user from Bearer token ----
 def require_user(current_user: Annotated[User, Depends(get_current_user)]) -> User:
     return current_user
 
@@ -63,7 +63,7 @@ def list_my_files(
     offset: int = Query(0, ge=0),
 ) -> list[FileListItem]:
     """
-    Возвращает список всех файлов текущего пользователя
+    Return list of all files for the current user.
     """
     # Extra diagnostics
     try:
@@ -449,7 +449,7 @@ def share_file(
                     },
                     event_id=f"grant_received:{cap_hex}:{grantee_chat}",
                 )
-                # Сразу отправляем download_allowed для генерации одноразовой ссылки
+                # Send download_allowed immediately to generate a one-time link
                 try:
                     file_obj = db.get(File, file_id_bytes)
                     file_name = file_obj.name if file_obj else None

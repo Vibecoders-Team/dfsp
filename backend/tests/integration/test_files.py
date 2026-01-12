@@ -14,13 +14,13 @@ def _hex32() -> str:
 
 
 def _fake_cid() -> str:
-    # бэкенд CID не валидирует строго — для теста любой строковый плейсхолдер
+    # backend CID validation is lenient - any string placeholder is fine for tests
     return "bafy" + secrets.token_hex(16)
 
 
 def test_files_create_typeddata_ok(client: httpx.Client, auth_headers: dict):
     """
-    /files: happy-path — отдаёт корректное EIP-712 typedData (ForwardRequest)
+    /files: happy-path - returns correct EIP-712 typedData (ForwardRequest)
     """
     payload = {
         "fileId": _hex32(),
@@ -37,24 +37,24 @@ def test_files_create_typeddata_ok(client: httpx.Client, auth_headers: dict):
     assert "typedData" in body, f"no typedData in response: {body}"
     td = body["typedData"]
 
-    # базовая форма EIP-712
+    # basic EIP-712 shape
     assert isinstance(td.get("domain"), dict)
     assert isinstance(td.get("types"), dict)
     assert td.get("primaryType") == "ForwardRequest"
     assert isinstance(td.get("message"), dict)
 
-    # домен
+    # domain
     dom = td["domain"]
-    # допускаем обе формы chainId: int/str
+    # allow both chainId forms: int/str
     assert int(dom.get("chainId", 0)) > 0
-    assert dom.get("name") in ("MinimalForwarder",)  # по нашему ТЗ
+    assert dom.get("name") in ("MinimalForwarder",)  # per spec
     assert isinstance(dom.get("verifyingContract"), str) and dom["verifyingContract"].startswith("0x")
 
-    # типы
+    # types
     fr = td["types"].get("ForwardRequest")
     assert isinstance(fr, list) and any(x.get("name") == "from" for x in fr)
 
-    # месседж
+    # message
     msg = td["message"]
     assert Web3.is_address(msg.get("from", "")), f"bad from: {msg.get('from')}"
     assert Web3.is_address(msg.get("to", "")), f"bad to: {msg.get('to')}"
@@ -64,7 +64,7 @@ def test_files_create_typeddata_ok(client: httpx.Client, auth_headers: dict):
 
 def test_files_duplicate_checksum_per_owner_409(client: httpx.Client, auth_headers: dict):
     """
-    /files: второй файл с тем же checksum для того же владельца → 409
+    /files: second file with same checksum for same owner -> 409
     """
     checksum = _hex32()
     first = {
@@ -79,7 +79,7 @@ def test_files_duplicate_checksum_per_owner_409(client: httpx.Client, auth_heade
     assert r1.status_code == 200, r1.text
 
     second = {
-        "fileId": _hex32(),  # другой id, но тот же checksum
+        "fileId": _hex32(),  # different id, same checksum
         "name": "b.txt",
         "size": 11,
         "mime": "text/plain",
@@ -93,7 +93,7 @@ def test_files_duplicate_checksum_per_owner_409(client: httpx.Client, auth_heade
 
 def test_files_bad_hex_inputs_400(client: httpx.Client, auth_headers: dict):
     """
-    /files: невалидный формат fileId/checksum → 400
+    /files: invalid fileId/checksum format -> 400
     """
     bad = {
         "fileId": "0x1234",
@@ -105,4 +105,4 @@ def test_files_bad_hex_inputs_400(client: httpx.Client, auth_headers: dict):
     }
     r = client.post("/files", json=bad, headers=auth_headers)
     assert r.status_code == 400
-    # код ошибки может быть разным: bad_file_id / bad_checksum — достаточно 400
+    # error code can vary: bad_file_id / bad_checksum - 400 is sufficient

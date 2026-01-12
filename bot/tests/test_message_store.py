@@ -19,13 +19,13 @@ async def test_message_store_seeds_and_reads() -> None:
     seed_path = Path(__file__).resolve().parents[1] / "app" / "data" / "messages.json"
     dsn = _get_test_dsn()
 
-    # Используем отдельную БД, если передан параметр через DSN (можно добавить ?dbname=test_x)
+    # Use a separate DB if provided via DSN (can add ?dbname=test_x)
     store = MessageStore(db_dsn=dsn, seed_path=seed_path, default_language="ru")
 
     await store.init()
 
     start_text = await store.get_message("start.linked")
-    assert "Добро пожаловать" in start_text
+    assert "Welcome" in start_text
 
     summary = await store.get_message(
         "verify.summary",
@@ -36,8 +36,8 @@ async def test_message_store_seeds_and_reads() -> None:
             "status_text": "ok",
         },
     )
-    assert "Результат верификации файла" in summary
+    assert "File verification result" in summary
 
-    # Чистка для тестовой БД: удаляем записи, но не саму БД
+    # Cleanup test DB: delete records but keep the DB
     async with asyncpg.connect(dsn) as conn:
         await conn.execute("TRUNCATE bot_messages")

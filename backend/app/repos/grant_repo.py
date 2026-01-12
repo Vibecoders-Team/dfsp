@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.models.files import File
 from app.models.grants import Grant
-from app.models.users import User  # Важно: импортируем модель User
+from app.models.users import User  # Important: import User model
 from app.schemas.bot import GrantDirection
 
 
@@ -20,15 +20,15 @@ def get_grants_for_user(
     cursor: datetime | None,
 ) -> list[tuple[Grant, str]]:
     """
-    Получает список грантов для user_id с курсорной пагинацией.
+    Get list of grants for user_id with cursor pagination.
 
-    Возвращает список кортежей (объект Grant, имя файла).
+    Returns list of tuples (Grant object, file name).
     """
-    # Создаем алиасы для User, чтобы различать grantor и grantee в запросе
+    # Create aliases for User to distinguish grantor and grantee in the query
     GrantorUser = aliased(User)
     GranteeUser = aliased(User)
 
-    # Базовый запрос с JOIN'ами к файлу и обоим пользователям
+    # Base query with JOINs to file and both users
     query = (
         select(Grant, File.name)
         .join(File, Grant.file_id == File.id)
@@ -36,20 +36,20 @@ def get_grants_for_user(
         .join(GranteeUser, Grant.grantee_id == GranteeUser.id)
     )
 
-    # Применяем фильтр по направлению, используя user_id
+    # Apply direction filter using user_id
     if direction == GrantDirection.IN:
         query = query.where(Grant.grantee_id == user_id)
     else:  # direction == GrantDirection.OUT
         query = query.where(Grant.grantor_id == user_id)
 
-    # Дополнительно фильтруем, чтобы показывать только подтвержденные гранты
+    # Additionally filter to show only confirmed grants
     query = query.where(Grant.status == "confirmed")
 
-    # Применяем курсор по дате создания
+    # Apply cursor by created_at
     if cursor:
         query = query.where(Grant.created_at < cursor)
 
-    # Сортировка, лимит и выполнение
+    # Sort, limit, and execute
     query = query.order_by(Grant.created_at.desc()).limit(limit)
 
     results = db.execute(query).all()

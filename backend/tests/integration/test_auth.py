@@ -18,7 +18,7 @@ def test_challenge_ok(client: httpx.Client):
 
 
 def test_register_and_login_via_eip712(client: httpx.Client, test_signer: EIP712Signer):
-    # --- Шаг 1: Регистрация ---
+    # --- Step 1: Registration ---
     response = client.post("/auth/challenge", json={})
     assert response.status_code == 200
     challenge1 = response.json()
@@ -38,7 +38,7 @@ def test_register_and_login_via_eip712(client: httpx.Client, test_signer: EIP712
     tokens = response.json()
     assert "access" in tokens and "refresh" in tokens
 
-    # --- Шаг 2: Логин ---
+    # --- Step 2: Login ---
     response = client.post("/auth/challenge", json={})
     assert response.status_code == 200
     challenge2 = response.json()
@@ -57,7 +57,7 @@ def test_register_and_login_via_eip712(client: httpx.Client, test_signer: EIP712
     assert "access" in new_tokens and "refresh" in new_tokens
 
 
-# --- Негативные кейсы ---
+# --- Negative cases ---
 
 
 def test_register_typed_data_mismatch(client: httpx.Client, test_signer: EIP712Signer):
@@ -73,14 +73,14 @@ def test_register_typed_data_mismatch(client: httpx.Client, test_signer: EIP712S
         "challenge_id": challenge["challenge_id"],
         "signature": signature,
         "typed_data": typed_data,
-        # ДОБАВЛЯЕМ НЕДОСТАЮЩИЕ ПОЛЯ
+        # ADD MISSING FIELDS
         "display_name": "Test Mismatch",
         "rsa_public": "test_rsa_key",
     }
     response = client.post("/auth/register", json=payload)
 
     assert response.status_code == 400
-    # Валидация сначала проверяет nonce, поэтому ошибка будет bad_message_nonce
+    # Validation checks nonce first, so the error will be bad_message_nonce
     assert "bad_message_nonce" in response.json()["detail"]
 
 
@@ -107,7 +107,7 @@ def test_register_bad_signature(client: httpx.Client, test_signer: EIP712Signer)
 
 
 def test_login_user_not_found(client: httpx.Client):
-    # Создаем временный, незарегистрированный аккаунт
+    # Create a temporary, unregistered account
     unregistered_signer = EIP712Signer("0x" + secrets.token_hex(32))
 
     response = client.post("/auth/challenge", json={})
@@ -123,6 +123,6 @@ def test_login_user_not_found(client: httpx.Client):
     }
 
     response = client.post("/auth/login", json=payload)
-    # Сервер возвращает 401 с "user_not_found"
+    # Server returns 401 with "user_not_found"
     assert response.status_code == 401
     assert "user_not_found" in response.json()["detail"]

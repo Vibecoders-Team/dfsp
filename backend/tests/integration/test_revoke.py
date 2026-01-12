@@ -41,7 +41,7 @@ def _create_file(
     return fid, chk, cid
 
 
-# --- ИЗМЕНЕНИЕ: Хелпер теперь принимает фабрику PoW ---
+# --- CHANGE: helper now accepts PoW factory ---
 def _share_one(
     client: httpx.Client,
     owner_headers: dict,
@@ -59,7 +59,7 @@ def _share_one(
         "request_id": "req-" + secrets.token_hex(8),
     }
 
-    # Генерируем PoW и объединяем заголовки
+    # Generate PoW and merge headers
     full_headers = {**owner_headers, **pow_factory()}
 
     r = client.post(f"/files/{file_id}/share", json=body, headers=full_headers)
@@ -71,7 +71,7 @@ def _share_one(
     return cap_id
 
 
-# --- ИСПРАВЛЕННЫЕ ТЕСТЫ ---
+# --- FIXED TESTS ---
 
 
 def test_revoke_happy_and_noop(
@@ -79,10 +79,10 @@ def test_revoke_happy_and_noop(
 ):
     grantee_addr, _grantee_headers = make_user()
     file_id, _chk, _cid = _create_file(client, auth_headers)
-    # Передаем фабрику в хелпер
+    # Pass factory into helper
     cap_id = _share_one(client, auth_headers, file_id, grantee_addr, "YQ==", pow_header_factory)
 
-    # Act: revoke by grantor (PoW не нужен для /revoke)
+    # Act: revoke by grantor (PoW not required for /revoke)
     r1 = client.post(f"/grants/{cap_id}/revoke", headers=auth_headers)
     assert r1.status_code == 200, f"expected 200 prepared, got {r1.status_code}: {r1.text}"
     j1 = r1.json()
@@ -100,25 +100,25 @@ def test_revoke_happy_and_noop(
 def test_revoke_not_grantor_403(
     client: httpx.Client, auth_headers: dict, make_user, pow_header_factory: Callable[[], dict]
 ):
-    grantee_addr, grantee_headers = make_user()  # Используем заголовки grantee
+    grantee_addr, grantee_headers = make_user()  # use grantee headers
     file_id, _chk, _cid = _create_file(client, auth_headers)
     cap_id = _share_one(client, auth_headers, file_id, grantee_addr, "YQ==", pow_header_factory)
 
-    # Другой пользователь пытается отозвать (PoW не нужен)
-    r = client.post(f"/grants/{cap_id}/revoke", headers=grantee_headers)  # Используем grantee_headers
+    # Another user tries to revoke (PoW not required)
+    r = client.post(f"/grants/{cap_id}/revoke", headers=grantee_headers)  # use grantee_headers
     assert r.status_code == 403
     assert "not_grantor" in r.text
 
 
 def test_revoke_bad_cap_id_400(client: httpx.Client, auth_headers: dict):
-    # PoW не нужен
+    # PoW not required
     r = client.post("/grants/0x1234/revoke", headers=auth_headers)
     assert r.status_code == 400
     assert "bad_cap_id" in r.text
 
 
 def test_revoke_grant_not_found_404(client: httpx.Client, auth_headers: dict):
-    # PoW не нужен
+    # PoW not required
     cap_id = _hex32()
     r = client.post(f"/grants/{cap_id}/revoke", headers=auth_headers)
     assert r.status_code == 404

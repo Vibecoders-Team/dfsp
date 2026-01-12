@@ -27,7 +27,7 @@ export default function LoginPage() {
   // Check if keys exist on mount (optional)
   useEffect(() => {
     hasEOA().then(setKeysExist);
-    // Не форсим Local signer при заходе на Login: пользователь может выбрать MetaMask/WalletConnect.
+    // Do not force Local signer on Login: user may choose MetaMask/WalletConnect.
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {

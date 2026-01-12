@@ -26,11 +26,11 @@ export async function signForwardTyped(agent: MaybeChainAgent, td: ForwardTyped,
     const current = await agent.getChainId();
     if (current !== undefined && desired !== current) {
       if (retrySwitch && agent.switchChain) {
-        await agent.switchChain(desired); // если switchChain бросит — пробросим наружу
+        await agent.switchChain(desired); // if switchChain throws, rethrow
       } else {
         throw new NetworkMismatchError(desired, current ?? -1);
       }
-      // повторная проверка
+      // re-check
       const after = await agent.getChainId();
       if (after !== desired) throw new NetworkMismatchError(desired, after ?? -1);
     }

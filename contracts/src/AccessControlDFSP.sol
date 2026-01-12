@@ -18,7 +18,7 @@ contract AccessControlDFSP is ERC2771Context {
     mapping(bytes32 => Grant) public grants;
     mapping(address => bytes32[]) private _grantsOf;
 
-    // ✅ стабильный источник энтропии для capId
+    // ✅ stable entropy source for capId
     mapping(address => uint256) public grantNonces;
 
     event Granted(bytes32 indexed capId, address indexed grantor, address indexed grantee, bytes32 fileId, uint64 expiresAt, uint32 maxDownloads);
@@ -51,7 +51,7 @@ contract AccessControlDFSP is ERC2771Context {
         // cache sender for gas (used multiple times)
         address sender = _msgSender();
         uint256 n = grantNonces[sender];
-        // ✅ детерминированный capId
+        // ✅ deterministic capId
         capId = keccak256(abi.encode(sender, grantee, fileId, n));
 
         if (grants[capId].createdAt != 0) revert AlreadyExists();
@@ -70,7 +70,7 @@ contract AccessControlDFSP is ERC2771Context {
         grants[capId] = g;
         _grantsOf[grantee].push(capId);
 
-        // ✅ инкремент после фиксации capId
+        // ✅ increment after capId is fixed
         unchecked { grantNonces[sender] = n + 1; }
 
         emit Granted(capId, g.grantor, g.grantee, g.fileId, g.expiresAt, g.maxDownloads);

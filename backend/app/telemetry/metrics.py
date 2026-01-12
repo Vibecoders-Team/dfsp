@@ -102,8 +102,8 @@ def metrics(db: Annotated[Session, Depends(get_db)]) -> PlainTextResponse:
                 vals.append(float(raw) / 1000.0)  # ms → seconds
             except (UnicodeDecodeError, ValueError, TypeError) as e:
                 logger.debug("metrics: skip value %r: %s", x, e, exc_info=True)
-                # нет continue — просто идём к следующему элементу
-                # (после except в теле цикла всё равно больше кода нет)
+                # no continue - just move to the next item
+                # (after except, there is no more code in the loop body)
 
         if vals:
             vals_sorted = sorted(vals)
@@ -147,7 +147,7 @@ def metrics(db: Annotated[Session, Depends(get_db)]) -> PlainTextResponse:
                     e,
                     exc_info=True,
                 )
-                # опять же, без continue — цикл сам идёт дальше
+                # again, no continue needed - the loop just moves on
     except Exception as e:
         logger.debug("metrics: failed to populate pow verification metrics: %s", e, exc_info=True)
     try:

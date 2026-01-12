@@ -48,7 +48,7 @@ export class MetaMaskAgent implements SignerAgent {
     if (!this.expectedChainId) return;
     const cid = await this.getChainId();
     if (cid !== this.expectedChainId) {
-      throw new Error(`MetaMask: сеть ${cid} != ожидаемой ${this.expectedChainId}. Нажмите 'Switch' и повторите.`);
+      throw new Error(`MetaMask: network ${cid} != expected ${this.expectedChainId}. Click 'Switch' and retry.`);
     }
   }
 
@@ -102,14 +102,14 @@ export class MetaMaskAgent implements SignerAgent {
         chainName,
         rpcUrls: [rpcUrl],
         nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-        // blockExplorerUrls добавляем только если валидный URL
+        // add blockExplorerUrls only if URL is valid
       };
       if (explorerValid) params.blockExplorerUrls = [explorer];
       await eth.request({ method: 'wallet_addEthereumChain', params: [params] });
       await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hex }] });
     }
     this.invalidateProvider();
-    // Верификация сети после переключения
+    // Network verification after switch
     for (let i = 0; i < 5; i++) {
       const cid = await this.getChainId();
       if (cid === chainId) return;
@@ -117,6 +117,6 @@ export class MetaMaskAgent implements SignerAgent {
       this.invalidateProvider();
     }
     const finalCid = await this.getChainId();
-    if (finalCid !== chainId) throw new Error(`MetaMask: не удалось переключить сеть (got ${finalCid}, expected ${chainId})`);
+    if (finalCid !== chainId) throw new Error(`MetaMask: failed to switch network (got ${finalCid}, expected ${chainId})`);
   }
 }

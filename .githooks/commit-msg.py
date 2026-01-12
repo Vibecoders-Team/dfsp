@@ -21,22 +21,18 @@ pat = re.compile(rf"^{allowed}(?:\([^)]+\))?(?:!)?: .+", re.U)
 
 errors = []
 
-# 1) Заголовок по шаблону
 if not pat.match(header or ""):
     errors.append(
         "Header must be: <type>(<scope>): <summary>. "
         "Allowed types: feat|fix|docs|refactor|perf|test|build|ci|chore|revert"
     )
 
-# 2) Длина заголовка
 if len(header) > 100:
     errors.append("Header max length is 100 characters")
 
-# 3) BREAKING CHANGE при '!'
 if "!" in header and not re.search(r"(?m)^BREAKING CHANGE:\s+.+", body):
     errors.append("Header contains '!' but no 'BREAKING CHANGE:' block in body/footer")
 
-# 4) Рекомендация футера ссылок (только предупреждение)
 if header.startswith(("feat", "fix")) and not re.search(
     r"(?mi)^(Refs:|Closes:)\s+\S+", raw
 ):

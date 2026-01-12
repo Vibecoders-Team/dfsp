@@ -7,8 +7,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import redis
-from fastapi import APIRouter, Depends, HTTPException, Request  # Добавили Request
-from fastapi.security import HTTPAuthorizationCredentials  # Нужно для ручного создания Creds
+from fastapi import APIRouter, Depends, HTTPException, Request  # Added Request
+from fastapi.security import HTTPAuthorizationCredentials  # Needed for manual Creds creation
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -25,12 +25,12 @@ from app.schemas.telegram import (
 from app.security import create_token
 from app.security_telegram import InitData, verify_init_data
 
-# --- Константы ---
+# --- Constants ---
 LINK_TOKEN_TTL_SECONDS = 10 * 60
 RATE_LIMIT_REQUESTS = 5
 RATE_LIMIT_WINDOW_SECONDS = 60
 
-# --- Создание Роутера ---
+# --- Router creation ---
 router = APIRouter(prefix="/tg", tags=["Telegram"])
 
 
@@ -46,7 +46,7 @@ class WebAppAuthOut(BaseModel):
     exp: int
 
 
-# --- Зависимость для Рейт-Лимита по Chat ID ---
+# --- Dependency for rate limiting by Chat ID ---
 async def rate_limit_by_chat_id(
     payload: TgLinkStartRequest, redis_client: Annotated[redis.Redis, Depends(get_redis)]
 ) -> None:
@@ -54,8 +54,8 @@ async def rate_limit_by_chat_id(
     window = now // RATE_LIMIT_WINDOW_SECONDS
     key = f"rl:tg-link-start:{payload.chat_id}:{window}"
 
-    # Убираем try-except, чтобы видеть ошибки, и используем redis_client
-    # В реальном приложении можно вернуть try-except, но с логированием ошибки.
+    # Remove try-except to see errors, and use redis_client directly.
+    # In a real app you can restore try-except with error logging.
     cur = int(redis_client.incr(key))
     if cur == 1:
         redis_client.expire(key, RATE_LIMIT_WINDOW_SECONDS + 5)
@@ -119,7 +119,7 @@ async def complete_telegram_link(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
 ) -> OkResponse:
-    # --- Ленивое разрешение get_current_user ---
+    # --- Lazy resolution of get_current_user ---
     from app.security import get_current_user
 
     auth_header = request.headers.get("Authorization")
@@ -134,7 +134,7 @@ async def complete_telegram_link(
         raise
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid authentication token or user") from exc
-    # --- Конец ленивого разрешения ---
+    # --- End lazy resolution ---
 
     cache_key = f"tg:link:{payload.link_token}"
     chat_id_str = Cache.get_text(cache_key)
@@ -168,8 +168,8 @@ async def unlink_telegram_account(
     Revokes all active links associated with the authenticated user's wallet address.
     This is an idempotent operation.
     """
-    # Используем тот же "ленивый" подход для получения current_user,
-    # который не ломает запуск приложения с psycopg.
+    # Use the same "lazy" approach for getting current_user
+    # that does not break app startup with psycopg.
     from app.security import get_current_user
 
     auth_header = request.headers.get("Authorization")
@@ -183,7 +183,7 @@ async def unlink_telegram_account(
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid authentication token or user") from exc
 
-    # Вызываем функцию из репозитория для отзыва ссылок
+    # Call repo function to revoke links
     try:
         telegram_repo.revoke_links_by_address(db=db, wallet_address=current_user.eth_address)
     except Exception as exc:

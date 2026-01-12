@@ -13,24 +13,24 @@ logger = logging.getLogger(__name__)
 
 class EventPublisher:
     """
-    Паблишер событий в Redis-очередь.
+    Event publisher to a Redis queue.
 
-    Схема сообщения (envelope):
+    Message schema (envelope):
 
     {
-        "event_id": "<uuid или детерминированная строка>",
+        "event_id": "<uuid or deterministic string>",
         "version": 1,
         "type": "grant_created" | "grant_revoked" | "download_allowed" | ...,
         "source": "api",
         "ts": "ISO8601 UTC",
-        "subject": {...},   # основные идентификаторы
-        "data": {...}       # произвольный payload
+        "subject": {...},   # main identifiers
+        "data": {...}       # arbitrary payload
     }
 
-    Идемпотентность:
-      - event_id используется как логический id.
-      - храним его в Redis set `events:seen`.
-      - если event_id уже был, второй раз в очередь не кладём.
+    Idempotency:
+      - event_id is used as a logical id.
+      - we store it in the Redis set `events:seen`.
+      - if event_id has already been seen, we don't enqueue it again.
     """
 
     def __init__(self, queue_key: str = "events:queue") -> None:
@@ -48,12 +48,12 @@ class EventPublisher:
     ) -> str:
         eid = event_id or str(uuid.uuid4())
 
-        # --- Идемпотентность по event_id ---
+        # --- Idempotency by event_id ---
         try:
-            # SADD -> 1 если новый, 0 если уже был
+            # SADD -> 1 if new, 0 if already exists
             added = rds.sadd("events:seen", eid)
             if added == 0:
-                # Уже публиковали такой event_id — молча выходим
+                # This event_id has already been published — exit silently
                 return eid
         except Exception as e:
             logger.warning("EventPublisher: failed to update idempotency set: %s", e)

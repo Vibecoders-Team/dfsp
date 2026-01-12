@@ -24,8 +24,8 @@ def _get_chat_id(event: Update) -> int | None:
 
 class ErrorHandlerMiddleware(BaseMiddleware):
     """
-    Ловим все исключения, логируем с trace-id + маской chat_id,
-    в чат отдаём дружелюбный текст без деталей.
+    Catch all exceptions, log with trace-id + chat_id mask,
+    and send a friendly text to the chat without details.
     """
 
     async def __call__(
@@ -48,13 +48,13 @@ class ErrorHandlerMiddleware(BaseMiddleware):
                 exc,
             )
 
-            # Не пытаемся слать ответ в заведомо несуществующий чат
+            # Don't try to send a response to a non-existent chat
             if isinstance(exc, TelegramBadRequest) and "chat not found" in str(exc):
                 return None
 
             text = await get_message("errors.fallback")
 
-            # старательно, но аккуратно отвечаем пользователю
+            # try hard, but carefully, to respond to the user
             if event.message and isinstance(event.message, Message):
                 try:
                     await event.message.answer(text)

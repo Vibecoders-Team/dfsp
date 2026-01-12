@@ -21,18 +21,18 @@ else:
     log.warning("Warning: .env file not found at %s", env_path)
 
 
-# ------------------------------- вспомогательные вещи -------------------------------
+# ------------------------------- helpers -------------------------------
 
 
 class Quotas(BaseModel):
-    download_bytes_day: int = 2_000_000_000  # 2 ГБ
+    download_bytes_day: int = 2_000_000_000  # 2 GB
     meta_tx_per_day: int = 50
 
 
 def _parse_origins(val: str | list[str] | None) -> list[str]:
     """
-    Принимает JSON-массив или CSV-строку и возвращает уникальный список, очищенный от пустых значений.
-    Поддерживает '*' (любой источник).
+    Accept JSON array or CSV string and return a unique list with empty values removed.
+    Supports '*' (any origin).
     """
     if val is None:
         return ["http://localhost:5173", "http://localhost:8000"]
@@ -51,10 +51,10 @@ def _parse_origins(val: str | list[str] | None) -> list[str]:
             else:
                 out = [s]
         except json.JSONDecodeError:
-            # Не валидный JSON — пробуем CSV-разделитель
+            # Invalid JSON - try CSV separator
             out = [item.strip() for item in s.split(",") if item.strip()]
 
-    # убираем дубликаты, сохраняя порядок
+    # remove duplicates while preserving order
     seen: set[str] = set()
     uniq: list[str] = []
     for o in out:
@@ -70,7 +70,7 @@ def _mask(s: str | None, keep: int = 4) -> str | None:
     return (s[:keep] + "…") if len(s) > keep else "…"
 
 
-# ------------------------------- цепочка/контракты (опционально) -------------------------------
+# ------------------------------- chain/contracts (optional) -------------------------------
 
 
 class ChainConfig(BaseModel):
@@ -79,7 +79,7 @@ class ChainConfig(BaseModel):
     domain: dict[str, Any] = Field(default_factory=dict)
 
 
-# --------------------------------------- основные настройки ---------------------------------------
+# --------------------------------------- core settings ---------------------------------------
 
 
 class Settings(BaseSettings):
@@ -91,19 +91,19 @@ class Settings(BaseSettings):
         env_nested_delimiter="__",
     )
 
-    # --- База/Redis ---
+    # --- Database/Redis ---
     postgres_dsn: str = Field(alias="POSTGRES_DSN")
-    # поддерживаем и REDIS_URL, и REDIS_DSN — возьмём первый не-пустой
+    # support both REDIS_URL and REDIS_DSN - take the first non-empty
     redis_url_raw: str | None = Field(default=None, alias="REDIS_URL")
     redis_dsn_raw: str | None = Field(default=None, alias="REDIS_DSN")
 
-    # --- Интеграции (пока могут быть None; подключим позже) ---
+    # --- Integrations (can be None for now; we'll connect them later) ---
     ipfs_api: str | None = Field(default=None, alias="IPFS_API")
     rpc_url: str | None = Field(default=None, alias="RPC_URL")
     abi_dir: Path | None = Field(default=None, alias="ABI_DIR")
     chain_config_path: Path | None = Field(default=None, alias="CHAIN_CONFIG_PATH")
 
-    # --- Anchoring/кванты ---
+    # --- Anchoring/periods ---
     anchor_period_min: PositiveInt = Field(default=60, alias="ANCHOR_PERIOD_MIN")
 
     # --- Security/JWT ---
@@ -128,20 +128,20 @@ class Settings(BaseSettings):
     cors_origins_raw: str | list[str] | None = Field(default=None, alias="CORS_ORIGINS")
     cors_origin_raw: str | None = Field(default=None, alias="CORS_ORIGIN")
 
-    # --- Квоты (вложенные, дефолты) ---
+    # --- Quotas (nested, defaults) ---
     quotas: Quotas = Field(default_factory=Quotas, alias="QUOTAS")
-    # Плоские env-переменные для квот (удобные для DevOps)
+    # Flat env vars for quotas (convenient for DevOps)
     quota_download_bytes_day_env: int | None = Field(default=None, alias="QUOTA_DOWNLOAD_BYTES_PER_DAY")
     quota_meta_tx_per_day_env: int | None = Field(default=None, alias="QUOTA_META_TX_PER_DAY")
 
-    # --- Relayer/Celery очереди ---
+    # --- Relayer/Celery queues ---
     relayer_high_queue: str = Field(default="relayer.high", alias="RELAYER_HIGH_QUEUE")
     relayer_default_queue: str = Field(default="relayer.default", alias="RELAYER_DEFAULT_QUEUE")
 
-    # --- Proof-of-Work параметры ---
+    # --- Proof-of-Work parameters ---
     pow_difficulty_base: int = Field(default=18, alias="POW_DIFFICULTY_BASE")
-    pow_challenge_ttl_seconds: int = Field(default=300, alias="POW_CHALLENGE_TTL_SECONDS")  # 5 минут
-    pow_enabled: bool = Field(default=True, alias="POW_ENABLED")  # Глобальный переключатель
+    pow_challenge_ttl_seconds: int = Field(default=300, alias="POW_CHALLENGE_TTL_SECONDS")  # 5 minutes
+    pow_enabled: bool = Field(default=True, alias="POW_ENABLED")  # global switch
 
     chain_rpc_url_raw: str | None = Field(default=None, alias="CHAIN_RPC_URL")
     chain_public_rpc_url: str = os.getenv("CHAIN_PUBLIC_RPC_URL", "")
@@ -165,23 +165,23 @@ class Settings(BaseSettings):
         **values: Any,  # noqa: ANN401 - forwarded kwargs to BaseSettings are intentionally untyped
     ) -> None:
         """
-        Поддерживаем явный конструктор только ради статического анализатора:
-        - значения по-умолчанию синхронизированы с Field(...) в классе;
-        - остальные значения (из env/kwargs) попадут в super().__init__ как обычно.
+        Explicit constructor is only for static analyzers:
+        - default values are synced with Field(...) in the class;
+        - other values (from env/kwargs) still go to super().__init__ as usual.
         """
-        # если кто-то передал явно в kwargs — не перезаписываем
+        # if passed explicitly in kwargs - do not overwrite
         values.setdefault("jwt_secret", jwt_secret or "dev_secret")
         values.setdefault("jwt_algorithm", jwt_algorithm)
         values.setdefault("jwt_access_ttl_minutes", jwt_access_ttl_minutes)
         values.setdefault("jwt_refresh_ttl_days", jwt_refresh_ttl_days)
-        # Для CHAIN_RPC_URL поле у тебя было ALL-CAPS — используем именно такое имя
+        # CHAIN_RPC_URL is ALL-CAPS - use that exact name
         values.setdefault("CHAIN_RPC_URL", chain_rpc_url_raw)
         super().__init__(**values)
 
-    # ---------------------------- удобные производные/геттеры ----------------------------
+    # ---------------------------- convenience derived values/getters ----------------------------
     @property
     def chain_rpc_url(self) -> str:
-        """Возвращает CHAIN_RPC_URL или бросает ошибку — явная и ранняя ошибка конфигурации."""
+        """Return CHAIN_RPC_URL or raise an explicit early config error."""
         val = self.chain_rpc_url_raw
         if not val:
             raise RuntimeError("Missing required configuration: CHAIN_RPC_URL (set env CHAIN_RPC_URL)")
@@ -190,9 +190,9 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         """
-        Итоговый список Origin'ов для CORS.
-        Приоритет: CORS_ORIGINS (если задан) -> CORS_ORIGIN (если задан) -> дефолт.
-        Спец-случай '*': вернём ['*'].
+        Final list of Origins for CORS.
+        Priority: CORS_ORIGINS (if set) -> CORS_ORIGIN (if set) -> default.
+        Special case '*': return ['*'].
         """
         if self.cors_origins_raw not in (None, "", []):
             return _parse_origins(self.cors_origins_raw)
@@ -203,8 +203,8 @@ class Settings(BaseSettings):
     @property
     def cors_origin(self) -> str | None:
         """
-        Возвращает первый origin из cors_origins (или None, если не задан).
-        Удобно, если нужен один «основной» origin, например для генерации URL.
+        Return the first origin from cors_origins (or None if not set).
+        Useful when a single "primary" origin is needed, e.g. for URL generation.
         """
         origins: list[str] = self.cors_origins
         if not origins:
@@ -216,7 +216,7 @@ class Settings(BaseSettings):
     @property
     def redis_dsn(self) -> str:
         """
-        Единая точка для Redis DSN: сначала REDIS_URL, потом REDIS_DSN, иначе дефолт.
+        Single source for Redis DSN: REDIS_URL first, then REDIS_DSN, otherwise default.
         """
         return self.redis_url_raw or self.redis_dsn_raw or "redis://dfsp-redis:6379/0"
 
@@ -230,7 +230,7 @@ class Settings(BaseSettings):
 
     @property
     def quotas_effective(self) -> Quotas:
-        """Возвращает квоты с учётом плоских env-переменных (если заданы)."""
+        """Return quotas with flat env overrides applied (if set)."""
         q = Quotas(**self.quotas.model_dump()) if isinstance(self.quotas, Quotas) else Quotas()
         if self.quota_download_bytes_day_env is not None:
             q.download_bytes_day = int(self.quota_download_bytes_day_env)
@@ -238,7 +238,7 @@ class Settings(BaseSettings):
             q.meta_tx_per_day = int(self.quota_meta_tx_per_day_env)
         return q
 
-    # --- Загрузка chain-config.json (опционально, без падений, если файла нет) ---
+    # --- Load chain-config.json (optional, no failure if missing) ---
     def load_chain_config(self) -> ChainConfig | None:
         p = self.chain_config_path
         if not p:
@@ -252,7 +252,7 @@ class Settings(BaseSettings):
         except FileNotFoundError:
             log.warning("Chain config not found at %s (ok for now)", p)
         except (json.JSONDecodeError, ValueError, TypeError) as e:
-            # JSON парсинг, приведение типов или валидация ChainConfig
+            # JSON parsing, type coercion, or ChainConfig validation
             log.warning("Failed to load chain config from %s: %s", p, e)
         return None
 
@@ -280,9 +280,9 @@ class Settings(BaseSettings):
         }
 
 
-# единый экземпляр
+# single instance
 settings = Settings()
 log.info("Loaded settings: %s", settings.debug_dump())
 
-# На будущее (использовать по желанию):
+# For future use (optional):
 # CHAIN = settings.load_chain_config()

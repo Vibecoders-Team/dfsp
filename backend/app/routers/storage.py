@@ -11,12 +11,12 @@ from web3 import Web3
 from app.blockchain.web3_client import Chain
 from app.config import settings
 
-# --- ИЗМЕНЕНИЯ ЗДЕСЬ (Импорты) ---
+# --- CHANGES HERE (imports) ---
 from app.deps import get_chain, get_db, get_ipfs
 from app.ipfs.client import IpfsClient
 from app.models import File as FileModel
 
-# --- ИЗМЕНЕНИЯ ЗДЕСЬ (Импорты) ---
+# --- CHANGES HERE (imports) ---
 from app.models import FileVersion, User
 from app.security import get_current_user  # guard
 
@@ -84,10 +84,10 @@ async def store_file(
         checksum32 = Web3.keccak(data)
 
     size = int(plain_size) if isinstance(plain_size, int) and plain_size is not None else len(data)
-    # MIME: предпочитаем оригинальный (plaintext), а не тип зашифрованного blob'а
+    # MIME: prefer original (plaintext) value, not the type of encrypted blob
     mime = (orig_mime or "").strip() or ""
 
-    # Определяем исходное имя файла (без .enc)
+    # Determine original filename (without .enc)
     the_name = (orig_name or "").strip() or (file.filename or "untitled")
     if the_name.lower().endswith(".enc"):
         the_name = the_name[:-4]
@@ -104,7 +104,7 @@ async def store_file(
     except Exception:
         existing = None
     if existing is not None and existing.owner_id != user.id:
-        # Даже если id_hex был явно предоставлен клиентом — не даём перезаписать чужой файл.
+        # Even if id_hex was explicitly provided by the client, do not allow overwriting someone else's file.
         base_seed = user.id.bytes + bytes(checksum32)
         attempt = 0
         while True:
@@ -145,7 +145,7 @@ async def store_file(
         raise HTTPException(502, f"chain_error: {e}") from e
 
     try:
-        # Проверяем, существует ли уже запись, чтобы обновить ее (логика update)
+        # Check if a record already exists to update it (update logic)
         db_file = db.get(FileModel, item_id)
         if db_file:
             db_file.cid = cid
@@ -154,7 +154,7 @@ async def store_file(
             db_file.mime = mime or db_file.mime
             db_file.name = the_name or db_file.name
 
-            # Создаем новую версию
+            # Create a new version
             from sqlalchemy import func, select
 
             latest_version = db.scalar(select(func.max(FileVersion.version)).where(FileVersion.file_id == item_id)) or 0
@@ -169,7 +169,7 @@ async def store_file(
             )
             db.add(new_version)
         else:
-            # Если файла нет, создаем новую запись (логика register)
+            # If file does not exist, create a new record (register logic)
             db_file = FileModel(
                 id=item_id,
                 owner_id=user.id,
@@ -180,9 +180,9 @@ async def store_file(
                 checksum=checksum32,
             )
             db.add(db_file)
-            db.flush()  # Чтобы получить ID перед созданием версии
+            db.flush()  # To get ID before creating the version
 
-            # Создаем первую версию
+            # Create the first version
             first_version = FileVersion(
                 file_id=item_id,
                 version=1,
@@ -199,7 +199,7 @@ async def store_file(
     except Exception as e:
         db.rollback()
         log.error(f"DATABASE FAILED after successful chain transaction {tx_hash}: {e}", exc_info=True)
-        # Сообщаем об ошибке, чтобы фронт не считал загрузку успешной
+        # Report error so frontend does not treat upload as successful
         raise HTTPException(500, "db_error") from e
 
     return StoreOut(
@@ -210,7 +210,7 @@ async def store_file(
     )
 
 
-# ... (остальная часть файла остается без изменений)
+# ... (rest of the file remains unchanged)
 class ResolveOut(BaseModel):
     cid: str
     url: str
@@ -278,7 +278,7 @@ def meta(id_hex: str, chain: Annotated[Chain, Depends(get_chain)], db: Annotated
 class VersionItem(BaseModel):
     owner: str | None = None
     cid: str | None = None
-    checksum: str | None = None  # hex без 0x
+    checksum: str | None = None  # hex without 0x
     size: int | None = None
     mime: str | None = None
     createdAt: int | None = None
@@ -324,7 +324,7 @@ def versions(id_hex: str, chain: Annotated[Chain, Depends(get_chain)]) -> Versio
 
 
 class HistoryItem(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)  # можно и без этого, но полезно
+    model_config = ConfigDict(populate_by_name=True)  # not strictly required, but convenient
     event_type: str = Field(alias="type")
     blockNumber: int
     txHash: str
@@ -365,10 +365,10 @@ def history(
 
     raw.sort(key=lambda e: (e["blockNumber"], e["timestamp"]), reverse=(order == "desc"))
     limit = max(1, min(limit, 1000))
-    # нормализуем checksum на всякий
+    # Normalize checksum just in case
     for e in raw:
         cs = e.get("checksum")
         if isinstance(cs, str) and cs.startswith("0x"):
             e["checksum"] = cs[2:]
 
-    return {"items": raw[:limit]}
+    return HistoryOut(items=[HistoryItem(**e) for e in raw[:limit]])

@@ -18,7 +18,7 @@ from app.security import get_current_user
 logger = logging.getLogger(__name__)
 
 
-# --- Метрики ---
+# --- Metrics ---
 def _count_rejection(reason: str, redis_client: redis.Redis) -> None:
     redis_client.incr(f"metrics:pow_quota_rejections:{reason}")
 
@@ -35,11 +35,11 @@ def _as_int(val: object) -> int:
         return 0
 
 
-# --- Основной сервис ---
+# --- Main service ---
 
 
 class QuotaManager:
-    # ... (ЭТОТ КЛАСС ОСТАЕТСЯ БЕЗ ИЗМЕНЕНИЙ)
+    # ... (THIS CLASS REMAINS UNCHANGED)
     def __init__(self, user: User, redis_client: redis.Redis, settings: Settings, chain: Chain) -> None:
         self.user = user
         self.rds = redis_client
@@ -81,7 +81,7 @@ class QuotaManager:
 
 class PoWValidator:
     """
-    Сервис для PoW. Экземпляр создаётся через фабрику `get_pow_validator`.
+    PoW service. Instance is created via the `get_pow_validator` factory.
     """
 
     def __init__(self, redis_client: redis.Redis, settings: Settings) -> None:
@@ -94,13 +94,13 @@ class PoWValidator:
 
     def get_challenge(self) -> dict:
         """
-        Генерирует и сохраняет новый challenge.
-        Также увеличивает счётчик выданных PoW-челленджей для метрик.
+        Generates and saves a new challenge.
+        Also increments the counter of issued PoW challenges for metrics.
         """
         challenge = secrets.token_hex(16)
         ttl = int(self.settings.pow_challenge_ttl_seconds)
         self.rds.set(f"pow:challenge:{challenge}", "valid", ex=ttl)
-        # Метрика: количество выданных PoW-челленджей
+        # Metric: number of issued PoW challenges
         try:
             self.rds.incr("metrics:pow_challenges_total")
         except Exception as e:
@@ -109,9 +109,9 @@ class PoWValidator:
 
     def verify_token(self, pow_token: str | None) -> None:
         """
-        Проверяет PoW токен. Эту логику мы вынесли из __call__.
-        При успешной верификации инкрементируем счётчик успешных проверок.
-        При ошибках соответствующие счётчики увеличиваются через _count_rejection.
+        Verify PoW token. This logic was extracted from __call__.
+        On success, increment successful verification counter.
+        On errors, increment corresponding counters via _count_rejection.
         """
         if not self.settings.pow_enabled:
             return
@@ -135,14 +135,14 @@ class PoWValidator:
         if self.rds.delete(key) == 0:
             _count_rejection("pow_reused", self.rds)
             raise HTTPException(status_code=429, detail="pow_reused")
-        # Успешная проверка
+        # Successful verification
         try:
             self.rds.incr("metrics:pow_verifications_total:ok")
         except Exception as e:
             logger.debug("Failed to increment pow_verifications_total: %s", e, exc_info=True)
 
 
-# --- Новая функция-зависимость для проверки ---
+# --- New dependency function for validation ---
 
 
 def get_pow_validator(
@@ -158,17 +158,17 @@ def validate_pow_token(
     pow_token: str | None = Header(None, alias="X-PoW-Token"),
 ) -> None:
     """
-    Эта зависимость теперь отвечает ТОЛЬКО за проверку токена.
+    This dependency now ONLY validates the token.
     """
     pow_validator.verify_token(pow_token)
 
 
-# --- Фабрики зависимостей (теперь используют новую функцию) ---
+# --- Dependency factories (now use the new function) ---
 
 
 def protect_meta_tx(
     user: Annotated[User, Depends(get_current_user)],
-    _: Annotated[None, Depends(validate_pow_token)],  # ИСПОЛЬЗУЕМ НОВУЮ ЗАВИСИМОСТЬ
+    _: Annotated[None, Depends(validate_pow_token)],  # USE NEW DEPENDENCY
     redis_client: Annotated[redis.Redis, Depends(get_redis)],
     settings: Annotated[Settings, Depends(get_settings)],
     chain: Annotated[Chain, Depends(get_chain)],
@@ -180,7 +180,7 @@ def protect_meta_tx(
 
 def protect_download(
     user: Annotated[User, Depends(get_current_user)],
-    _: Annotated[None, Depends(validate_pow_token)],  # ИСПОЛЬЗУЕМ НОВУЮ ЗАВИСИМОСТЬ
+    _: Annotated[None, Depends(validate_pow_token)],  # USE NEW DEPENDENCY
     redis_client: Annotated[redis.Redis, Depends(get_redis)],
     settings: Annotated[Settings, Depends(get_settings)],
     chain: Annotated[Chain, Depends(get_chain)],

@@ -41,7 +41,7 @@ def _create_file(
     return fid, chk, cid
 
 
-# --- ИЗМЕНЕНИЕ: Хелпер теперь принимает фабрику PoW ---
+# --- CHANGE: helper now accepts PoW factory ---
 def _share_one(
     client: httpx.Client,
     owner_headers: dict,
@@ -59,7 +59,7 @@ def _share_one(
         "request_id": "req-" + secrets.token_hex(8),
     }
 
-    # Генерируем PoW и объединяем заголовки
+    # Generate PoW and merge headers
     full_headers = {**owner_headers, **pow_factory()}
 
     r = client.post(f"/files/{file_id}/share", json=body, headers=full_headers)
@@ -71,7 +71,7 @@ def _share_one(
     return cap_id
 
 
-# --- ИСПРАВЛЕННЫЕ ТЕСТЫ ---
+# --- FIXED TESTS ---
 
 
 def test_download_happy(client: httpx.Client, auth_headers: dict, make_user, pow_header_factory: Callable[[], dict]):
@@ -79,10 +79,10 @@ def test_download_happy(client: httpx.Client, auth_headers: dict, make_user, pow
     file_id, _chk, cid = _create_file(client, auth_headers)
     enc_b64 = "c2VjcmV0LWtleQ=="
 
-    # Передаем фабрику в хелпер
+    # Pass factory into helper
     cap_id = _share_one(client, auth_headers, file_id, grantee_addr, enc_b64, pow_header_factory)
 
-    # Act: grantee requests download info (требует свой PoW)
+    # Act: grantee requests download info (requires their own PoW)
     full_grantee_headers = {**grantee_headers, **pow_header_factory()}
     r = client.get(f"/download/{cap_id}", headers=full_grantee_headers)
     assert r.status_code == 200, r.text
@@ -98,7 +98,7 @@ def test_download_not_grantee_403(
     file_id, _chk, _cid = _create_file(client, auth_headers)
     cap_id = _share_one(client, auth_headers, file_id, grantee_addr, "YQ==", pow_header_factory)
 
-    # Другой пользователь (не grantee) пытается скачать
+    # Another user (not grantee) tries to download
     other_addr, other_headers = make_user()
     full_other_headers = {**other_headers, **pow_header_factory()}
     r = client.get(f"/download/{cap_id}", headers=full_other_headers)

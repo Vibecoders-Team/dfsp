@@ -33,7 +33,7 @@ class NotificationEvent(BaseModel):
 
     @classmethod
     def from_stream_fields(cls, fields: Mapping[str, Any], fallback_id: str | None = None) -> NotificationEvent:
-        """Создает событие из сырого словаря Redis Stream / AMQP."""
+        """Create event from raw Redis Stream / AMQP dict."""
         try:
 
             def _dec(val: Any) -> Any:
@@ -60,7 +60,7 @@ class NotificationEvent(BaseModel):
             else:
                 payload_dict = {}
 
-            # Забираем все остальные поля и добавляем их в payload, чтобы не терять данные
+            # Take all remaining fields and add them to payload to avoid data loss
             reserved_keys = {"id", "type", "chat_id", "ts", "payload"}
             extra_payload = {k: v for k, v in decoded_fields.items() if k not in reserved_keys}
             if extra_payload:

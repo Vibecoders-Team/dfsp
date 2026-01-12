@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import hre from "hardhat";
 
-// Всегда используем hre.ethers в HH v3
+// Always use hre.ethers in HH v3
 const { ethers } = hre;
 
 const types = {
@@ -17,15 +17,15 @@ const types = {
 
 const selectorOf = (signature: string) => ethers.id(signature).slice(0, 10);
 
-// Проверка, что вызов через форвардер ревертится внутри целевого контракта,
-// и селектор ошибки совпадает.
+// Verify that a forwarded call reverts inside the target contract,
+// and the error selector matches.
 async function expectForwardedRevert(
   forwarder: any,
   req: any,
   sig: string,
   expectedSelector: string
 ) {
-  // ethers v6: staticCall доступен как метод функции
+  // ethers v6: staticCall is available as a function method
   const res = await forwarder.execute.staticCall(req, sig);
   // OZ MinimalForwarder: returns (bool success, bytes returndata)
   const ok: boolean = (res as any).success ?? res[0];
@@ -137,7 +137,7 @@ describe("ERC-2771 meta-tx -> FileRegistry", () => {
     }
     expect((await registry.metaOf(fileId)).cid).to.eq("cid1");
 
-    // --- Non-owner via forwarder (должно зафейлиться внутри цели) ---
+    // --- Non-owner via forwarder (should fail inside target) ---
     const updateData2 = registry.interface.encodeFunctionData("updateCid", [
       fileId,
       "cid2",
@@ -163,10 +163,10 @@ describe("ERC-2771 meta-tx -> FileRegistry", () => {
     const sig2 = await other.signTypedData(domain2, types, req2);
     expect(await forwarder.verify(req2, sig2)).to.eq(true);
 
-    // Проверяем revert через staticCall + селектор кастомной ошибки
+    // Check revert via staticCall + custom error selector
     await expectForwardedRevert(forwarder, req2, sig2, selectorOf("NotOwner()"));
 
-    // Реальный execute (форвардер сам не ревертит) — состояние не меняется
+    // Real execute (forwarder does not revert itself) - state does not change
     await (await forwarder.execute(req2, sig2)).wait();
     expect((await registry.metaOf(fileId)).cid).to.eq("cid1");
   });

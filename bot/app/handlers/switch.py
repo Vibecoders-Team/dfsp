@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _build_keyboard(links: list[BotLink]) -> InlineKeyboardMarkup:
-    """Клавиатура с выбором адреса."""
+    """Keyboard for selecting an address."""
     rows = []
     for link in links:
         prefix = "✅ " if link.is_active else ""
@@ -48,7 +48,7 @@ async def _render_switch(message: Message, links: list[BotLink]) -> None:
 
 @router.message(Command("switch"))
 async def cmd_switch(message: Message) -> None:
-    """Команда /switch — выбор активного адреса."""
+    """Handle /switch - select active address."""
     chat_id = message.chat.id
     try:
         links = await get_bot_links(chat_id)
@@ -76,7 +76,7 @@ async def cmd_switch(message: Message) -> None:
 
 @router.callback_query(F.data.startswith("switch:"))
 async def cb_switch(callback: CallbackQuery) -> None:
-    """Переключение активного адреса по кнопке."""
+    """Switch active address via button."""
     if not callback.message:
         await callback.answer(await get_message("common.missing_message"), show_alert=True)
         return
@@ -98,7 +98,7 @@ async def cb_switch(callback: CallbackQuery) -> None:
         await callback.answer(await get_message("switch.not_found"), show_alert=True)
         return
 
-    # перерисуем список
+    # redraw the list
     try:
         links = await get_bot_links(chat_id)
     except Exception:

@@ -16,7 +16,7 @@ class DFSPClient:
     async def close(self) -> None:
         await self._client.aclose()
 
-    # Пример на будущее
+    # Example for the future
     async def get_health(self) -> Any:
         r = await self._client.get("/health")
         r.raise_for_status()
@@ -29,14 +29,14 @@ class BotProfile(BaseModel):
 
 
 class BotLink(BaseModel):
-    """Одна привязка кошелька к чату."""
+    """A single wallet link to a chat."""
 
     address: str
     is_active: bool
 
 
 class BotFile(BaseModel):
-    """Файл из ответа /bot/files."""
+    """File from the /bot/files response."""
 
     id_hex: str
     name: str
@@ -47,7 +47,7 @@ class BotFile(BaseModel):
 
 
 class BotFileListResponse(BaseModel):
-    """Ответ со списком файлов."""
+    """Response with a list of files."""
 
     files: list[BotFile]
     cursor: str | None = None
@@ -55,7 +55,7 @@ class BotFileListResponse(BaseModel):
 
 async def get_bot_files(chat_id: int, limit: int = 10, cursor: str | None = None) -> BotFileListResponse:
     """
-    Получить список файлов пользователя.
+    Get a list of user's files.
 
     GET {DFSP_API_URL}/bot/files
     Headers: X-TG-Chat-Id
@@ -85,14 +85,14 @@ async def get_bot_files(chat_id: int, limit: int = 10, cursor: str | None = None
 
 async def get_bot_profile(chat_id: int) -> BotProfile | None:
     """
-    Запрос профиля пользователя у бэкенда по Telegram chat_id.
+    Request user profile from the backend by Telegram chat_id.
 
     GET {DFSP_API_URL}/bot/me
     Header: X-TG-Chat-Id: <chat_id>
 
-    Возвращает BotProfile или None, если чат не залинкован (404).
+    Returns BotProfile or None if the chat is not linked (404).
     """
-    # Убираем завершающий слеш из URL, если он есть
+    # Remove trailing slash from URL if it exists
     api_url = str(settings.DFSP_API_URL).rstrip("/")
     url = f"{api_url}/bot/me"
 
@@ -100,13 +100,13 @@ async def get_bot_profile(chat_id: int) -> BotProfile | None:
         resp = await client.get(url, headers={"X-TG-Chat-Id": str(chat_id)})
 
     if resp.status_code == 404:
-        # Чат не привязан к кошельку
+        # Chat is not linked to a wallet
         return None
 
     try:
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        # чтобы логика ошибок была консистентной с остальными вызовами DFSP
+        # keep error handling consistent with other DFSP calls
         raise ValueError(f"DFSP GET /bot/me failed: {exc}") from exc
 
     data = resp.json()
@@ -115,7 +115,7 @@ async def get_bot_profile(chat_id: int) -> BotProfile | None:
 
 async def get_bot_links(chat_id: int) -> list[BotLink] | None:
     """
-    Получить список всех привязанных адресов и активный.
+    Get list of all linked addresses and the active one.
 
     GET {DFSP_API_URL}/bot/links
     Headers: X-TG-Chat-Id, Authorization: Bearer <DFSP_API_TOKEN>
@@ -144,7 +144,7 @@ async def get_bot_links(chat_id: int) -> list[BotLink] | None:
 
 async def switch_bot_link(chat_id: int, address: str) -> bool:
     """
-    Переключить активный адрес на указанный.
+    Switch active address to the specified one.
 
     POST {DFSP_API_URL}/bot/links/switch
     Body: { "address": "0x..." }
@@ -171,7 +171,7 @@ async def switch_bot_link(chat_id: int, address: str) -> bool:
 
 
 class PrepareDownloadResponse(BaseModel):
-    """Ответ от /bot/prepare-download."""
+    """Response from /bot/prepare-download."""
 
     url: str
     ttl: int
@@ -180,13 +180,13 @@ class PrepareDownloadResponse(BaseModel):
 
 async def prepare_download(chat_id: int, cap_id: str) -> PrepareDownloadResponse:
     """
-    Запрос одноразовой ссылки для скачивания файла.
+    Request a one-time link to download a file.
 
     POST {DFSP_API_URL}/bot/prepare-download
     Header: X-TG-Chat-Id: <chat_id>
     Body: {"capId": "0x..."}
 
-    Возвращает PrepareDownloadResponse с одноразовой ссылкой.
+    Return PrepareDownloadResponse with a one-time link.
     """
     api_url = str(settings.DFSP_API_URL).rstrip("/")
     url = f"{api_url}/bot/prepare-download"

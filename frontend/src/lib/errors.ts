@@ -1,4 +1,4 @@
-// Унифицированный текст ошибки для UI
+// Unified UI error text
 import { isAxiosError } from "axios";
 
 type ApiErrorBody = { detail?: unknown } | unknown;

@@ -28,7 +28,7 @@ from app.schemas.action_intent import (
     ActionIntentCreateIn,
     ActionIntentCreateOut,
 )
-from app.schemas.bot import BotProfileResponse  # 👈 вот этого не хватало
+from app.schemas.bot import BotProfileResponse  # was missing before
 from app.security import parse_token
 
 router = APIRouter(prefix="/bot", tags=["Bot"])
@@ -83,8 +83,8 @@ def _parse_chat_id(x_tg_chat_id: str) -> int:
 
 def _resolve_user_by_chat_id_value(chat_id: int, db: Session) -> User:
     """
-    Общая логика: chat_id -> wallet -> User.
-    Используется и как зависимость, и внутри хендлеров.
+    Common logic: chat_id -> wallet -> User.
+    Used both as a dependency and inside handlers.
     """
     wallet_address = telegram_repo.get_wallet_by_chat_id(db, chat_id)
     if not wallet_address:
@@ -107,12 +107,12 @@ def _get_user_by_chat_id(
 
 def _parse_cursor(cursor: str | None) -> datetime | None:
     """
-    Курсор — строка. Сначала пробуем трактовать как timestamp (float),
-    затем как ISO 8601. Это даёт:
-      - стабильный URL-safe формат, когда мы сами генерим курсор;
-      - обратную совместимость, если кто-то шлёт ISO-дату.
+    Cursor is a string. First try as timestamp (float),
+    then as ISO 8601. This gives:
+      - a stable URL-safe format when we generate the cursor;
+      - backward compatibility if someone sends ISO date.
 
-    При неудаче кидаем 400.
+    Raise 400 on failure.
     """
     if cursor is None:
         return None
@@ -125,7 +125,7 @@ def _parse_cursor(cursor: str | None) -> datetime | None:
     if cursor_ts is not None:
         return datetime.fromtimestamp(cursor_ts, tz=UTC)
 
-    # variant 2: ISO-строка
+    # variant 2: ISO string
     try:
         return datetime.fromisoformat(cursor)
     except (TypeError, ValueError) as exc:
@@ -137,9 +137,9 @@ def _parse_cursor(cursor: str | None) -> datetime | None:
 
 def _datetime_to_cursor(dt: datetime | None) -> str | None:
     """
-    Превращаем datetime в строковый курсор.
-    Чтобы избежать проблем с '+' в таймзоне в query-параметре,
-    используем timestamp (float) как строку.
+    Convert datetime to string cursor.
+    To avoid issues with '+' in timezone query params,
+    use timestamp (float) as a string.
     """
     if dt is None:
         return None
@@ -298,7 +298,7 @@ def bot_prepare_download(
             raise HTTPException(status_code=403, detail="not_grantee")
         payload = _build_download_payload(db, chain, user, grant, cap_id)
     else:
-        # fileId путь: владелец файла или первый доступный грант для пользователя
+        # fileId path: file owner or first available grant for the user
         fid = file_id or ""
         if fid.startswith("0x"):
             fid_hex = fid
@@ -316,7 +316,7 @@ def bot_prepare_download(
             raise HTTPException(status_code=404, detail="file_not_found")
 
         if file_obj.owner_id == user.id:
-            # Владелец файла: готовим одноразовую ссылку без гранта
+            # File owner: prepare one-time link without a grant
             try:
                 cid = chain.cid_of(file_id_bytes) or file_obj.cid
             except Exception:
@@ -355,14 +355,14 @@ def bot_get_me(
     user: Annotated[User, Depends(_get_user_by_chat_id)],
 ) -> BotProfileResponse:
     """
-    Bot-friendly профиль пользователя по Telegram chat_id.
+    Bot-friendly user profile by Telegram chat_id.
 
-    Вход:
+    Input:
       - X-TG-Chat-Id (header)
 
-    Выход:
-      - address: связанный wallet-адрес
-      - display_name: имя пользователя, если задано
+    Output:
+      - address: linked wallet address
+      - display_name: user display name if set
     """
     return BotProfileResponse(
         address=(user.eth_address or "").lower(),
@@ -383,17 +383,17 @@ def bot_list_files(
     cursor: str | None = Query(None),
 ) -> dict[str, object]:
     """
-    Bot-friendly список файлов по Telegram chat_id.
+    Bot-friendly file list by Telegram chat_id.
 
-    Вход:
+    Input:
       - X-TG-Chat-Id (header)
-      - limit, cursor (строковый курсор)
+      - limit, cursor (string cursor)
 
-    Ответ:
+    Response:
     {
       "files": [
         {
-          "id_hex": "...",   # без 0x
+          "id_hex": "...",   # without 0x
           "name": "...",
           "size": 123,
           "mime": "...",
@@ -402,7 +402,7 @@ def bot_list_files(
         },
         ...
       ],
-      "cursor": "<строковый курсор или null>"
+      "cursor": "<string cursor or null>"
     }
     """
     cursor_dt = _parse_cursor(cursor)
@@ -424,7 +424,7 @@ def bot_list_files(
         updated_at = f.created_at or datetime.now(UTC)
         files_out.append(
             {
-                "id_hex": f.id.hex(),  # без '0x'
+                "id_hex": f.id.hex(),  # without '0x'
                 "name": f.name,
                 "size": f.size,
                 "mime": f.mime or "application/octet-stream",
@@ -450,14 +450,14 @@ def bot_list_grants(
     cursor: str | None = Query(None),
 ) -> dict[str, object]:
     """
-    Bot-friendly список грантов.
+    Bot-friendly grants list.
 
-    Вход:
+    Input:
       - X-TG-Chat-Id
       - direction = "in" | "out"
       - limit, cursor
 
-    Ответ:
+    Response:
     {
       "grants": [
         {
@@ -470,14 +470,14 @@ def bot_list_grants(
         },
         ...
       ],
-      "cursor": "<строковый курсор или null>"
+      "cursor": "<string cursor or null>"
     }
     """
-    # 1) Сначала валидируем direction — это важно для теста invalid_direction
+    # 1) First validate direction - this is important for invalid_direction test
     if direction not in ("in", "out"):
         raise HTTPException(status_code=400, detail="invalid_direction")
 
-    # 2) Теперь уже разбираем chat_id и пользователя
+    # 2) Now parse chat_id and user
     chat_id = _parse_chat_id(x_tg_chat_id)
     user = _resolve_user_by_chat_id_value(chat_id, db)
 
@@ -531,7 +531,7 @@ def bot_list_grants(
 
 
 def _normalize_checksum(value: object) -> str | None:
-    """Приводит чек-сумму в байтах к hex-строке '0x...'."""
+    """Convert checksum bytes to a hex string '0x...'."""
     if isinstance(value, (bytes, bytearray)):
         return "0x" + value.hex()
     if isinstance(value, str):
@@ -546,21 +546,21 @@ def bot_verify_file(
     chain: Annotated[Chain, Depends(get_chain)],
 ) -> dict[str, bool | str | None]:
     """
-    Bot-friendly верификация файла по fileId.
+    Bot-friendly file verification by fileId.
 
-    Валидация:
-      - формат 0x + 64 hex, иначе 400.
-      - если файла нет в БД — 404.
+    Validation:
+      - format 0x + 64 hex, otherwise 400.
+      - if file not in DB - 404.
 
-    Возвращает:
-      - onchain_ok: есть ли файл в блокчейне
-      - offchain_ok: есть ли файл в БД
-      - match: совпадают ли checksum on-chain и off-chain
-      - lastAnchorTx: последняя транзакция анкора (если есть)
+    Returns:
+      - onchain_ok: whether file exists on-chain
+      - offchain_ok: whether file exists in DB
+      - match: whether on-chain and off-chain checksums match
+      - lastAnchorTx: last anchor transaction (if any)
     """
     log = logging.getLogger(__name__)
 
-    # валидация формата
+    # format validation
     if not (isinstance(file_id, str) and file_id.startswith("0x") and len(file_id) == 66):
         raise HTTPException(status_code=400, detail="bad_file_id")
     try:
@@ -568,26 +568,26 @@ def bot_verify_file(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="bad_file_id") from exc
 
-    # 1. Проверяем off-chain (БД)
+    # 1. Check off-chain (DB)
     file_row = db.get(File, file_id_bytes)
     offchain_ok = file_row is not None
 
     if not offchain_ok:
         raise HTTPException(status_code=404, detail="file_not_found")
 
-    # 2. Проверяем on-chain (блокчейн)
+    # 2. Check on-chain (blockchain)
     onchain_ok = False
     match = False
 
     try:
         raw_onchain_meta = chain.meta_of_full(file_id_bytes)
 
-        # Проверяем, что смарт-контракт вернул непустые данные
-        # (обычно возвращает нули для несуществующего id)
+        # Verify that the smart contract returned non-empty data
+        # (typically returns zeros for a missing id)
         if raw_onchain_meta and any(raw_onchain_meta.values()):
             onchain_ok = True
 
-            # Сравниваем checksum если есть данные в обеих системах
+            # Compare checksum if data exists in both systems
             if file_row.checksum:
                 onchain_checksum = _normalize_checksum(raw_onchain_meta.get("checksum"))
                 offchain_checksum = _normalize_checksum(file_row.checksum)
@@ -595,11 +595,11 @@ def bot_verify_file(
                 if onchain_checksum and offchain_checksum:
                     match = onchain_checksum.lower() == offchain_checksum.lower()
     except Exception as e:
-        # Логируем ошибку, но не прерываем выполнение
+        # Log error but do not stop execution
         log.warning(f"Failed to fetch on-chain meta for {file_id}: {e}")
         onchain_ok = False
 
-    # 3. Получаем последнюю транзакцию анкора (если есть)
+    # 3. Get latest anchor transaction (if any)
     last_anchor_tx: str | None = None
     try:
         latest_anchor = db.scalar(
@@ -630,7 +630,7 @@ def create_action_intent(
     db: DbSessionDep,
 ) -> ActionIntentCreateOut:
     """
-    Создаёт одноразовый интент (handoff) для текущего пользователя.
+    Create a one-time intent (handoff) for the current user.
     """
     now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=ACTION_INTENT_TTL_SECONDS)
@@ -666,7 +666,7 @@ def consume_action_intent(
     db: DbSessionDep,
 ) -> ActionIntentConsumeOut:
     """
-    Потребляет одноразовый интент.
+    Consume a one-time intent.
     """
     owner_addr = (user.eth_address or "").lower()
 

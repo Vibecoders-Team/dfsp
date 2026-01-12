@@ -1,4 +1,4 @@
-"""Обработчики для кнопок главного меню."""
+"""Handlers for the main menu buttons."""
 
 from __future__ import annotations
 
@@ -20,31 +20,31 @@ logger = logging.getLogger(__name__)
 
 @router.callback_query(F.data == "menu:profile")
 async def cb_menu_profile(callback: CallbackQuery) -> None:
-    """Обработчик кнопки 'Мой профиль' из меню."""
+    """Handler for the 'My Profile' button from the menu."""
     if not callback.message:
         await callback.answer(await get_message("common.missing_message"), show_alert=True)
         return
 
-    # Переиспользуем логику /me на исходном сообщении, чтобы не терять bot-инстанс
+    # Reuse the /me logic on the original message to not lose the bot instance
     await me_handlers.cmd_me(callback.message)
     await callback.answer()
 
 
 @router.callback_query(F.data == "menu:files")
 async def cb_menu_files(callback: CallbackQuery) -> None:
-    """Обработчик кнопки 'Мои файлы' из меню."""
+    """Handler for the 'My Files' button from the menu."""
     if not callback.message:
         await callback.answer(await get_message("common.missing_message"), show_alert=True)
         return
 
-    # Переиспользуем логику /files на исходном сообщении, чтобы не терять bot-инстанс
+    # Reuse the /files logic on the original message to not lose the bot instance
     await files_handlers.cmd_files(callback.message)
     await callback.answer()
 
 
 @router.callback_query(F.data == "menu:switch")
 async def cb_menu_switch(callback: CallbackQuery) -> None:
-    """Обработчик кнопки 'Сменить адрес' из меню."""
+    """Handler for the 'Switch Address' button from the menu."""
     if not callback.message:
         await callback.answer(await get_message("common.missing_message"), show_alert=True)
         return
@@ -55,7 +55,7 @@ async def cb_menu_switch(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:notify")
 async def cb_menu_notify(callback: CallbackQuery) -> None:
-    """Обработчик кнопки 'Уведомления' из меню."""
+    """Handler for the 'Notifications' button from the menu."""
     if not callback.message:
         await callback.answer(await get_message("common.missing_message"), show_alert=True)
         return
@@ -66,12 +66,12 @@ async def cb_menu_notify(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:verify")
 async def cb_menu_verify(callback: CallbackQuery) -> None:
-    """Обработчик кнопки 'Проверить файл' из меню."""
+    """Handler for the 'Verify File' button from the menu."""
     if not callback.message:
         await callback.answer(await get_message("common.missing_message"), show_alert=True)
         return
 
-    # Показываем инструкцию с кнопкой для быстрого доступа к файлам
+    # Show instructions with a button for quick access to files
     files_btn = await get_message("buttons.get_file_id")
     home_btn = await get_message("buttons.home")
     keyboard = InlineKeyboardMarkup(
@@ -94,14 +94,14 @@ async def cb_menu_verify(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:home")
 async def cb_menu_home(callback: CallbackQuery) -> None:
-    """Обработчик кнопки 'Главное меню'."""
+    """Handler for the 'Main Menu' button."""
     if not callback.message:
         await callback.answer(await get_message("common.missing_message"), show_alert=True)
         return
 
     from ..services.dfsp_api import get_bot_profile
 
-    # Проверяем статус привязки
+    # Check linking status
     chat_id = callback.message.chat.id
     is_linked = False
     try:

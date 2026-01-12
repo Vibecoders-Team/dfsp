@@ -32,16 +32,16 @@ def _validate_typed_data(td: dict) -> None:
 @router.post("/submit")
 def submit(req: MetaTxSubmitIn, response: Response, db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
     """
-    Принимаем подписанный ForwardRequest и кладем задачу в релейер.
-    Гарантируем детерминированный JSON-ответ со статусом.
-    В DEV-режиме (RELAYER_SYNC_DEV=1) дополнительно выполняем задачу синхронно в текущем процессе.
-    Поведение идемпотентности: мы допускаем повторную постановку в очередь с тем же request_id,
-    опираясь на БД/релейер для дедупликации, чтобы не залипать из-за прежнего NX-флага.
+    Accept signed ForwardRequest and enqueue it in the relayer.
+    Return a deterministic JSON response with status.
+    In DEV mode (RELAYER_SYNC_DEV=1), also execute the task synchronously in-process.
+    Idempotency behavior: we allow re-enqueue with the same request_id,
+    relying on DB/relayer de-duplication to avoid sticking on an old NX flag.
     """
-    # базовая валидация формы typedData (чтобы не падали на .get)
+    # Basic validation of typedData shape (avoid .get errors)
     _validate_typed_data(req.typed_data)
 
-    # мягкая пометка в Redis (без NX) — не блокирует повторную постановку
+    # Soft mark in Redis (without NX) to avoid blocking re-enqueue
     key = f"mtx:req:{req.request_id}"
     try:
         rds.set(key, "queued", ex=3600)
@@ -49,7 +49,7 @@ def submit(req: MetaTxSubmitIn, response: Response, db: Annotated[Session, Depen
         # best-effort, log for diagnostics
         logger.debug("submit_meta_tx: failed to set redis key %s", key, exc_info=True)
 
-    # upsert в БД запись MetaTxRequest (для внутренних дедупов и мониторинга)
+    # Upsert MetaTxRequest in DB (for internal de-duplication and monitoring)
     try:
         rid = uuid.UUID(str(req.request_id))
     except Exception as e:
@@ -66,13 +66,13 @@ def submit(req: MetaTxSubmitIn, response: Response, db: Annotated[Session, Depen
         db.commit()
     except Exception:
         db.rollback()
-        # не критично для постановки задачи
+        # non-critical for enqueueing the task
 
 
-    # ставим задачу в Celery (дедупликация и сериализация произойдут в самой задаче)
+    # Enqueue task in Celery (de-duplication and serialization happen in the task itself)
     task_id = enqueue_forward_request(req.request_id, req.typed_data, req.signature)
 
-    # опциональный DEV path: выполнить синхронно (без воркера)
+    # Optional DEV path: execute synchronously (without worker)
     if os.getenv("RELAYER_SYNC_DEV", "0") == "1":
         try:
             result = _submit_forward_task.apply(args=[req.request_id, req.typed_data, req.signature]).get(timeout=60)
@@ -82,6 +82,6 @@ def submit(req: MetaTxSubmitIn, response: Response, db: Annotated[Session, Depen
             response.status_code = 202
             return {"status": "queued", "task_id": task_id, "error": str(e)}
 
-    # 202 — принято в обработку
+    # 202 — accepted for processing
     response.status_code = 202
     return {"status": "queued", "task_id": task_id}

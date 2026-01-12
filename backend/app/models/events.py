@@ -30,15 +30,15 @@ class Event(Base):
 
     type: Mapped[str] = mapped_column(nullable=False)
 
-    # FK на files.id (BYTEA(32))
+    # FK to files.id (BYTEA(32))
     file_id: Mapped[bytes | None] = mapped_column(
-        sa.LargeBinary(32),  # <--- ТИП ИСПРАВЛЕН
+        sa.LargeBinary(32),  # <--- TYPE FIXED
         ForeignKey("files.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
 
-    # FK на users.id (UUID)
+    # FK to users.id (UUID)
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
@@ -46,5 +46,5 @@ class Event(Base):
         index=True,
     )
 
-    # фиксированной длины 32 байта
+    # fixed length 32 bytes
     payload_hash: Mapped[bytes] = mapped_column(sa.LargeBinary(32), nullable=False)

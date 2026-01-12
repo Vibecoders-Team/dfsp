@@ -52,8 +52,8 @@ export default function AgentSelector({ compact = false, showInlineError = true 
       // metamask path
       await readAgentState();
     } catch (e: unknown) {
-      // Не откатываемся обратно на Local: иначе выглядит как "само переключилось".
-      // Оставляем выбранный signer и показываем ошибку.
+      // Do not revert to Local: otherwise it looks like "auto switched".
+      // Keep selected signer and show the error.
       setErr(e instanceof Error ? e.message : 'Switch signer failed');
     } finally {
       setBusy(false);

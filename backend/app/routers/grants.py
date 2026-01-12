@@ -49,10 +49,10 @@ def list_my_grants(
     role: Literal["received", "granted"] = Query("received"),
 ) -> dict[str, Any]:
     """
-    Список грантов для текущего пользователя.
-    role=received — я получатель (grantee)
-    role=granted  — я выдавший (grantor)
-    Возвращает items: [{ fileId, capId, grantor, grantee, maxDownloads, usedDownloads, status, expiresAt, fileName? }]
+    List grants for the current user.
+    role=received - I am the grantee
+    role=granted  - I am the grantor
+    Returns items: [{ fileId, capId, grantor, grantee, maxDownloads, usedDownloads, status, expiresAt, fileName? }]
     """
     if role == "received":
         rows = db.execute(

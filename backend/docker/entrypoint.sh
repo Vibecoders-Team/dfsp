@@ -23,7 +23,7 @@ gen_auto_revision() {
     if [[ -n "${latest}" ]]; then
       if ! grep -q "from sqlalchemy.dialects import postgresql" "${latest}"; then
         echo "[entrypoint] patching: add PG dialect import to ${latest}"
-        # вставим сразу после 'import sqlalchemy as sa'
+        # insert right after 'import sqlalchemy as sa'
         sed -i '/^import sqlalchemy as sa$/a from sqlalchemy.dialects import postgresql' "${latest}"
       fi
       echo "[entrypoint] generated revision head:"

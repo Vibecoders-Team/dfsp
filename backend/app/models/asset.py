@@ -16,23 +16,23 @@ class Asset(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
-    # file id (bytes32) в hex (0x + 64)
+    # file id (bytes32) in hex (0x + 64)
     file_id_hex: Mapped[str] = mapped_column(String(66), index=True)
 
-    # CID из IPFS
+    # CID from IPFS
     cid: Mapped[str] = mapped_column(String(120), index=True)
 
-    # чейн
+    # chain
     tx_hash: Mapped[str] = mapped_column(String(66), index=True)  # 0x + 64
-    owner: Mapped[str | None] = mapped_column(String(42), index=True)  # eth-адрес
+    owner: Mapped[str | None] = mapped_column(String(42), index=True)  # eth address
     chain_block: Mapped[int | None] = mapped_column(Integer, index=True)
     chain_timestamp: Mapped[int | None] = mapped_column(Integer)  # unix sec
 
-    # файл
+    # file
     size: Mapped[int] = mapped_column(Integer)
     mime: Mapped[str | None] = mapped_column(String(128))
 
-    # владелец в нашей системе (по JWT), может быть null
+    # owner in our system (from JWT), can be null
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )

@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-# Добавляем корень проекта (bot/) в sys.path
+# Add project root (bot/) to sys.path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -39,11 +39,11 @@ def test_rate_limiter_resets_after_window():
     rl.check(1, now=0.0)
     rl.check(1, now=1.0)
 
-    # блок
+    # block within the same window
     allowed3, _ = rl.check(1, now=2.0)
     assert allowed3 is False
 
-    # новое окно
+    # new window
     allowed4, retry4 = rl.check(1, now=15.0)
 
     assert allowed4 is True

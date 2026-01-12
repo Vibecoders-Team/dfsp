@@ -16,7 +16,7 @@ export default function IntentPage() {
 
   useEffect(() => {
     if (!intentId) {
-      setError("Не передан идентификатор intent.");
+      setError("Intent identifier is missing.");
       setStatus("error");
       return;
     }
@@ -69,30 +69,30 @@ export default function IntentPage() {
         <div>
           <p className="text-sm text-muted-foreground uppercase tracking-wide mb-1">Intent</p>
           <h1 className="text-2xl font-semibold">Handoff</h1>
-          <p className="text-sm text-muted-foreground mt-1">Интенты одноразовые и истекают через ~15 минут.</p>
+          <p className="text-sm text-muted-foreground mt-1">Intents are one-time and expire in ~15 minutes.</p>
         </div>
 
         {status === "loading" && (
           <div className="flex items-center gap-2 text-foreground">
             <span className="h-4 w-4 rounded-full border-b-2 border-primary animate-spin" />
-            <span>Подтверждаем intent…</span>
+            <span>Confirming intent…</span>
           </div>
         )}
 
         {status === "error" && (
           <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-            <p className="font-semibold mb-1">Не удалось использовать intent</p>
-            <p>{error || "Неизвестная ошибка."}</p>
-            <p className="mt-2 text-xs text-red-700">Интенты можно использовать только один раз; проверьте срок действия.</p>
+            <p className="font-semibold mb-1">Failed to use intent</p>
+            <p>{error || "Unknown error."}</p>
+            <p className="mt-2 text-xs text-red-700">Intents can be used only once; check expiration.</p>
           </div>
         )}
 
         {status === "ready" && data?.ok && (
           <div className="space-y-3">
             <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-              <p className="font-semibold">Intent использован</p>
+              <p className="font-semibold">Intent used</p>
               <p className="text-emerald-900">
-                Действие: <span className="font-mono">{data.action}</span>. Перенаправляем на нужную страницу…
+                Action: <span className="font-mono">{data.action}</span>. Redirecting to the right page…
               </p>
             </div>
             <div>
@@ -100,15 +100,15 @@ export default function IntentPage() {
               <pre className="text-xs bg-muted text-foreground rounded p-3 overflow-auto max-h-64">{payloadStr}</pre>
             </div>
             <Link to="/files" className="inline-flex px-3 py-2 rounded bg-gray-900 text-white text-sm">
-              Открыть список файлов
+              Open file list
             </Link>
           </div>
         )}
 
         {status === "ready" && !data?.ok && (
           <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            <p className="font-semibold mb-1">Intent уже использован или пустой</p>
-            <p>Повторное потребление недоступно.</p>
+            <p className="font-semibold mb-1">Intent already used or empty</p>
+            <p>Repeat consumption is not available.</p>
           </div>
         )}
       </div>
@@ -121,11 +121,11 @@ function describeIntentError(err: unknown): string {
     const status = err.response?.status;
     const detailRaw = (err.response?.data as { detail?: unknown } | undefined)?.detail;
     const detail = typeof detailRaw === "string" ? detailRaw : undefined;
-    if (status === 404) return "Intent не найден.";
-    if (status === 409 || detail === "already_used") return "Intent уже использован.";
-    if (status === 410 || detail === "expired") return "Intent истёк.";
+    if (status === 404) return "Intent not found.";
+    if (status === 409 || detail === "already_used") return "Intent already used.";
+    if (status === 410 || detail === "expired") return "Intent expired.";
   }
-  return getErrorMessage(err, "Intent недоступен");
+  return getErrorMessage(err, "Intent unavailable");
 }
 
 function persistIntentPayload(id: string, payload: Record<string, unknown>) {

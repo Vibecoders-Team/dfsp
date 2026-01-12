@@ -29,7 +29,7 @@ def get_user_pubkey(addr: str, db: Annotated[Session, Depends(get_db)]) -> dict[
     u: User | None = db.query(User).filter(User.eth_address == addr.lower()).one_or_none()
     if u is None:
         raise HTTPException(404, "user_not_found")
-    # Публичный ключ не секретный — отдаём как есть
+    # Public key is not secret; return as-is
     return {"address": addr, "rsa_public": u.rsa_public, "display_name": u.display_name}
 
 
@@ -66,4 +66,3 @@ def update_rsa_public(
     db.commit()
 
     return {"ok": True, "address": user.eth_address}
-

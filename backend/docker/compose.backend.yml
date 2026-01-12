@@ -1,8 +1,8 @@
 name: dfsp-backend-dev
 
-# Общие переменные из env-файлов:
-# - .env.dev — дефолты для команды
-# - .env.local — локальные оверрайды разработчика (если есть — берёт приоритет)
+# Shared variables from env files:
+# - .env.dev: defaults for the command
+# - .env.local: developer overrides (if present, takes priority)
 x-env-files: &env_files
   env_file:
     - path: ../../deploy/.env.dev
@@ -19,13 +19,13 @@ volumes:
   redis_data:
 
 services:
-  # ----------- опциональная локальная БД (включается профилем localdb) ----------
+  # ----------- optional local DB (enabled via localdb profile) ----------
   db:
     image: postgres:16-alpine
     container_name: dfsp-db
     <<: *env_files
-    # ВАЖНО: значения POSTGRES_* считаем из DB_*, приходящих через env_file.
-    # Делаем это ДО запуска стандартного entrypoint postgres.
+    # IMPORTANT: read POSTGRES_* values from DB_* provided via env_file.
+    # Do this BEFORE the default postgres entrypoint starts.
     entrypoint:
       - /bin/sh
       - -c
@@ -34,11 +34,11 @@ services:
         export POSTGRES_PASSWORD="${DB_PASSWORD:-dfsp}";
         export POSTGRES_DB="${DB_NAME:-dfsp}";
         exec /usr/local/bin/docker-entrypoint.sh postgres
-    # Порты нужны Compose заранее — оставляем как есть
+    # Compose needs the ports up front; keep as-is
     ports:
       - "${DB_HOST_PORT:-5432}:5432"
     healthcheck:
-      # Экранируем $ → $$, чтобы переменные подставились ВНУТРИ контейнера
+      # Escape $ -> $$ so variables are expanded INSIDE the container
       test:
         [ "CMD-SHELL",
           "pg_isready -U $${DB_USER:-dfsp} -d $${DB_NAME:-dfsp} -p 5432" ]
@@ -50,13 +50,13 @@ services:
     networks: [ dfsp ]
     profiles: [ "localdb" ]
 
-  # ------------------------ Redis (по умолчанию включён) ------------------------
+  # ------------------------ Redis (enabled by default) ------------------------
   redis:
     image: redis:7.2-alpine
     container_name: dfsp-redis
     <<: *env_files
-    # env для самого redis-образа не нужен — он слушает 6379.
-    # Порт наружу — задаётся Compose.
+    # redis image does not need env; it listens on 6379.
+    # External port is set by Compose.
     ports:
       - "${REDIS_HOST_PORT:-6379}:6379"
     healthcheck:
@@ -68,7 +68,7 @@ services:
       - redis_data:/data
     networks: [ dfsp ]
 
-  # ------------------------ Миграции (run-once, опционально) --------------------
+  # ------------------------ Migrations (run-once, optional) --------------------
   migrator:
     build:
       context: ..
@@ -85,7 +85,7 @@ services:
         export WAIT_FOR_TIMEOUT="$${WAIT_FOR_TIMEOUT:-60}";
         ./docker/entrypoint.sh migrate
     environment:
-      # DEV: автогенерация ревизий перед upgrade
+      # DEV: auto-generate revisions before upgrade
       ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
     volumes:
       - ../app:/app/app
@@ -107,7 +107,7 @@ services:
       dockerfile: Dockerfile
     container_name: dfsp-api
     environment:
-      API_AUTO_MIGRATE: "${API_AUTO_MIGRATE:-true}"   # dev-удобство
+      API_AUTO_MIGRATE: "${API_AUTO_MIGRATE:-true}"   # dev convenience
       ALEMBIC_AUTO_REVISION: "${ALEMBIC_AUTO_REVISION:-true}"
     working_dir: /app
     <<: *env_files

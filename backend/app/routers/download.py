@@ -27,7 +27,7 @@ from app.services.notification_publisher import NotificationPublisher
 router = APIRouter(prefix="/download", tags=["download"])
 logger = logging.getLogger(__name__)
 
-# ... (функция require_user остается без изменений)
+# ... (require_user function stays unchanged)
 AuthorizationHeader = Annotated[str, Header(..., alias="Authorization")]
 
 ZERO_ADDR = "0x0000000000000000000000000000000000000000"
@@ -59,7 +59,7 @@ def _publish_download_event(
     *,
     reason: str | None = None,
 ) -> None:
-    """Публикует download_allowed/denied если есть chat_id."""
+    """Publish download_allowed/denied if chat_id is available."""
     try:
         chat_id = get_active_chat_id_for_user(db, user)
         if not chat_id:
@@ -181,8 +181,8 @@ def _load_one_time_payload(token: str) -> dict[str, Any] | None:
 @router.get("/once/{token}")
 def get_one_time_payload(token: str) -> dict[str, Any]:
     """
-    Возвращает и сразу инвалидывает одноразовый payload для расшифровки.
-    410, если токен не найден/уже использован.
+    Return and immediately invalidate the one-time payload for decryption.
+    410 if the token is missing or already used.
     """
     if not token:
         raise HTTPException(400, "bad_token")
@@ -197,13 +197,13 @@ def get_one_time_payload(token: str) -> dict[str, Any]:
 @router.get("/{cap_id}")
 def get_download_info(
     cap_id: str,
-    # Убираем user=Depends(require_user) и заменяем на зависимость-защитник.
-    # Она внутри вызовет get_current_user, проверит PoW и вернет QuotaManager.
+    # Remove user=Depends(require_user) and replace with a guard dependency.
+    # It will call get_current_user, check PoW, and return QuotaManager.
     quota_manager: Annotated[QuotaManager, Depends(protect_download)],
     db: Annotated[Session, Depends(get_db)],
     chain: Annotated[Chain, Depends(get_chain)],
 ) -> dict[str, Any]:
-    user = quota_manager.user  # Получаем пользователя из менеджера
+    user = quota_manager.user  # pull user from the manager
 
     if not (isinstance(cap_id, str) and cap_id.startswith("0x") and len(cap_id) == 66):
         raise HTTPException(400, "bad_cap_id")
@@ -261,14 +261,14 @@ def get_download_info(
 
             enc_b64 = base64.b64encode(grant.enc_key).decode("ascii")
             out = {"encK": enc_b64, "ipfsPath": f"/ipfs/{cid}"}
-            # Добавим имя файла, если известно
+            # Add file name if available
             try:
                 file_obj2: File | None = db.get(File, file_id_bytes)
                 if file_obj2 and file_obj2.name:
                     out["fileName"] = str(file_obj2.name)
             except Exception as e:
                 logger.debug("get_download_info: failed reading file name for %s: %s", file_hex, e, exc_info=True)
-            # typedData как было
+            # typedData as before
             try:
                 ac = chain.get_access_control()
                 to_addr = getattr(ac, "address", None) or Web3.to_checksum_address(ZERO_ADDR)
@@ -346,10 +346,10 @@ def get_download_info(
         _publish_download_event(db, user, cap_id, "download_denied", reason="registry_unavailable")
         raise HTTPException(502, "registry_unavailable")
 
-    # В соответствии с AC: "учитываем useOnce только при успешной выдаче encK"
+    # Per AC: "count useOnce only on successful encK issuance"
     quota_manager.consume_download_bytes(file_id_bytes)
 
-    # Готовим deterministic request_id и typedData для useOnce — отдаём клиенту для подписи
+    # Prepare deterministic request_id and typedData for useOnce; return to client for signing
     req_name = f"useOnce:{cap_id}:{user.id}"
     req_uuid = uuid.uuid5(uuid.NAMESPACE_URL, req_name)
 

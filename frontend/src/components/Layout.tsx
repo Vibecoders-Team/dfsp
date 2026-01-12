@@ -17,7 +17,7 @@ import type * as React from "react";
 
 interface LayoutProps {
   children: React.ReactNode;
-  publicDoc?: boolean; // новый флаг для публичных документов (Terms / Privacy)
+  publicDoc?: boolean; // new flag for public documents (Terms / Privacy)
 }
 
 export default function Layout({ children, publicDoc }: LayoutProps) {

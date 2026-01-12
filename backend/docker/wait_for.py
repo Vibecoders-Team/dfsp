@@ -13,10 +13,10 @@ logger = logging.getLogger(__name__)
 
 def _normalize_dsn(dsn: str) -> str:
     """
-    Приводим DSN к формату понятному psycopg:
+    Normalize DSN to a format understandable by psycopg:
     - postgresql+psycopg:// -> postgresql://
     - postgresql+asyncpg:// -> postgresql://
-    - убираем лишние кавычки, если попали из env
+    - remove extra quotes if they came from env
     """
     if not dsn:
         return dsn

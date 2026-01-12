@@ -21,8 +21,8 @@ const STATUS_STORAGE_KEY = "dfsp_key_status_ev";
 
 function openDB(): Promise<IDBDatabase> {
   if (!HAS_IDB) {
-    // Не используем транзакции — idbGet/idbSet обрабатывают MEM_STORE напрямую.
-    // Возвращать реальный DB объект не требуется.
+    // No transactions - idbGet/idbSet handle MEM_STORE directly.
+    // No need to return a real DB object.
     return Promise.reject(new Error('indexedDB not available'));
   }
   return new Promise((resolve, reject) => {
@@ -97,7 +97,7 @@ function ab2b64(ab: ArrayBuffer): string { const u8 = new Uint8Array(ab); let s=
 function b64toAb(b64: string): ArrayBuffer { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); return u8.buffer; }
 
 // ---- EOA encrypted storage ----
-const KEY_EOA_PRIV_LEGACY = "eoaPrivHex"; // незашифрованный (для миграции)
+const KEY_EOA_PRIV_LEGACY = "eoaPrivHex"; // unencrypted (for migration)
 const KEY_EOA_ENC = "eoaPrivEnc";
 const KEY_EOA_SALT = "eoaPrivSalt";
 const KEY_EOA_IV = "eoaPrivIv";
@@ -112,7 +112,7 @@ function isAutolockEnabled(): boolean {
   try { return (localStorage.getItem(AUTOLOCK_KEY) ?? '1') === '1'; } catch { return true; }
 }
 function scheduleAutoLock(){
-  if (!isAutolockEnabled()) return; // не ставим таймер, если выключено
+  if (!isAutolockEnabled()) return; // do not set timer if disabled
   if(autoLockTimer) clearTimeout(autoLockTimer);
   autoLockTimer = window.setTimeout(()=>lockEOA(), AUTO_LOCK_MS);
 }
@@ -142,7 +142,7 @@ function applyIncomingStatus(status: "locked" | "unlocked") {
   if (status === 'locked') {
     lockEOALocal();
   } else {
-    // Не можем разблокировать без пароля, но обновим индикатор между вкладками
+    // Can't unlock without password, but update indicator between tabs
     emitKeyStatus('unlocked');
   }
 }
@@ -487,7 +487,7 @@ export function __resetKeychainForTests() {
   statusSyncInitialized = false;
 }
 export async function __injectLegacyRsaPkcs8(pkcs8: ArrayBuffer) {
-  // Сохраняем как будто старый RSA-PSS ключ
+  // Save as if it were an old RSA-PSS key
   await idbSet(KEY_RSA_PRIV_PKCS8, pkcs8);
   await idbSet(KEY_RSA_ALGO, 'PSS');
 }

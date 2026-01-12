@@ -13,12 +13,12 @@ class Anchor(Base):
     __tablename__ = "anchors"
     __table_args__ = (UniqueConstraint("period_id", name="uq_anchors_period"),)
 
-    # для PG корректнее Identity, но autoincrement на PK int тоже ок
+    # Identity is more correct for PG, but autoincrement on int PK is OK
     id: Mapped[int] = mapped_column(sa.Integer, sa.Identity(), primary_key=True)
 
     period_id: Mapped[int] = mapped_column(sa.Integer, nullable=False)
 
-    # 32 байта (bytea)
+    # 32 bytes (bytea)
     root: Mapped[bytes] = mapped_column(sa.LargeBinary(32), nullable=False)
 
     # Transaction hash on blockchain (optional, for future integration)

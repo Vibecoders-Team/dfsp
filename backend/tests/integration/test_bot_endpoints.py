@@ -12,22 +12,22 @@ pytestmark = pytest.mark.e2e
 
 
 # =========================
-# Вспомогательные функции
+# Helper functions
 # =========================
 
 
 def setup_user_with_files(client: httpx.Client, file_count: int) -> tuple[int, dict, EIP712Signer]:
-    """
-    Регистрирует нового пользователя, линкует Telegram chat_id
-    и создаёт file_count файлов через /files + /meta-tx/submit.
+    """Register a new user, link Telegram ``chat_id`` and create ``file_count`` files.
 
-    Возвращает:
-      (chat_id, auth_headers, signer)
+    Files are created via ``/files`` + ``/meta-tx/submit``.
+
+    Returns:
+        (chat_id, auth_headers, signer)
     """
     signer = EIP712Signer("0x" + secrets.token_hex(32))
     chat_id = secrets.randbelow(1_000_000_000)
 
-    # Регистрация юзера
+    # Register user
     challenge_resp = client.post("/auth/challenge")
     assert challenge_resp.status_code == 200
     signature, typed_data = signer.sign(challenge_resp.json()["nonce"])
@@ -43,7 +43,7 @@ def setup_user_with_files(client: httpx.Client, file_count: int) -> tuple[int, d
     assert register_resp.status_code == 200
     auth_headers = {"Authorization": f"Bearer {register_resp.json()['access']}"}
 
-    # Линкуем Telegram chat_id
+    # Link Telegram chat_id
     link_start_resp = client.post("/tg/link-start", json={"chat_id": chat_id})
     assert link_start_resp.status_code == 200
     client.post(
@@ -55,7 +55,7 @@ def setup_user_with_files(client: httpx.Client, file_count: int) -> tuple[int, d
         headers=auth_headers,
     )
 
-    # Создаём файлы
+    # Create files
     for i in range(file_count):
         file_payload = {
             "fileId": "0x" + secrets.token_hex(32),
@@ -84,14 +84,15 @@ def setup_user_with_grants(
     grant_count: int,
     pow_factory: Callable[[], dict],
 ) -> dict:
-    """
-    Создаёт grant_count файлов у grantor и расшаривает их на grantee
-    через /files/{id}/share + /meta-tx/submit.
-    Возвращает словарь с chat_id грантора и гранти.
+    """Create ``grant_count`` files for grantor and share them with grantee.
+
+    Sharing is done via ``/files/{id}/share`` + ``/meta-tx/submit``.
+
+    Returns a dict with grantor and grantee ``chat_id`` values.
     """
     grantor_chat_id, grantor_auth, grantor_signer = setup_user_with_files(client, grant_count)
 
-    # создаём второго пользователя (grantee) и линкуем его Telegram chat_id
+    # Create second user (grantee) and link their Telegram chat_id
     grantee_signer = EIP712Signer("0x" + secrets.token_hex(32))
     grantee_chat_id = secrets.randbelow(1_000_000_000)
     challenge_resp_B = client.post("/auth/challenge")
@@ -118,7 +119,7 @@ def setup_user_with_grants(
         headers=grantee_auth,
     )
 
-    # Берём файлы grantor'а через /bot/files
+    # Fetch grantor files via /bot/files
     files_resp = client.get("/bot/files", headers={"X-TG-Chat-Id": str(grantor_chat_id)})
     assert files_resp.status_code == 200
     created_files_data = files_resp.json()
@@ -126,7 +127,7 @@ def setup_user_with_grants(
     created_files = created_files_data["files"]
     assert len(created_files) >= grant_count
 
-    # Шарим каждый файл grantee
+    # Share each file with grantee
     for i in range(grant_count):
         file_id_hex = created_files[i]["id_hex"]
         file_id_bytes = "0x" + file_id_hex
@@ -156,9 +157,7 @@ def setup_user_with_grants(
 
 
 def _register_user_for_bot_jwt(client: httpx.Client) -> tuple[EIP712Signer, dict]:
-    """
-    Быстрая регистрация пользователя для JWT-бот-эндпоинтов (без Telegram линковки).
-    """
+    """Quick user registration for JWT-based bot endpoints (without Telegram linking)."""
     signer = EIP712Signer("0x" + secrets.token_hex(32))
     challenge_resp = client.post("/auth/challenge")
     assert challenge_resp.status_code == 200
@@ -178,7 +177,7 @@ def _register_user_for_bot_jwt(client: httpx.Client) -> tuple[EIP712Signer, dict
 
 
 # =========================
-# Тесты для /bot/me
+# Tests for /bot/me
 # =========================
 
 
@@ -195,7 +194,7 @@ def test_bot_me_linked_chat_id(client: httpx.Client):
 
 def test_bot_me_no_header(client: httpx.Client):
     resp = client.get("/bot/me")
-    # Поведение выравниваем с /bot/files: отсутствие заголовка -> 400
+    # Align behaviour with /bot/files: missing header -> 400
     assert resp.status_code == 400
 
 
@@ -206,7 +205,7 @@ def test_bot_me_unlinked_chat_id(client: httpx.Client):
 
 
 # =========================
-# Тесты для /bot/files
+# Tests for /bot/files
 # =========================
 
 
@@ -232,7 +231,7 @@ def test_get_files_with_pagination(client: httpx.Client):
     cursor = data1["cursor"]
     assert cursor is not None
 
-    # используем курсор как есть
+    # use cursor as-is
     response2 = client.get(f"/bot/files?limit=3&cursor={cursor}", headers=headers)
     assert response2.status_code == 200, f"Failed on second page: {response2.text}"
     data2 = response2.json()
@@ -258,7 +257,7 @@ def test_get_files_invalid_cursor(client: httpx.Client):
 
 
 # =========================
-# Тесты для /bot/grants
+# Tests for /bot/grants
 # =========================
 
 
@@ -311,7 +310,7 @@ def test_grants_invalid_direction(client: httpx.Client):
 
 
 # =========================
-# Тесты для /bot/verify/{fileId}
+# Tests for /bot/verify/{fileId}
 # =========================
 
 
@@ -332,10 +331,10 @@ def test_bot_verify_existing_file(client: httpx.Client):
 
     assert set(body.keys()) == {"onchain_ok", "offchain_ok", "match", "lastAnchorTx"}
     assert body["offchain_ok"] is True
-    # Файл может быть в блокчейне, если он был заанкорен, поэтому проверяем только структуру
+    # File may be on-chain if it was anchored, so we only check the structure
     assert isinstance(body["onchain_ok"], bool)
     assert isinstance(body["match"], bool)
-    # lastAnchorTx может быть None или строкой с хешем транзакции
+    # lastAnchorTx can be None or a string with the transaction hash
     assert body["lastAnchorTx"] is None or isinstance(body["lastAnchorTx"], str)
 
 
@@ -351,14 +350,14 @@ def test_bot_verify_not_found(client: httpx.Client):
 
 
 # =========================
-# Тесты для /bot/action-intents
+# Tests for /bot/action-intents
 # =========================
 
 
 def test_action_intent_create_and_consume(client: httpx.Client):
     """
-    Создаём интент через POST /bot/action-intents и потребляем его через
-    POST /bot/action-intents/consume тем же пользователем.
+    Create intent via POST /bot/action-intents and consume it via
+    POST /bot/action-intents/consume with the same user.
     """
     signer, headers = _register_user_for_bot_jwt(client)
 
@@ -387,7 +386,7 @@ def test_action_intent_create_and_consume(client: httpx.Client):
 
 def test_action_intent_wrong_owner_forbidden(client: httpx.Client):
     """
-    Интент нельзя потребить под другим пользователем.
+    Intent cannot be consumed by a different user.
     """
     signer_a, headers_a = _register_user_for_bot_jwt(client)
     signer_b, headers_b = _register_user_for_bot_jwt(client)
@@ -411,7 +410,7 @@ def test_action_intent_wrong_owner_forbidden(client: httpx.Client):
 
 def test_action_intent_double_consume_fails(client: httpx.Client):
     """
-    Повторное потребление того же state запрещено (intent_already_used).
+    Double consumption of the same state is forbidden (intent_already_used).
     """
     signer, headers = _register_user_for_bot_jwt(client)
 

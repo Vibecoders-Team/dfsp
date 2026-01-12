@@ -45,12 +45,12 @@ class Chain:
                 self._acct = Account.from_key(relayer_private_key)
                 if not tx_from:
                     tx_from = self._acct.address
-                # default_account используется web3 для газ-оценки и т.п.
+                # default_account is used by web3 for gas estimation, etc.
                 self.w3.eth.default_account = self._acct.address  # type: ignore[assignment]
                 log.info("Relayer signing enabled (direct mode): %s", self._acct.address)
             except Exception as e:
                 log.warning("Failed to init relayer account: %s", e)
-        # основной целевой контракт
+        # main target contract
         with open(deploy_json_path, encoding="utf-8") as _f:
             d = json.load(_f)
         c = d["contracts"][contract_name]
@@ -68,7 +68,7 @@ class Chain:
         self.contracts: dict[str, Any] = {}
         self._load_contracts()
 
-        # Авто-пополнение релейера в dev/anvil, если баланс нулевой и есть unlocked аккаунты
+        # Auto-funding the relayer in dev/anvil if the balance is zero and there are unlocked accounts
         try:
             if self._acct is not None:
                 bal = int(self.w3.eth.get_balance(self._acct.address))
@@ -81,12 +81,12 @@ class Chain:
                             tx = {
                                 "from": funder,
                                 "to": self._acct.address,
-                                "value": Web3.to_wei(10, "ether"),  # Увеличиваем до 10 ETH для покрытия высоких gas
+                                "value": Web3.to_wei(10, "ether"),  # Increased to 10 ETH to cover high gas
                                 "gas": 21_000,
                                 "chainId": self.chain_id,
                             }
                             try:
-                                # Без комиссий при baseFee=0
+                                # No fees when baseFee=0
                                 latest = self.w3.eth.get_block("latest")
                                 base_fee = int(latest.get("baseFeePerGas") or 0)
                                 if base_fee == 0:
@@ -111,7 +111,7 @@ class Chain:
         except Exception as e:
             log.debug("Relayer auto-fund check failed: %s", e, exc_info=True)
 
-    # ----------------- базовое -----------------
+    # ----------------- basics -----------------
 
     def _tx(self) -> dict[str, Any]:
         tx: dict[str, Any] = {"chainId": self.chain_id, "gas": 2_000_000, "value": 0}
@@ -120,7 +120,7 @@ class Chain:
         return tx
 
     def _fill_tx_defaults(self, tx: dict[str, Any]) -> dict[str, Any]:
-        # Заполняем nonce, gas и gasPrice / maxFeePerGas если нужно, аккуратно приводя к TxParams
+        # Fill nonce, gas, and gasPrice / maxFeePerGas if needed, carefully coercing to TxParams
         try:
             if "from" not in tx and self.tx_from:
                 tx["from"] = self.tx_from
@@ -133,7 +133,7 @@ class Chain:
                     log.debug("failed to read transaction nonce: %s", e, exc_info=True)
             if "gas" not in tx:
                 try:
-                    # Словарь для оценки газа: только разрешенные ключи и без None
+                    # Gas estimation dict: only allowed keys and no None
                     allowed = {
                         k: v
                         for k, v in tx.items()
@@ -141,7 +141,7 @@ class Chain:
                     }
                     # cast to object first to satisfy strict type-checkers
                     gas_est = self.w3.eth.estimate_gas(cast(TxParams, cast(object, allowed)))
-                    tx["gas"] = min(int(gas_est), 2_000_000)  # Ограничиваем gas, чтобы не превысить баланс
+                    tx["gas"] = min(int(gas_est), 2_000_000)  # Cap gas to avoid exceeding balance
                 except Exception:
                     tx["gas"] = 2_000_000
             if ("gasPrice" not in tx) and ("maxFeePerGas" not in tx) and ("maxPriorityFeePerGas" not in tx):
@@ -155,7 +155,7 @@ class Chain:
 
     def _send_tx(self, built_tx: dict[str, Any]) -> str:
         tx = self._fill_tx_defaults(dict(built_tx))
-        # Убеждаемся, что from, chainId, nonce установлены для send_transaction fallback
+        # Ensure from, chainId, nonce are set for send_transaction fallback
         tx["from"] = tx.get("from", self.tx_from)
         tx["chainId"] = tx.get("chainId", self.chain_id)
         if "nonce" not in tx and tx.get("from"):
@@ -163,13 +163,13 @@ class Chain:
                 tx["nonce"] = self.w3.eth.get_transaction_count(tx["from"])
             except Exception as e:
                 log.debug("failed to get transaction nonce (fallback): %s", e, exc_info=True)
-        # Если есть приватный ключ — подписываем вручную
+        # If private key exists, sign manually
         if self._acct and self._relayer_pk:
             try:
                 from eth_account import Account  # type: ignore
 
                 signed = Account.sign_transaction(tx, private_key=self._relayer_pk)
-                # Совместимость разных версий eth-account: пытаемся получить raw-транзакцию из разных атрибутов
+                # eth-account version compatibility: try to get raw tx from different attrs
                 raw = getattr(signed, "rawTransaction", None)
                 if raw is None:
                     raw = getattr(signed, "raw_transaction", None)
@@ -188,7 +188,7 @@ class Chain:
                 return hexh
             except Exception as e:
                 log.error("Raw sign/send failed, fallback to send_transaction: %s", e)
-        # Fallback: используем unlocked аккаунт (Anvil / dev chain)
+        # Fallback: use unlocked account (Anvil / dev chain)
         try:
             tx_hash = self.w3.eth.send_transaction(tx)  # type: ignore[arg-type]
             return tx_hash.hex()
@@ -371,7 +371,7 @@ class Chain:
                         "type": evt_name,
                         "blockNumber": lg["blockNumber"],
                         "txHash": lg["transactionHash"].hex(),
-                        # ✅ .get с дефолтом, чтобы TypedDict нас не пугал
+                        # ✅ .get with default to keep TypedDict happy
                         "timestamp": int(block.get("timestamp", 0)),
                         "owner": args.get("owner"),
                         "cid": args.get("cid"),
@@ -386,7 +386,7 @@ class Chain:
         events.sort(key=lambda x: (x["blockNumber"], x["timestamp"]))
         return events
 
-    # ----------------- НОВОЕ: encode + EIP-712 для форвардера -----------------
+    # ----------------- NEW: encode + EIP-712 for forwarder -----------------
 
     def get_forwarder(self) -> Contract:
         return self.get_contract("MinimalForwarder")
@@ -421,7 +421,7 @@ class Chain:
         # getNonce is per-signer; leave uncached (it changes frequently on use)
         nonce = int(fwd.functions.getNonce(from_addr).call())
 
-        # ✅ нормализация data → hex без использования hexstr= на str
+        # ✅ normalize data -> hex without using hexstr= on str
         if isinstance(data, (bytes, bytearray)):
             data_hex = "0x" + bytes(data).hex()
         elif isinstance(data, str):
@@ -517,7 +517,7 @@ class Chain:
                 int(msg.get("value", 0)),
                 int(msg.get("gas", 0)),
                 int(msg["nonce"]),
-                # ✅ подсказываем типизатору, что это hex-строка
+                # ✅ hint type checker that this is a hex string
                 Web3.to_bytes(hexstr=cast(HexStr, msg["data"])),
             )
         except Exception as e:

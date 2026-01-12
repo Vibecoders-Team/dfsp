@@ -50,12 +50,12 @@ class Grant(Base):
     tx_hash: Mapped[str | None] = mapped_column(sa.String, nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
 
-    # зашифрованный ключ (encK), bytea
+    # encrypted key (encK), bytea
     enc_key: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    # Отношения для ORM
+    # ORM relationships
     file = relationship("File", back_populates="grants")
     grantor = relationship("User", foreign_keys=[grantor_id], back_populates="given_grants")
     grantee = relationship("User", foreign_keys=[grantee_id], back_populates="received_grants")

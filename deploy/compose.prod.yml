@@ -1,7 +1,7 @@
 name: dfsp-prod
 
-# --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
-# Драйвер "local" (сжатый бинарный формат, быстрый) + ротация
+# --- LOGGING SETUP ---
+# "local" driver (compressed binary format, fast) + rotation
 x-logging: &default-logging
   driver: "local"
   options:
@@ -32,7 +32,7 @@ services:
   db:
     image: postgres:17-alpine
     container_name: dfsp-db
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     env_file:
       - .env.prod
     environment:
@@ -55,7 +55,7 @@ services:
     image: dfsp-backend:prod
     build: *backend-build
     container_name: dfsp-migrator
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     restart: "no"
     env_file:
       - .env.prod
@@ -74,7 +74,7 @@ services:
   chain:
     image: ghcr.io/foundry-rs/foundry:latest
     container_name: dfsp-anvil
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     environment:
       CHAIN_ID: ${CHAIN_ID:-31337}
       ANVIL_IP_ADDR: 0.0.0.0
@@ -113,7 +113,7 @@ services:
   contracts:
     image: node:${NODE_VERSION:-22}
     container_name: dfsp-contracts
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     working_dir: /app
     depends_on:
       chain:
@@ -143,7 +143,7 @@ services:
     image: dfsp-backend:prod
     build: *backend-build
     container_name: dfsp-api
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     restart: unless-stopped
     env_file:
       - .env.prod
@@ -176,7 +176,7 @@ services:
     image: dfsp-backend:prod
     build: *backend-build
     container_name: dfsp-celery-worker
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     restart: unless-stopped
     env_file:
       - .env.prod
@@ -203,7 +203,7 @@ services:
     image: dfsp-backend:prod
     build: *backend-build
     container_name: dfsp-celery-beat
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     restart: unless-stopped
     env_file:
       - .env.prod
@@ -232,7 +232,7 @@ services:
       context: ../bot
       dockerfile: Dockerfile
     container_name: dfsp-telegram-bot
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     restart: unless-stopped
     env_file:
       - .env.prod
@@ -267,7 +267,7 @@ services:
   redis:
     image: redis:7.2-alpine
     container_name: dfsp-redis
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     restart: unless-stopped
     volumes: [ redis_data:/data ]
     networks: [ dfsp ]
@@ -282,7 +282,7 @@ services:
   ipfs:
     image: ipfs/kubo:${IPFS_VERSION:-latest}
     container_name: dfsp-ipfs
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     env_file:
       - .env.prod
     environment:
@@ -306,7 +306,7 @@ services:
   caddy:
     image: caddy:2.8
     container_name: dfsp-caddy
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     restart: unless-stopped
     env_file:
       - .env.prod
@@ -339,7 +339,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     container_name: dfsp-nginx
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     ports:
       - "80:80"
     volumes:
@@ -355,7 +355,7 @@ services:
   explorer-db:
     image: postgres:17-alpine
     container_name: blockscout-db
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     environment:
       POSTGRES_USER: blockscout
       POSTGRES_PASSWORD: ${EXPLORER_DB_PASSWORD:-blockpass}
@@ -374,7 +374,7 @@ services:
   explorer-indexer:
     image: ghcr.io/blockscout/blockscout:latest
     container_name: blockscout-indexer
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     working_dir: /app
     command: >
       sh -lc "
@@ -414,7 +414,7 @@ services:
   explorer-web:
     image: ghcr.io/blockscout/frontend:latest
     container_name: blockscout-web
-    logging: *default-logging  # <--- Применено
+    logging: *default-logging
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_NETWORK_NAME: DFSP Localnet

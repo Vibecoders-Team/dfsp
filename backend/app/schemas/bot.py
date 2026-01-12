@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field
 
 
 class BotFile(BaseModel):
-    """Компактное представление файла для ответа боту."""
+    """Compact file representation for bot responses."""
 
-    id_hex: str = Field(..., description="File ID в виде hex-строки (32 байта)")
+    id_hex: str = Field(..., description="File ID as a hex string (32 bytes)")
     name: str
     size: int
     mime: str | None
@@ -22,29 +22,29 @@ class BotFile(BaseModel):
 
 
 class BotFileListResponse(BaseModel):
-    """Ответ со списком файлов и курсором для следующей страницы."""
+    """Response with a list of files and a cursor for the next page."""
 
     files: list[BotFile]
     cursor: str | None = Field(
         None,
-        description="Курсор для следующей страницы (ISO timestamp)",
+        description="Cursor for the next page (ISO timestamp)",
     )
 
 
 class GrantDirection(str, Enum):
-    """Направление грантов для фильтрации."""
+    """Direction of grants for filtering."""
 
     IN = "in"
     OUT = "out"
 
 
 class BotGrant(BaseModel):
-    """Компактное представление гранта для ответа боту."""
+    """Compact grant representation for bot responses."""
 
-    capId: str = Field(..., description="Capability ID гранта в hex-формате")
+    capId: str = Field(..., description="Grant Capability ID in hex format")
     fileName: str
     used: int
-    max_dl: int = Field(..., alias="max")  # используем max_dl из модели и отдаём как max
+    max_dl: int = Field(..., alias="max")  # use max_dl from the model and return as max
     expiresAt: datetime
     status: str  # "active", "expired", "revoked", "used_up"
 
@@ -53,20 +53,20 @@ class BotGrant(BaseModel):
 
 
 class BotGrantListResponse(BaseModel):
-    """Ответ со списком грантов и курсором для следующей страницы."""
+    """Response with a list of grants and a cursor for the next page."""
 
     grants: list[BotGrant]
     cursor: str | None = Field(
         None,
-        description="Курсор для следующей страницы (ISO timestamp)",
+        description="Cursor for the next page (ISO timestamp)",
     )
 
 
 class BotProfileResponse(BaseModel):
-    """Профиль пользователя для бота (/bot/me)."""
+    """User profile for the bot (/bot/me)."""
 
-    address: str = Field(..., description="Связанный wallet-адрес пользователя")
+    address: str = Field(..., description="User's linked wallet address")
     display_name: str | None = Field(
         None,
-        description="Отображаемое имя пользователя, если задано",
+        description="User's display name, if set",
     )

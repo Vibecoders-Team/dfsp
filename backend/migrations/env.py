@@ -12,14 +12,14 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-# --- PYTHONPATH: проектный корень (/app) ---
+# --- PYTHONPATH: project root (/app) ---
 HERE = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(HERE, ".."))  # backend/
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-# --- импорт Base и МОДЕЛЕЙ ---
-# ВАЖНО: чтобы автогенерация «увидела» таблицы, здесь нужно импортнуть модуль с моделями
+# --- import Base and MODELS ---
+# IMPORTANT: for autogenerate to "see" tables, import the models module here
 import app.models as models_pkg
 from app.db.base import Base  # your Declarative Base
 
@@ -29,7 +29,7 @@ def import_submodules(package):
         importlib.import_module(name)
 
 
-import_submodules(models_pkg)  # просто импорт, чтобы таблицы зарегистрировались в metadata
+import_submodules(models_pkg)  # import only, so tables are registered in metadata
 
 # Alembic Config
 config = context.config
@@ -41,8 +41,8 @@ target_metadata = Base.metadata
 
 def get_dsn() -> str:
     """
-    Берём DSN из окружения (POSTGRES_DSN) — ты уже настраивал .env,
-    иначе fallback на sqlalchemy.url из alembic.ini.
+    Read DSN from env (POSTGRES_DSN) — you already configured .env,
+    otherwise fall back to sqlalchemy.url from alembic.ini.
     """
     env_dsn = os.getenv("POSTGRES_DSN")
     if env_dsn:

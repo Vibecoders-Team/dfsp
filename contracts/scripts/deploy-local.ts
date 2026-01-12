@@ -15,7 +15,7 @@ function writeJSON(p: string, obj: any) {
 }
 
 async function main() {
-  // HH3: подключаемся к выбранной сети и берём ethers из соединения
+  // HH3: connect to the selected network and use ethers from the connection
   const { ethers } = hre;
 
   const [deployer] = await ethers.getSigners();
@@ -39,7 +39,7 @@ async function main() {
   const net = await ethers.provider.getNetwork();
   const chainId = net.chainId.toString();
 
-  // --- 1) файлы для фронта ---
+  // --- 1) files for the frontend ---
   const outDir = path.join(__dirname, "../deploy");
   mkdirSync(outDir, { recursive: true });
 
@@ -64,7 +64,7 @@ async function main() {
   ].join("\n");
   writeFileSync(path.join(outDir, ".env.local"), env + "\n");
 
-  // --- 2) backend: адреса + ABI, путь из DEPLOY_OUT ---
+  // --- 2) backend: addresses + ABI, path from DEPLOY_OUT ---
   const deployOut =
     process.env.DEPLOY_OUT || path.join(__dirname, "../out/deployment.json");
 

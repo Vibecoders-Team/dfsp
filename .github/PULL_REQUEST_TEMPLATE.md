@@ -27,5 +27,4 @@
 > SemVer:
 > - `feat` → **minor**
 > - `fix` → **patch**
-> - `BREAKING CHANGE` (или `type!`) → **major**
-> - остальные — не меняют версию
+> - `BREAKING CHANGE` (or `type!`) → **major**

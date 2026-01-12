@@ -7,14 +7,14 @@ import { useEffect } from "react";
 
 export function MainLandingPage() {
   useEffect(() => {
-    // Подключаем отдельный CSS с полным набором утилит/переменных для лендинга
+    // Load a dedicated CSS with full set of utilities/variables for the landing page
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = "/landing.css";
     link.dataset.dfspLanding = "true";
     document.head.appendChild(link);
     return () => {
-      // Удаляем при уходе со страницы, чтобы не ломать остальные экраны
+      // Remove on page exit so other screens are unaffected
       const el = document.querySelector('link[data-dfsp-landing="true"]');
       el?.parentElement?.removeChild(el);
     };

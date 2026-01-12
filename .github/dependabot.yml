@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # GitHub Actions → main (один PR на все экшены)
+  # GitHub Actions → main
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule: { interval: "weekly" }
@@ -40,7 +40,7 @@ updates:
       all-actions:
         patterns: ["*"]
 
-  # frontend deps (npm) → frontend/main (как у тебя)
+  # frontend deps (npm) → frontend/main
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule: { interval: "weekly" }

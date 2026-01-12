@@ -49,5 +49,5 @@ tg_notify_send_latency_seconds = Histogram(
 
 
 def setup_metrics_server() -> None:
-    # просто запускаем HTTP-сервер в отдельном потоке
+    # just start the HTTP server in a separate thread
     start_http_server(settings.PROM_PORT)

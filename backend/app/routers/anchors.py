@@ -27,8 +27,8 @@ def _publish_anchor_ok(
     source: str,
 ) -> None:
     """
-    anchor_ok: событие об успешном наличии/создании анкера.
-    Считаем idempotent по (period_id, tx_hash).
+    anchor_ok: event for successful presence/creation of an anchor.
+    Consider it idempotent by (period_id, tx_hash).
     """
     try:
         publisher = EventPublisher()
@@ -70,7 +70,7 @@ def get_latest_anchor(
         tx_hash=anchor.tx_hash,
     )
 
-    # anchor_ok – фиксация того, что якорь успешно существует
+    # anchor_ok - record that the anchor exists successfully
     _publish_anchor_ok(
         period_id=anchor.period_id,
         merkle_root=merkle_hex,

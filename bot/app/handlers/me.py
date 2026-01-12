@@ -15,9 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def mask_address(addr: str) -> str:
-    """
-    Маскируем адрес вида 0x1234567890abcdef... в 0x1234…cdef.
-    """
+    """Mask address like 0x1234567890abcdef... as 0x1234…cdef."""
     if not addr:
         return addr
 
@@ -43,7 +41,7 @@ async def cmd_me(message: Message) -> None:
         return
 
     if profile is None:
-        # 404 от API — чат не привязан
+        # 404 from API — chat is not linked
         from .start import get_main_keyboard
 
         keyboard = await get_main_keyboard(is_linked=False)

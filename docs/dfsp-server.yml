@@ -368,18 +368,7 @@ paths:
       tags:
       - meta-tx
       summary: Submit
-      description: 'Принимаем подписанный ForwardRequest и кладем задачу в релейер.
-
-        Гарантируем детерминированный JSON-ответ со статусом.
-
-        В DEV-режиме (RELAYER_SYNC_DEV=1) дополнительно выполняем задачу синхронно
-        в текущем процессе.
-
-        Поведение идемпотентности: мы допускаем повторную постановку в очередь с тем
-        же request_id,
-
-        опираясь на БД/релейер для дедупликации, чтобы не залипать из-за прежнего
-        NX-флага.'
+      description: "Accept a signed ForwardRequest and enqueue the task to the relayer.\n\nEnsure a deterministic JSON response containing the operation status.\n\nIn DEV mode (RELAYER_SYNC_DEV=1) the task is also executed synchronously in the current process.\n\nIdempotency behavior: repeated enqueuing with the same request_id is allowed — deduplication is provided by the DB/relayer to avoid issues caused by prior NX flags."
       operationId: submit_meta_tx_submit_post
       requestBody:
         content:
@@ -433,7 +422,7 @@ paths:
       tags:
       - files
       summary: List My Files
-      description: Возвращает список всех файлов текущего пользователя
+      description: "Returns a list of all files owned by the current user"
       operationId: list_my_files_files_get
       parameters:
       - name: limit
@@ -687,14 +676,7 @@ paths:
       tags:
       - grants
       summary: List My Grants
-      description: 'Список грантов для текущего пользователя.
-
-        role=received — я получатель (grantee)
-
-        role=granted  — я выдавший (grantor)
-
-        Возвращает items: [{ fileId, capId, grantor, grantee, maxDownloads, usedDownloads,
-        status, expiresAt, fileName? }]'
+      description: "List grants for the current user.\n\nrole=received — requests where the user is the grantee (recipient).\n\nrole=granted — requests where the user is the grantor (issuer).\n\nReturns items: [{ fileId, capId, grantor, grantee, maxDownloads, usedDownloads, status, expiresAt, fileName? }]"
       operationId: list_my_grants_grants_get
       parameters:
       - name: role
@@ -993,7 +975,7 @@ paths:
       tags:
       - pow
       summary: Get Pow Challenge
-      description: Создает и возвращает новую PoW-задачу для клиента.
+      description: Creates and returns a new PoW challenge for the client.
       operationId: get_pow_challenge_pow_challenge_post
       responses:
         '200':
@@ -1281,9 +1263,9 @@ paths:
       tags:
       - Bot
       summary: Bot Get Me
-      description: "Bot-friendly профиль пользователя по Telegram chat_id.\n\nВход:\n\
-        \  - X-TG-Chat-Id (header)\n\nВыход:\n  - address: связанный wallet-адрес\n\
-        \  - display_name: имя пользователя, если задано"
+      description: "Bot-friendly user profile by Telegram chat_id.\n\nInput:\n\
+        \  - X-TG-Chat-Id (header)\n\nOutput:\n  - address: linked wallet address\n\
+        \  - display_name: user display name if set"
       operationId: bot_get_me_bot_me_get
       parameters:
       - name: X-TG-Chat-Id
@@ -1310,12 +1292,12 @@ paths:
       tags:
       - Bot
       summary: Bot List Files
-      description: "Bot-friendly список файлов по Telegram chat_id.\n\nВход:\n  -\
-        \ X-TG-Chat-Id (header)\n  - limit, cursor (строковый курсор)\n\nОтвет:\n\
-        {\n  \"files\": [\n    {\n      \"id_hex\": \"...\",   # без 0x\n      \"\
+      description: "Bot-friendly file list by Telegram chat_id.\n\nInput:\n  -\
+        \ X-TG-Chat-Id (header)\n  - limit, cursor (string cursor)\n\nResponse:\n\
+        {\n  \"files\": [\n    {\n      \"id_hex\": \"...\",   # without 0x\n      \"\
         name\": \"...\",\n      \"size\": 123,\n      \"mime\": \"...\",\n      \"\
         cid\": \"...\",\n      \"updatedAt\": \"ISO8601\"\n    },\n    ...\n  ],\n\
-        \  \"cursor\": \"<строковый курсор или null>\"\n}"
+        \  \"cursor\": \"<string cursor or null>\"\n}"
       operationId: bot_list_files_bot_files_get
       parameters:
       - name: limit
@@ -1361,12 +1343,12 @@ paths:
       tags:
       - Bot
       summary: Bot List Grants
-      description: "Bot-friendly список грантов.\n\nВход:\n  - X-TG-Chat-Id\n  - direction\
-        \ = \"in\" | \"out\"\n  - limit, cursor\n\nОтвет:\n{\n  \"grants\": [\n  \
+      description: "Bot-friendly grants list.\n\nInput:\n  - X-TG-Chat-Id\n  - direction\
+        \ = \"in\" | \"out\"\n  - limit, cursor\n\nResponse:\n{\n  \"grants\": [\n  \
         \  {\n      \"capId\": \"0x...\",\n      \"fileName\": \"...\",\n      \"\
         used\": 0,\n      \"max\": 3,\n      \"expiresAt\": \"ISO8601\",\n      \"\
         status\": \"pending|confirmed|expired|revoked|exhausted\"\n    },\n    ...\n\
-        \  ],\n  \"cursor\": \"<строковый курсор или null>\"\n}"
+        \  ],\n  \"cursor\": \"<string cursor or null>\"\n}"
       operationId: bot_list_grants_bot_grants_get
       parameters:
       - name: direction
@@ -1418,11 +1400,11 @@ paths:
       tags:
       - Bot
       summary: Bot Verify File
-      description: "Bot-friendly верификация файла по fileId.\n\nВалидация:\n  - формат\
-        \ 0x + 64 hex, иначе 400.\n  - если файла нет в БД — 404.\n\nВозвращает:\n\
-        \  - onchain_ok: есть ли файл в блокчейне\n  - offchain_ok: есть ли файл в\
-        \ БД\n  - match: совпадают ли checksum on-chain и off-chain\n  - lastAnchorTx:\
-        \ последняя транзакция анкора (если есть)"
+      description: "Bot-friendly file verification by fileId.\n\nValidation:\n  - format\
+        \ 0x + 64 hex, otherwise 400.\n  - if file is not in DB - 404.\n\nReturns:\n\
+        \  - onchain_ok: whether file exists on-chain\n  - offchain_ok: whether file exists in\
+        \ DB\n  - match: whether on-chain and off-chain checksums match\n  - lastAnchorTx:\
+        \ last anchor transaction (if any)"
       operationId: bot_verify_file_bot_verify__file_id__get
       parameters:
       - name: file_id
@@ -1455,7 +1437,7 @@ paths:
       tags:
       - Bot
       summary: Create Action Intent
-      description: Создаёт одноразовый интент (handoff) для текущего пользователя.
+      description: Creates a one-time intent (handoff) for the current user.
       operationId: create_action_intent_bot_action_intents_post
       parameters:
       - name: Authorization
@@ -1488,7 +1470,7 @@ paths:
       tags:
       - Bot
       summary: Consume Action Intent
-      description: Потребляет одноразовый интент.
+      description: Consumes a one-time intent.
       operationId: consume_action_intent_bot_action_intents_consume_post
       parameters:
       - name: Authorization
@@ -1749,18 +1731,18 @@ components:
         address:
           type: string
           title: Address
-          description: Связанный wallet-адрес пользователя
+          description: Linked user wallet address
         display_name:
           anyOf:
           - type: string
           - type: 'null'
           title: Display Name
-          description: Отображаемое имя пользователя, если задано
+          description: Display name if set
       type: object
       required:
       - address
       title: BotProfileResponse
-      description: Профиль пользователя для бота (/bot/me).
+      description: User profile for bot (/bot/me).
     DenylistIn:
       properties:
         checksum:
@@ -1876,7 +1858,7 @@ components:
       - size
       - mime
       title: FileMeta
-      description: Схема для представления метаданных файла (on-chain или off-chain).
+      description: Schema for representing file metadata (on-chain or off-chain).
     HTTPValidationError:
       properties:
         detail:
@@ -2323,7 +2305,7 @@ components:
       required:
       - match
       title: VerifyOut
-      description: Схема ответа для эндпоинта верификации.
+      description: Response schema for verification endpoint.
     VersionItem:
       properties:
         owner:

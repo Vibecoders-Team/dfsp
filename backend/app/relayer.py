@@ -87,7 +87,7 @@ def _metrics_add_duration(task_type: str, ms: float) -> None:
 
 def _build_req_tuple(msg: dict[str, Any]) -> tuple[str, str, int, int, int, bytes]:
     """
-    Приводим message из typedData к tuple ForwardRequest:
+    Convert message from typedData to a ForwardRequest tuple:
     (from, to, value, gas, nonce, data)
     """
     return (
@@ -216,7 +216,7 @@ def _sync_grant_events_from_receipt(receipt: AttributeDict, chain: Chain, db: Se
 )
 def submit_forward(self: Task, request_id: str, typed_data: dict[str, Any], signature: str) -> dict[str, Any]:
     """
-    Отправка meta-тx в OZ MinimalForwarder c пер-Grantor блокировкой, ретраями, метриками и структурированными логами.
+    Send meta-tx to OZ MinimalForwarder with per-grantor locking, retries, metrics, and structured logs.
     """
     t0 = time.perf_counter()
 

@@ -34,11 +34,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# --- Bot & dispatcher (общие для обоих режимов) ---------------------------------
+# --- Bot & dispatcher (common for both modes) ---------------------------------
 
 
 async def setup_bot_commands(bot_: Bot) -> None:
-    """Устанавливает меню команд бота."""
+    """Sets the bot's command menu."""
     from aiogram.exceptions import TelegramNetworkError
     from aiogram.types import BotCommand
 
@@ -107,7 +107,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     dp_.include_router(lang_handlers.router)
     dp_.include_router(notifications_handlers.router)
     dp_.include_router(switch_handlers.router)
-    # остальные роутеры: grants, callbacks
+    # remaining routers: grants, callbacks
 
     return bot_, dp_
 
@@ -158,12 +158,12 @@ async def run_polling() -> None:
 
 
 def get_webhook_url() -> str:
-    """Формирует URL webhook на основе PUBLIC_WEB_ORIGIN и WEBHOOK_SECRET."""
+    """Build webhook URL from PUBLIC_WEB_ORIGIN and WEBHOOK_SECRET."""
     return build_webhook_url(settings.PUBLIC_WEB_ORIGIN, settings.WEBHOOK_SECRET)
 
 
 async def ensure_webhook(bot_: Bot) -> str:
-    """Проверяет и настраивает webhook в Telegram."""
+    """Check and configure Telegram webhook."""
     webhook_url = get_webhook_url()
     masked_url = mask_webhook_url(webhook_url, settings.WEBHOOK_SECRET)
 
@@ -208,11 +208,11 @@ async def webhook_handler(request: web.Request) -> web.Response:
     logger.info("Webhook update received: %s", data)
 
     try:
-        # скармливаем апдейт aiogram как сырой dict
+        # feed update to aiogram as raw dict
         await dp.feed_raw_update(bot, data)
     except Exception:
-        # для продакшена важно залогировать, но Телеге лучше вернуть 200,
-        # чтобы она не спамила ретраями
+        # in production log the error, but return 200 to Telegram
+        # to avoid retry spam
         tg_webhook_errors_total.labels(code="500").inc()
         logger.exception("Failed to process update")
 
@@ -284,7 +284,7 @@ def main() -> None:
     setup_metrics_server()
     logger.info("Prometheus metrics server started on port %s", settings.PROM_PORT)
 
-    # Диагностика конфигурации
+    # Configuration diagnostics
     from .utils.diagnostics import print_config_diagnostics
 
     print_config_diagnostics()

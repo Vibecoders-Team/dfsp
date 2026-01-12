@@ -23,7 +23,7 @@ export function MiniHomePage() {
         const data = await miniGet<{ ok: boolean }>("/health");
         setHealth({ ok: data.ok });
       } catch (err) {
-        const msg = err instanceof MiniApiError ? err.message : "Ошибка проверки /health";
+        const msg = err instanceof MiniApiError ? err.message : "Health check failed";
         setError(msg);
       } finally {
         setLoading(false);
@@ -55,26 +55,26 @@ export function MiniHomePage() {
   const features = [
     {
       icon: "📁",
-      title: "Файлы",
-      desc: "Управляйте файлами, шифрование и хранение в IPFS",
+      title: "Files",
+      desc: "Manage files with encryption and IPFS storage",
       gradient: "linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%)"
     },
     {
       icon: "🔐",
-      title: "Доступы",
-      desc: "Гранты и расшаривание с блокчейн-верификацией",
+      title: "Access",
+      desc: "Grants and sharing with blockchain verification",
       gradient: "linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%)"
     },
     {
       icon: "✓",
-      title: "Проверка",
-      desc: "Сверка CID и метаданных on/off-chain",
+      title: "Verify",
+      desc: "Compare CID and on/off-chain metadata",
       gradient: "linear-gradient(135deg, #10b981 0%, #34d399 100%)"
     },
     {
       icon: "🛡️",
-      title: "Безопасность",
-      desc: "HMAC подпись и JWT авторизация",
+      title: "Security",
+      desc: "HMAC signing and JWT authorization",
       gradient: "linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)"
     }
   ];
@@ -116,7 +116,7 @@ export function MiniHomePage() {
             alignItems: "center",
             gap: "8px"
           }}>
-            👋 Добро пожаловать!
+            👋 Welcome!
           </p>
           <p style={{
             fontSize: "14px",
@@ -124,7 +124,7 @@ export function MiniHomePage() {
             lineHeight: 1.5,
             marginBottom: "12px"
           }}>
-            Это мини-приложение DFSP для Telegram. Безопасное хранение файлов с блокчейн-верификацией.
+            This is the DFSP Telegram mini app. Secure file storage with blockchain verification.
           </p>
           <div style={{
             display: "inline-flex",
@@ -141,7 +141,7 @@ export function MiniHomePage() {
               borderRadius: "50%",
               background: method ? "#4ade80" : "#fbbf24"
             }} />
-            Вход: {method === "telegram" ? "Telegram" : method === "ton" ? "TON Connect" : "Ожидание"}
+            Login: {method === "telegram" ? "Telegram" : method === "ton" ? "TON Connect" : "Waiting"}
           </div>
         </div>
       </div>
@@ -160,7 +160,7 @@ export function MiniHomePage() {
             color: "var(--mini-text)",
             margin: 0
           }}>
-            Состояние системы
+            System status
           </p>
           {loading && (
             <div style={{
@@ -191,7 +191,7 @@ export function MiniHomePage() {
               textTransform: "uppercase",
               letterSpacing: "0.5px"
             }}>
-              Сессия
+              Session
             </p>
             <p style={{
               fontSize: "13px",
@@ -222,7 +222,7 @@ export function MiniHomePage() {
               fontWeight: 500,
               color: health?.ok ? "var(--mini-success)" : error ? "var(--mini-danger)" : "var(--mini-text-muted)"
             }}>
-              {loading ? "..." : health?.ok ? "✓ OK" : error ? "✗ Ошибка" : "—"}
+              {loading ? "..." : health?.ok ? "✓ OK" : error ? "✗ Error" : "—"}
             </p>
           </div>
         </div>
@@ -257,7 +257,7 @@ export function MiniHomePage() {
                 color: "var(--mini-warning-text)",
                 marginBottom: "4px"
               }}>
-                Вход через TON Connect
+                Signed in via TON Connect
               </p>
               <p style={{
                 fontSize: "13px",
@@ -265,7 +265,7 @@ export function MiniHomePage() {
                 opacity: 0.8,
                 marginBottom: "12px"
               }}>
-                Для EVM-подписи перейдите на основной веб и свяжите EVM-адрес.
+                For EVM signing, go to the main web app and link an EVM address.
               </p>
               <button
                 onClick={() => openWebAppLink("/files")}
@@ -281,7 +281,7 @@ export function MiniHomePage() {
                   transition: "var(--mini-transition)"
                 }}
               >
-                Открыть веб-версию →
+                Open web version →
               </button>
             </div>
           </div>
@@ -348,7 +348,7 @@ export function MiniHomePage() {
             alignItems: "center",
             gap: "8px"
           }}>
-            🔏 Подпись навигации
+            🔏 Navigation signature
           </p>
           <div style={{
             background: "var(--mini-bg-tertiary)",

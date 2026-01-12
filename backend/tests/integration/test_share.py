@@ -69,7 +69,7 @@ def test_share_happy_and_duplicate(
 
 def test_share_bad_file_id_400(client: httpx.Client, auth_headers: dict, pow_header_factory: Callable[[], dict]):
     headers = {**auth_headers, **pow_header_factory()}
-    # --- ИСПРАВЛЕНИЕ: Передаем минимально валидный JSON, чтобы избежать ошибки 422 ---
+    # --- FIX: send minimally valid JSON to avoid 422 ---
     addr = "0x" + ("11" * 20)
     body = {
         "users": [addr],
@@ -160,9 +160,9 @@ def test_share_meta_tx_quota(
     grantee_addr, _ = make_user()
     file_id, _ = _create_file(client, auth_headers)
 
-    # --- ИСПРАВЛЕНИЕ: Проверяем, что ошибка НАСТУПИТ в пределах разумного числа запросов ---
-    # Мы делаем на 10 запросов больше лимита, чтобы гарантированно его превысить
-    # даже если другие тесты потратили часть квоты.
+    # --- FIX: ensure the error happens within a reasonable number of requests ---
+    # We make 10 more requests than the limit to guarantee exceeding it
+    # even if other tests already spent part of the quota.
     QUOTA_LIMIT = 50
     requests_to_make = QUOTA_LIMIT + 10
 
@@ -182,7 +182,7 @@ def test_share_meta_tx_quota(
             assert "meta_tx_quota_exceeded" in r.text
             quota_exceeded = True
             logger.info("Quota exceeded on request #%d, which is expected.", i + 1)
-            break  # Выходим из цикла, как только получили нужную ошибку
+            break  # Exit loop as soon as we get the expected error
 
-    # Финальная проверка: убеждаемся, что мы действительно поймали ошибку превышения квоты
+    # Final check: ensure we actually hit the quota exceeded error
     assert quota_exceeded, f"Quota was not exceeded after {requests_to_make} requests"

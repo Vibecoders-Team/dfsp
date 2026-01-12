@@ -14,13 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 async def get_start_text(is_linked: bool, language: str | None = None) -> str:
-    """Выбирает стартовый текст из хранилища сообщений по статусу привязки."""
+    """Selects the starting text from the message store based on the linking status."""
     key = "start.linked" if is_linked else "start.unlinked"
     return await get_message(key, language=language)
 
 
 async def get_main_keyboard(is_linked: bool = False) -> InlineKeyboardMarkup:
-    """Создаёт главное меню с кнопками в зависимости от статуса привязки."""
+    """Creates the main menu with buttons depending on the linking status."""
     profile_btn = await get_message("buttons.profile")
     files_btn = await get_message("buttons.files")
     switch_btn = await get_message("buttons.switch")
@@ -32,7 +32,7 @@ async def get_main_keyboard(is_linked: bool = False) -> InlineKeyboardMarkup:
     keyboard_buttons = []
 
     if is_linked:
-        # Если аккаунт привязан - показываем все функции
+        # If the account is linked - show all functions
         keyboard_buttons = [
             [
                 InlineKeyboardButton(text=profile_btn, callback_data="menu:profile"),
@@ -48,7 +48,7 @@ async def get_main_keyboard(is_linked: bool = False) -> InlineKeyboardMarkup:
             ],
         ]
     else:
-        # Если аккаунт не привязан - показываем привязку
+        # If the account is not linked - show linking
         keyboard_buttons = [
             [
                 InlineKeyboardButton(
@@ -64,15 +64,15 @@ async def get_main_keyboard(is_linked: bool = False) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
 
 
-# Устаревшая константа, используем get_main_keyboard() вместо неё
+# Deprecated constant, use get_main_keyboard() instead
 
 
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    """Обработчик команды /start с динамическим меню."""
+    """Handler for the /start command with a dynamic menu."""
     chat_id = message.chat.id
 
-    # Проверяем статус привязки
+    # Check linking status
     is_linked = False
     try:
         profile = await get_bot_profile(chat_id)
@@ -87,10 +87,10 @@ async def cmd_start(message: Message) -> None:
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    """Обработчик команды /help."""
+    """Handler for the /help command."""
     chat_id = message.chat.id
 
-    # Проверяем статус привязки
+    # Check linking status
     is_linked = False
     try:
         profile = await get_bot_profile(chat_id)

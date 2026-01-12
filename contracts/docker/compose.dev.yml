@@ -13,12 +13,12 @@ volumes:
   ipfs: { }
 
 services:
-  # ----------------------- Hardhat node (локальная сеть) -----------------------
+  # ----------------------- Hardhat node (local network) -----------------------
   chain:
     image: node:${NODE_VERSION:-22}
     working_dir: /app
     command: sh -lc "npm ci && npx hardhat node --hostname 0.0.0.0"
-    # /app — volume, исходники монтируем поверх
+    # /app is a volume, sources are mounted over it
     environment:
       NPM_CONFIG_CACHE: /npm-cache
       CI: "true"
@@ -36,7 +36,7 @@ services:
     tty: true
     networks: [ dfsp ]
 
-  # ----------------------- Деплой контрактов и экспорт ABI ---------------------
+  # ----------------------- Contract deploy and ABI export ---------------------
   contracts:
     image: node:${NODE_VERSION:-22}
     working_dir: /app

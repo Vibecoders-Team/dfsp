@@ -32,7 +32,7 @@ def format_file_id(file_id: str) -> str:
 
 
 def _pick_from_sources(payload: Mapping[str, Any], keys: list[str]) -> Any:
-    """Берет первое непустое значение из payload или вложенного grant."""
+    """Pick the first non-empty value from payload or nested grant by keys."""
     grant = payload.get("grant") if isinstance(payload.get("grant"), Mapping) else None
     for source in (payload, grant or {}):
         for key in keys:
@@ -42,7 +42,7 @@ def _pick_from_sources(payload: Mapping[str, Any], keys: list[str]) -> Any:
 
 
 def _pick_address(payload: Mapping[str, Any], role: str) -> str:
-    """Возвращает адрес grantor/grantee с запасными ключами."""
+    """Return grantor/grantee address using a set of fallback keys."""
     keys = {
         "grantee": ["grantee", "grantee_address", "granteeAddress", "recipient", "to"],
         "grantor": ["grantor", "grantor_address", "grantorAddress", "owner", "from"],
@@ -51,12 +51,12 @@ def _pick_address(payload: Mapping[str, Any], role: str) -> str:
 
 
 def _pick_file_id(payload: Mapping[str, Any]) -> str:
-    """Возвращает идентификатор файла или capability id."""
+    """Return file identifier or capability id."""
     return _pick_from_sources(payload, ["fileId", "file_id", "capId", "cap_id", "cid", "file"]) or ""
 
 
 def _parse_ttl_from_expiry(expiry: Any) -> int | None:
-    """Пробует вычислить TTL в днях из ISO8601 даты истечения."""
+    """Try to compute TTL in days from an ISO8601 expiry date."""
     if not expiry:
         return None
     try:
@@ -68,7 +68,7 @@ def _parse_ttl_from_expiry(expiry: Any) -> int | None:
 
 
 def _pick_ttl_days(payload: Mapping[str, Any]) -> Any:
-    """Возвращает ttl_days с бэкенда или вычисляет из expires_at."""
+    """Return ttl_days from backend or derive it from expires_at."""
     ttl = _pick_from_sources(payload, ["ttlDays", "ttl_days", "ttl", "days"])
     if ttl not in (None, ""):
         return ttl
@@ -78,7 +78,7 @@ def _pick_ttl_days(payload: Mapping[str, Any]) -> Any:
 
 
 def _pick_max_downloads(payload: Mapping[str, Any]) -> Any:
-    """Возвращает ограничение на скачивания."""
+    """Return download limit value."""
     max_dl = _pick_from_sources(
         payload,
         ["maxDownloads", "max_downloads", "download_limit", "downloads_limit", "downloads_left"],

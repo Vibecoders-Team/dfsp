@@ -57,7 +57,7 @@ function keccakAbiEncode(
 }
 
 describe("AccessControlDFSP - extended", () => {
-  // Предохранитель: даже если тест упадёт, вернём майнинг в норму
+  // Safety: even if the test fails, restore mining to normal
   afterEach(async () => {
     try {
       await ethers.provider.send("evm_setAutomine", [true]);

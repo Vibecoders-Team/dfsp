@@ -50,7 +50,7 @@ export function MiniVerifyPage() {
   const handleVerify = async () => {
     const trimmed = fileId.trim();
     if (!trimmed) {
-      setError("Укажите fileId (0x…) для сверки.");
+      setError("Provide fileId (0x…) for verification.");
       return;
     }
     setSearchParams(trimmed ? { fileId: trimmed } : {});
@@ -101,14 +101,14 @@ export function MiniVerifyPage() {
             alignItems: "center",
             gap: "8px"
           }}>
-            ✓ Проверка файла
+            ✓ File verification
           </p>
           <p style={{
             fontSize: "14px",
             opacity: 0.9,
             lineHeight: 1.5
           }}>
-            Сверка off-chain (БД) и on-chain метаданных: CID, checksum, размер и MIME
+            Compare off-chain (DB) and on-chain metadata: CID, checksum, size, and MIME
           </p>
         </div>
       </div>
@@ -166,7 +166,7 @@ export function MiniVerifyPage() {
                 <span>...</span>
               </>
             ) : (
-              <>✓ Проверить</>
+              <>✓ Verify</>
             )}
           </button>
         </div>
@@ -176,7 +176,7 @@ export function MiniVerifyPage() {
             fontSize: "12px",
             color: "var(--mini-text-muted)"
           }}>
-            Загружаем ваши файлы...
+            Loading your files...
           </p>
         ) : selectedOptions.length > 0 && (
           <div style={{
@@ -189,7 +189,7 @@ export function MiniVerifyPage() {
               color: "var(--mini-text-muted)",
               marginRight: "4px"
             }}>
-              Быстрый выбор:
+              Quick pick:
             </span>
             {selectedOptions.map((f, idx) => (
               <button
@@ -209,7 +209,7 @@ export function MiniVerifyPage() {
                   transition: "var(--mini-transition)"
                 }}
               >
-                {f.name || `Файл ${idx + 1}`}
+                {f.name || `File ${idx + 1}`}
               </button>
             ))}
           </div>
@@ -257,7 +257,7 @@ export function MiniVerifyPage() {
             fontSize: "14px",
             color: "var(--mini-danger-text)"
           }}>
-            {error || "Не удалось выполнить проверку."}
+            {error || "Verification failed."}
           </p>
         </div>
       )}
@@ -269,7 +269,7 @@ export function MiniVerifyPage() {
             color: "var(--mini-text-secondary)",
             marginBottom: "12px"
           }}>
-            Детальная проверка и загрузка локального файла доступна на основном вебе.
+            Detailed verification and local file upload are available on the main web app.
           </p>
           <button
             onClick={() => openWebAppLink(`/verify/${fileId}`)}
@@ -284,7 +284,7 @@ export function MiniVerifyPage() {
               transition: "var(--mini-transition)"
             }}
           >
-            Открыть /verify/{truncate(fileId, 14)} на вебе →
+            Open /verify/{truncate(fileId, 14)} on the web →
           </button>
         </div>
       )}
@@ -302,11 +302,11 @@ function StatusCard({
   offchain: MiniVerifyResponse["offchain"];
 }) {
   const hint = (() => {
-    if (!onchain && offchain) return "Нет on-chain записи для этого fileId.";
-    if (!offchain && onchain) return "Нет off-chain данных по файлу.";
-    if (!onchain && !offchain) return "Метаданные отсутствуют.";
-    if (!match) return "Checksum не совпадает между on-chain и off-chain.";
-    return "Checksum совпадает — файл верифицирован.";
+    if (!onchain && offchain) return "No on-chain record for this fileId.";
+    if (!offchain && onchain) return "No off-chain data for this file.";
+    if (!onchain && !offchain) return "No metadata available.";
+    if (!match) return "Checksum does not match between on-chain and off-chain.";
+    return "Checksum matches - file verified.";
   })();
 
   return (
@@ -349,7 +349,7 @@ function StatusCard({
         color: match ? "var(--mini-success-text)" : "var(--mini-warning-text)",
         marginBottom: "8px"
       }}>
-        {match ? "Checksum совпадает" : "Отличается или отсутствует"}
+        {match ? "Checksum matches" : "Different or missing"}
       </p>
       <p style={{
         fontSize: "13px",
@@ -397,7 +397,7 @@ function MetaCard({ title, meta }: { title: string; meta: MiniVerifyResponse["on
           color: "var(--mini-text-muted)",
           fontStyle: "italic"
         }}>
-          Нет данных
+          No data
         </p>
       )}
     </div>
@@ -448,7 +448,7 @@ function truncate(value: string, len = 10) {
 
 function resolveVerifyError(err: unknown): string {
   const normalized = normalizeMiniError(err);
-  if (normalized.status === 404 || normalized.code === "file_not_found") return "Файл не найден.";
-  if (normalized.status === 400 || normalized.code === "bad_file_id") return "Некорректный fileId.";
-  return normalized.message || "Ошибка проверки.";
+  if (normalized.status === 404 || normalized.code === "file_not_found") return "File not found.";
+  if (normalized.status === 400 || normalized.code === "bad_file_id") return "Invalid fileId.";
+  return normalized.message || "Verification error.";
 }

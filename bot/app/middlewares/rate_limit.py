@@ -10,7 +10,7 @@ from aiogram.types import CallbackQuery, Message, Update
 
 try:
     from redis import asyncio as aioredis  # type: ignore[import]
-except Exception:  # на всякий, если пакета нет
+except Exception:  # fallback if package is missing
     aioredis = None  # type: ignore[assignment]
 
 from ..config import settings
@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 class RateLimiter:
     """
-    Простой in-memory лимитер по ключу (chat_id).
-    Алгоритм: фиксированное окно с reset.
+    Simple in-memory limiter by key (chat_id).
+    Algorithm: fixed window with reset.
     """
 
     def __init__(self, max_requests: int, window_seconds: int) -> None:
@@ -42,7 +42,7 @@ class RateLimiter:
         count, reset_at = self._buckets.get(key, (0, 0.0))
 
         if now >= reset_at:
-            # новое окно
+            # new window
             count = 0
             reset_at = now + self.window_seconds
 
@@ -57,9 +57,9 @@ class RateLimiter:
 
 class RateLimitMiddleware(BaseMiddleware):
     """
-    Лимит по чатам:
-      - in-memory RateLimiter всегда
-      - + Redis-ключи, если QUEUE_DSN=redis://...
+    Limit by chats:
+      - in-memory RateLimiter always
+      - + Redis keys if QUEUE_DSN=redis://...
     """
 
     def __init__(
@@ -88,7 +88,7 @@ class RateLimitMiddleware(BaseMiddleware):
             logger.info("RateLimitMiddleware: connected to Redis at %s", self._redis_dsn)
 
     async def _check_rate_limit(self, chat_id: int) -> tuple[bool, float]:
-        # если Redis доступен — используем его, иначе чисто in-memory
+        # if Redis is available - use it, otherwise purely in-memory
         if self._redis_dsn:
             await self._ensure_redis()
 
@@ -96,7 +96,7 @@ class RateLimitMiddleware(BaseMiddleware):
             return self._limiter.check(chat_id)
 
         key = f"tg:rl:{chat_id}"
-        # INCR + EXPIRE — стандартный паттерн rate-limit в Redis
+        # INCR + EXPIRE is a standard rate-limit pattern in Redis
         count = await self._redis.incr(key)
         if count == 1:
             await self._redis.expire(key, self.window_seconds)
@@ -138,15 +138,15 @@ class RateLimitMiddleware(BaseMiddleware):
             retry_after,
         )
 
-        # Ответ в чат
+        # Reply to chat
         retry_seconds = max(1, round(retry_after))
         text = await get_message("rate_limit.hit", variables={"retry_seconds": retry_seconds})
 
         if event.message and isinstance(event.message, Message):
             await event.message.answer(text)
         elif event.callback_query and isinstance(event.callback_query, CallbackQuery):
-            # можно show_alert=True, но это уже вкусовщина
+            # could use show_alert=True, but it's subjective
             await event.callback_query.answer(text, show_alert=True)
 
-        # не передаём управление дальше
+        # do not pass control further
         return None

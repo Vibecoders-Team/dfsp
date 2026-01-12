@@ -230,13 +230,13 @@ export function MiniPublicLinkPage() {
             alignItems: "center",
             gap: "8px"
           }}>
-            📄 Публичный файл
+            📄 Public file
           </p>
           <p style={{
             fontSize: "14px",
             opacity: 0.9
           }}>
-            Скачайте файл по публичной ссылке
+            Download the file via a public link
           </p>
         </div>
       </div>
@@ -250,10 +250,10 @@ export function MiniPublicLinkPage() {
           marginBottom: "0"
         }}>
           {[
-            { label: "Имя", value: meta.name || "Без имени" },
-            { label: "Размер", value: meta.size ? formatFileSize(meta.size) : "-" },
-            { label: "Тип", value: meta.mime || "-" },
-            { label: "Истекает", value: meta.expires_at ? new Date(meta.expires_at).toLocaleDateString() : "∞" }
+            { label: "Name", value: meta.name || "Untitled" },
+            { label: "Size", value: meta.size ? formatFileSize(meta.size) : "-" },
+            { label: "Type", value: meta.mime || "-" },
+            { label: "Expires", value: meta.expires_at ? new Date(meta.expires_at).toLocaleDateString() : "∞" }
           ].map((item) => (
             <div key={item.label} style={{
               padding: "12px",
@@ -295,7 +295,7 @@ export function MiniPublicLinkPage() {
               fontSize: "13px",
               color: "var(--mini-warning-text)"
             }}>
-              Ключ расшифровки не найден в URL. Файл будет скачан в зашифрованном виде.
+              Decryption key not found in the URL. The file will be downloaded encrypted.
             </p>
           </div>
         </div>
@@ -333,10 +333,10 @@ export function MiniPublicLinkPage() {
               borderTopColor: "var(--mini-text)",
               borderRadius: "50%"
             }} className="mini-animate-spin" />
-            Скачивание...
+            Downloading...
           </>
         ) : (
-          <>⬇️ Скачать файл</>
+          <>⬇️ Download file</>
         )}
       </button>
 

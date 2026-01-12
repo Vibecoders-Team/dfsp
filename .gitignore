@@ -22,7 +22,8 @@ __pycache__
 pytest-report
 .ipynb_checkpoints
 recordings
-.env*
+.env.dev
+.env.prod
 *.tsbuildinfo
 .cache
 

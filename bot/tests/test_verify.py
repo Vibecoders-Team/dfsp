@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Добавляем корень проекта (bot/) в sys.path
+# Add project root (bot/) to sys.path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -14,7 +14,7 @@ from app.handlers.verify import cmd_verify, validate_file_id
 
 @pytest.fixture
 def mock_message():
-    """Создает мок Message."""
+    """Create a mock Message instance."""
     message = MagicMock()
     message.chat.id = 12345
     message.text = None
@@ -23,7 +23,7 @@ def mock_message():
 
 
 def test_validate_file_id_with_0x_prefix():
-    """Тест: валидация fileId с префиксом 0x."""
+    """Test: validate fileId that already has 0x prefix."""
     valid_id = "0x" + "a" * 64
     assert validate_file_id(valid_id) == valid_id.lower()
 
@@ -38,7 +38,7 @@ def test_validate_file_id_with_0x_prefix():
 
 
 def test_validate_file_id_without_0x_prefix():
-    """Тест: валидация fileId без префикса 0x."""
+    """Test: validate fileId without 0x prefix."""
     valid_id = "a" * 64
     assert validate_file_id(valid_id) == f"0x{valid_id.lower()}"
 
@@ -53,14 +53,14 @@ def test_validate_file_id_without_0x_prefix():
 
 
 def test_validate_file_id_empty():
-    """Тест: валидация пустого fileId."""
+    """Test: validate empty fileId value."""
     assert validate_file_id("") is None
     assert validate_file_id(None) is None
 
 
 @pytest.mark.asyncio
 async def test_cmd_verify_success(mock_message):
-    """Тест: команда /verify успешно обрабатывает валидный fileId."""
+    """Test: /verify command successfully handles a valid fileId."""
     file_id = "0x" + "a" * 64
     mock_message.text = f"/verify {file_id}"
 
@@ -89,37 +89,37 @@ async def test_cmd_verify_success(mock_message):
 
     mock_message.answer.assert_called_once()
     call_args = mock_message.answer.call_args
-    assert "Результат верификации" in call_args[0][0]
+    assert "File verification result" in call_args[0][0]
     assert "reply_markup" in call_args[1]
 
 
 @pytest.mark.asyncio
 async def test_cmd_verify_no_file_id(mock_message):
-    """Тест: команда /verify без fileId показывает ошибку."""
+    """Test: /verify command without fileId shows an error."""
     mock_message.text = "/verify"
 
     await cmd_verify(mock_message)
 
     mock_message.answer.assert_called_once()
     call_args = mock_message.answer.call_args
-    assert "Не указан ID файла" in call_args[0][0]  # noqa: RUF001
+    assert "File ID is missing" in call_args[0][0]
 
 
 @pytest.mark.asyncio
 async def test_cmd_verify_invalid_format(mock_message):
-    """Тест: команда /verify с невалидным форматом показывает ошибку."""
+    """Test: /verify command with invalid fileId format shows an error."""
     mock_message.text = "/verify invalid"
 
     await cmd_verify(mock_message)
 
     mock_message.answer.assert_called_once()
     call_args = mock_message.answer.call_args
-    assert "Неверный формат ID файла" in call_args[0][0]
+    assert "Invalid file ID format" in call_args[0][0]
 
 
 @pytest.mark.asyncio
 async def test_cmd_verify_file_not_found(mock_message):
-    """Тест: команда /verify для несуществующего файла."""
+    """Test: /verify command when file is not found."""
     file_id = "0x" + "a" * 64
     mock_message.text = f"/verify {file_id}"
 
@@ -139,12 +139,12 @@ async def test_cmd_verify_file_not_found(mock_message):
 
     mock_message.answer.assert_called_once()
     call_args = mock_message.answer.call_args
-    assert "не найден" in call_args[0][0].lower()
+    assert "not found" in call_args[0][0].lower()
 
 
 @pytest.mark.asyncio
 async def test_cmd_verify_without_0x_prefix(mock_message):
-    """Тест: команда /verify принимает fileId без префикса 0x."""
+    """Test: /verify command accepts fileId without 0x prefix."""
     file_id_no_prefix = "a" * 64
     mock_message.text = f"/verify {file_id_no_prefix}"
 
@@ -155,7 +155,7 @@ async def test_cmd_verify_without_0x_prefix(mock_message):
         "lastAnchorTx": None,
     }
 
-    # Мокаем httpx.AsyncClient
+    # Mock httpx.AsyncClient
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = verify_response
@@ -182,4 +182,4 @@ async def test_cmd_verify_without_0x_prefix(mock_message):
 
     mock_message.answer.assert_called_once()
     call_args = mock_message.answer.call_args
-    assert "Результат верификации" in call_args[0][0]
+    assert "File verification result" in call_args[0][0]

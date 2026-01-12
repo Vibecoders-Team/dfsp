@@ -23,7 +23,7 @@ router = Router()
 
 
 class BackendError(Exception):
-    """Общая ошибка DFSP API."""
+    """Generic DFSP API error."""
 
 
 class RateLimitError(Exception):
@@ -33,14 +33,14 @@ class RateLimitError(Exception):
 
 async def _request_link_token(chat_id: int) -> tuple[str, str | None]:
     """
-    Дёргаем DFSP API: POST /tg/link-start { chat_id }
+    Call DFSP API: POST /tg/link-start { chat_id }.
 
     :return: (link_token, expires_at)
     """
     api_url = str(settings.DFSP_API_URL).rstrip("/")
 
     headers: dict[str, str] = {}
-    # На будущее: если для сервисных ручек нужен токен
+    # For future use: if a token is needed for service endpoints
     if settings.DFSP_API_TOKEN:
         headers["Authorization"] = f"Bearer {settings.DFSP_API_TOKEN}"
 
@@ -60,7 +60,7 @@ async def _request_link_token(chat_id: int) -> tuple[str, str | None]:
                     retry_after = resp.headers.get("Retry-After")
                     raise RateLimitError(retry_after=retry_after)
 
-                # Логируем тело, чтобы проще было дебажить
+                # Log response body to simplify debugging
                 text = await resp.text()
                 logger.error("DFSP /tg/link-start failed: %s %s", resp.status, text)
                 raise BackendError()
@@ -72,7 +72,7 @@ async def _request_link_token(chat_id: int) -> tuple[str, str | None]:
 
 async def _build_link_keyboard(deep_link: str) -> InlineKeyboardMarkup | None:
     if "localhost" in deep_link:
-        return None  # не делаем кнопку для локалки
+        return None  # don't create a button for localhost
 
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text=await get_message("buttons.open_dfsp"), url=deep_link)]]
@@ -103,7 +103,7 @@ async def _send_link(
     origin = str(settings.PUBLIC_WEB_ORIGIN).rstrip("/")
     deep_link = f"{origin}/tg/link?token={link_token}"
 
-    # Проверка на потенциальные проблемы с конфигурацией
+    # Check for potential configuration problems
     from ..utils.diagnostics import check_public_web_origin
 
     is_valid, error_msg = check_public_web_origin()
@@ -121,7 +121,7 @@ async def _send_link(
     await send(text, kb)
 
 
-# --- /link командой ------------------------------------------------------------
+# --- /link command ------------------------------------------------------------
 
 
 @router.message(Command("link"))
@@ -132,12 +132,12 @@ async def cmd_link(message: Message) -> None:
     )
 
 
-# --- Кнопка "🔗 Привязать аккаунт" из /start -----------------------------------
+# --- "🔗 Link account" button from /start -----------------------------------
 
 
 @router.callback_query(F.data == "link:start")
 async def cb_link_start(callback: CallbackQuery) -> None:
-    # На всякий случай: если апдейт пришёл не из лички
+    # Safety check: ensure the update came from a private chat
     if not callback.message:
         await callback.answer(await get_message("link.private_chat_required"), show_alert=True)
         return
@@ -146,5 +146,5 @@ async def cb_link_start(callback: CallbackQuery) -> None:
         chat_id=callback.message.chat.id,
         send=lambda text, kb: callback.message.answer(text, reply_markup=kb),
     )
-    # Закрываем "часики" у пользователя
+    # Close the "clock" spinner for the user
     await callback.answer()

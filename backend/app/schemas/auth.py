@@ -106,7 +106,7 @@ class RegisterIn(BaseModel):
     eth_address: str
     rsa_public: str
     display_name: str | None = None
-    # Храним в модели уже TypedData (сериализация/валидация сделает экземпляр)
+    # Store TypedData in the model (serialization/validation will create an instance)
     typed_data: TypedData
     signature: str
 
@@ -126,18 +126,18 @@ class RegisterIn(BaseModel):
 
     @field_validator("typed_data", mode="before")
     def parse_typed_data(cls, v: object) -> object:
-        # Принимаем как raw JSON-объект или как строку (Postman/axios особенности)
+        # Accept as a raw JSON object or as a string (Postman/axios specifics)
         if isinstance(v, TypedData):
             return v
         if isinstance(v, dict):
-            # возвращаем dict — Pydantic дальше превратит его в TypedData
+            # return dict — Pydantic will then convert it to TypedData
             return v
         if isinstance(v, str):
             try:
                 parsed = json.loads(v)
             except json.JSONDecodeError as e:
                 raise ValueError(f"typed_data_invalid: {e}") from e
-            # проверим и вернём dict для дальнейшей валидации
+            # check and return dict for further validation
             if isinstance(parsed, dict):
                 return parsed
             raise ValueError("typed_data JSON must be an object")
@@ -159,7 +159,7 @@ class LoginIn(BaseModel):
 
     @field_validator("typed_data", mode="before")
     def parse_typed_data(cls, v: object) -> object:
-        # Подобная логика как в RegisterIn
+        # Similar logic as in RegisterIn
         if isinstance(v, TypedData):
             return v
         if isinstance(v, dict):

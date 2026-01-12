@@ -56,7 +56,7 @@ app.add_middleware(ObservabilityMiddleware)
 # Global rate limit for public endpoints (no Authorization header)
 app.add_middleware(RateLimitMiddleware, limit_per_minute=100)
 
-# CORS: используем список из настроек; поддерживаем '*'
+# CORS: use the list from settings; support '*'
 _allowed_origins = settings.cors_origins
 _allow_credentials = _allowed_origins != ["*"]
 app.add_middleware(

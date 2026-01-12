@@ -52,7 +52,7 @@ interface GrantRow {
 
 interface FileDetailsModel {
   id: string;
-  name?: string; // теперь используем
+  name?: string; // now used
   size?: number;
   created?: Date;
   owner?: string;
@@ -376,8 +376,8 @@ export default function FileDetailsPage() {
       <div className="space-y-6">
         {intentId && (
           <div className="rounded border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
-            Открыто из intent {truncate(intentId, 16)}.{" "}
-            {revokeCapParam ? `Запрос на revoke ${truncate(revokeCapParam, 18)}.` : "Продолжайте действие."}
+            Opened from intent {truncate(intentId, 16)}.{" "}
+            {revokeCapParam ? `Revoke request ${truncate(revokeCapParam, 18)}.` : "Continue your action."}
           </div>
         )}
         <div className="flex items-center justify-between">

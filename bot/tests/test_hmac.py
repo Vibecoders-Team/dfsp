@@ -2,7 +2,7 @@ import sys
 import time
 from pathlib import Path
 
-# Добавляем корень проекта (bot/) в sys.path
+# Add project root (bot/) to sys.path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -11,18 +11,18 @@ from app.security.hmac import sign, verify
 
 
 def test_sign_creates_valid_signature():
-    """Тест: sign создает валидную подпись."""
+    """Test: sign creates a valid signature."""
     secret = "test_secret_key"
     payload = {"cmd": "test", "data": "value"}
 
     signed = sign(payload, secret)
 
-    # Проверяем формат: payload.signature
+    # Check format: payload.signature
     assert "." in signed
     parts = signed.split(".", 1)
     assert len(parts) == 2
 
-    # Проверяем, что можно декодировать
+    # Check that it can be decoded
     verified = verify(signed, secret)
     assert verified is not None
     assert verified["cmd"] == "test"
@@ -30,7 +30,7 @@ def test_sign_creates_valid_signature():
 
 
 def test_verify_accepts_valid_signature():
-    """Тест: verify принимает валидную подпись."""
+    """Test: verify accepts a valid signature."""
     secret = "test_secret_key"
     payload = {"cmd": "page", "cursor": "12345"}
 
@@ -40,45 +40,45 @@ def test_verify_accepts_valid_signature():
     assert verified is not None
     assert verified["cmd"] == "page"
     assert verified["cursor"] == "12345"
-    assert "ts" in verified  # timestamp должен быть добавлен
+    assert "ts" in verified  # timestamp should be added
 
 
 def test_verify_rejects_invalid_signature():
-    """Тест: verify отклоняет невалидную подпись."""
+    """Test: verify rejects an invalid signature."""
     secret = "test_secret_key"
     payload = {"cmd": "test"}
 
     signed = sign(payload, secret)
 
-    # Неправильный секрет
+    # Wrong secret
     verified_wrong_secret = verify(signed, "wrong_secret")
     assert verified_wrong_secret is None
 
-    # Поврежденная подпись
+    # Corrupted signature
     corrupted = signed[:-5] + "xxxxx"
     verified_corrupted = verify(corrupted, secret)
     assert verified_corrupted is None
 
-    # Неправильный формат (нет точки)
+    # Wrong format (no dot)
     verified_no_dot = verify("invalid_data", secret)
     assert verified_no_dot is None
 
 
 def test_verify_rejects_expired_signature():
-    """Тест: verify отклоняет просроченную подпись."""
+    """Test: verify rejects an expired signature."""
     secret = "test_secret_key"
-    payload = {"cmd": "test", "ts": int(time.time()) - 100}  # 100 секунд назад
+    payload = {"cmd": "test", "ts": int(time.time()) - 100}  # 100 seconds ago
 
     signed = sign(payload, secret, ttl_seconds=60)
     verified = verify(signed, secret, ttl_seconds=60)
 
-    assert verified is None  # Должна быть отклонена
+    assert verified is None  # It should be rejected
 
 
 def test_verify_accepts_fresh_signature():
-    """Тест: verify принимает свежую подпись."""
+    """Test: verify accepts a fresh signature."""
     secret = "test_secret_key"
-    payload = {"cmd": "test", "ts": int(time.time())}  # Сейчас
+    payload = {"cmd": "test", "ts": int(time.time())}  # Now
 
     signed = sign(payload, secret, ttl_seconds=60)
     verified = verify(signed, secret, ttl_seconds=60)
@@ -88,7 +88,7 @@ def test_verify_accepts_fresh_signature():
 
 
 def test_sign_adds_timestamp_if_missing():
-    """Тест: sign добавляет timestamp если его нет."""
+    """Test: sign adds timestamp if it's missing."""
     secret = "test_secret_key"
     payload = {"cmd": "test"}
 
@@ -101,9 +101,9 @@ def test_sign_adds_timestamp_if_missing():
 
 
 def test_sign_preserves_existing_timestamp():
-    """Тест: sign сохраняет существующий timestamp."""
+    """Test: sign preserves existing timestamp."""
     secret = "test_secret_key"
-    # Используем текущий timestamp, чтобы не было проблем с TTL
+    # Use current timestamp to avoid TTL issues
     custom_ts = int(time.time())
     payload = {"cmd": "test", "ts": custom_ts}
 
@@ -115,7 +115,7 @@ def test_sign_preserves_existing_timestamp():
 
 
 def test_verify_handles_complex_payload():
-    """Тест: verify обрабатывает сложный payload."""
+    """Test: verify handles a complex payload."""
     secret = "test_secret_key"
     payload = {
         "cmd": "open",

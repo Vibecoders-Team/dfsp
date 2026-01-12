@@ -22,25 +22,25 @@ from ..services.message_store import get_message
 router = Router(name="files")
 logger = logging.getLogger(__name__)
 
-# Короткие токены + HMAC для callback'ов (чтобы уложиться в лимит 64 байта)
+# Short tokens + HMAC for callbacks (to fit 64-byte limit)
 CALLBACK_SECRET = settings.WEBHOOK_SECRET
-CALLBACK_TTL = 60  # секунд
-CALLBACK_SIG_BYTES = 6  # укороченная подпись для компактности
-CALLBACK_PREFIX = "f:"  # чтобы не пересекаться с другими callback'ами
+CALLBACK_TTL = 60  # seconds
+CALLBACK_SIG_BYTES = 6  # shortened signature for compactness
+CALLBACK_PREFIX = "f:"  # avoid collisions with other callbacks
 _CALLBACK_CACHE: dict[str, tuple[dict, float]] = {}
 
 
 def _make_token() -> str:
-    # 6 urlsafe символов, чтобы уместиться в 64-байтный лимит
+    # 6 urlsafe chars to fit the 64-byte limit
     return secrets.token_urlsafe(4)  # ~6 chars
 
 
 def _store_payload(data: dict, *, now: float | None = None) -> str:
-    """Сохраняет payload в памяти и возвращает короткий токен."""
+    """Store payload in memory and return short token."""
     token = _make_token()
     ts = now if now is not None else time.time()
     _CALLBACK_CACHE[token] = (data, ts)
-    # лёгкая очистка протухших записей
+    # lightweight cleanup of expired entries
     expired = [k for k, (_, t) in _CALLBACK_CACHE.items() if ts - t > CALLBACK_TTL]
     for k in expired:
         _CALLBACK_CACHE.pop(k, None)
@@ -60,8 +60,8 @@ def _get_payload(token: str) -> dict | None:
 
 def _make_callback(cmd: str, payload: dict) -> str:
     """
-    Сохраняет подробный payload в кэше и возвращает подписанный компактный callback_data.
-    Формат callback_data: base64url({"c": <cmd_code>, "t": <token>, "ts": <ts>}).HMAC
+    Saves the detailed payload in the cache and returns a signed, compact callback_data.
+    callback_data format: base64url({"c": <cmd_code>, "t": <token>, "ts": <ts>}).HMAC
     cmd_code: o=open, v=verify, p=page
     """
     now = time.time()
@@ -77,7 +77,7 @@ def _make_callback(cmd: str, payload: dict) -> str:
 
 
 def format_file_size(size: int) -> str:
-    """Форматирует размер файла в читаемый вид."""
+    """Formats file size into a readable format."""
     for unit in ["B", "KB", "MB", "GB"]:
         if size < 1024.0:
             return f"{size:.1f} {unit}"
@@ -86,7 +86,7 @@ def format_file_size(size: int) -> str:
 
 
 def format_file_list(files: list[BotFile], header: str, item_template: str, empty_text: str) -> str:
-    """Форматирует список файлов для отображения."""
+    """Formats a list of files for display."""
     if not files:
         return empty_text
 
@@ -98,7 +98,7 @@ def format_file_list(files: list[BotFile], header: str, item_template: str, empt
                 index=i,
                 name=file.name,
                 size=size_str,
-                updated=file.updatedAt[:10],  # Только дата
+                updated=file.updatedAt[:10],  # Date only
             )
         )
 
@@ -110,7 +110,7 @@ async def build_files_keyboard(
     cursor: str | None = None,
     prev_cursor: str | None = None,
 ) -> InlineKeyboardMarkup:
-    """Создаёт клавиатуру с кнопками для файлов и пагинацией."""
+    """Build keyboard with file buttons and pagination."""
     open_btn = await get_message("buttons.open")
     verify_btn = await get_message("buttons.verify")
     back_btn = await get_message("buttons.back")
@@ -118,7 +118,7 @@ async def build_files_keyboard(
     home_btn = await get_message("buttons.home")
     buttons = []
 
-    # Кнопки для каждого файла: "Открыть" и "Verify"
+    # Buttons for each file: "Open" and "Verify"
     for file in files:
         file_id = file.id_hex
 
@@ -132,20 +132,20 @@ async def build_files_keyboard(
             ]
         )
 
-    # Кнопки пагинации
+    # Pagination buttons
     nav_buttons = []
-    if prev_cursor:  # Есть предыдущая страница
+    if prev_cursor:  # has previous page
         prev_payload = _make_callback("page", {"cursor": prev_cursor})
         nav_buttons.append(InlineKeyboardButton(text=back_btn, callback_data=prev_payload))
 
-    if cursor:  # Есть следующая страница
+    if cursor:  # has next page
         next_payload = _make_callback("page", {"cursor": cursor})
         nav_buttons.append(InlineKeyboardButton(text=next_btn, callback_data=next_payload))
 
     if nav_buttons:
         buttons.append(nav_buttons)
 
-    # Добавляем кнопку "Главное меню"
+    # Add "Main menu" button
     buttons.append(
         [
             InlineKeyboardButton(text=home_btn, callback_data="menu:home"),
@@ -157,7 +157,7 @@ async def build_files_keyboard(
 
 @router.message(Command("files"))
 async def cmd_files(message: Message) -> None:
-    """Обработчик команды /files."""
+    """Handler for /files command."""
     chat_id = message.chat.id
     logger.info("Handling /files for chat_id=%s", chat_id)
 
@@ -169,7 +169,7 @@ async def cmd_files(message: Message) -> None:
         return
 
     if response is None:
-        # 404 от API — чат не привязан
+        # 404 from API - chat not linked
         from .start import get_main_keyboard
 
         keyboard = await get_main_keyboard(is_linked=False)
@@ -189,9 +189,9 @@ async def cmd_files(message: Message) -> None:
     text = format_file_list(response.files, header, item_template, empty_text)
     keyboard = await build_files_keyboard(response.files, cursor=response.cursor, prev_cursor=None)
 
-    # Добавляем кнопку "Главное меню" если её нет
+    # Add "Main menu" button if missing
     if keyboard and keyboard.inline_keyboard:
-        # Проверяем есть ли уже кнопка "Главное меню"
+        # Check if "Main menu" button already exists
         has_home = any(any(btn.callback_data == "menu:home" for btn in row) for row in keyboard.inline_keyboard)
         if not has_home:
             keyboard.inline_keyboard.append(
@@ -205,9 +205,9 @@ async def cmd_files(message: Message) -> None:
 
 @router.callback_query(F.data.startswith(CALLBACK_PREFIX))
 async def handle_files_callback(callback: CallbackQuery) -> None:
-    """Обработчик всех callback'ов для файлов."""
+    """Handler for all file callbacks."""
     if not callback.data:
-        return  # Не наш callback, пропускаем
+        return  # not our callback, skip
 
     data = callback.data
     if not data.startswith(CALLBACK_PREFIX):
@@ -215,7 +215,7 @@ async def handle_files_callback(callback: CallbackQuery) -> None:
 
     signed_data = data[len(CALLBACK_PREFIX) :]
 
-    # Подпись + TTL
+    # Signature + TTL
     payload = verify(
         signed_data,
         CALLBACK_SECRET,
@@ -223,7 +223,7 @@ async def handle_files_callback(callback: CallbackQuery) -> None:
         signature_bytes=CALLBACK_SIG_BYTES,
     )
     if payload is None:
-        return  # Не наш callback или подпись/TTL невалидны
+        return  # not our callback or signature/TTL invalid
 
     token = payload.get("t")
     cmd_code = payload.get("c")
@@ -235,9 +235,9 @@ async def handle_files_callback(callback: CallbackQuery) -> None:
     cmd = cached.get("cmd")
     if not cmd:
         cmd = {"o": "open", "v": "verify", "p": "page"}.get(cmd_code, cmd_code)
-    # Проверяем, что это команда для файлов
+    # Ensure this is a files command
     if cmd not in ("page", "open", "verify"):
-        return  # Не наша команда, пропускаем
+        return  # not our command, skip
     chat_id = callback.message.chat.id if callback.message else None
 
     if not chat_id:
@@ -245,7 +245,7 @@ async def handle_files_callback(callback: CallbackQuery) -> None:
         return
 
     if cmd == "page":
-        # Пагинация
+        # Pagination
         cursor = cached.get("cursor")
         if not cursor:
             await callback.answer(await get_message("files.missing_cursor"), show_alert=True)
@@ -266,11 +266,11 @@ async def handle_files_callback(callback: CallbackQuery) -> None:
         item_template = await get_message("files.list_item")
         empty_text = await get_message("files.list_empty")
         text = format_file_list(response.files, header, item_template, empty_text)
-        # Для кнопки "Назад" используем текущий cursor как prev_cursor
+        # For "Back" button use current cursor as prev_cursor
         keyboard = await build_files_keyboard(
             response.files,
             cursor=response.cursor,
-            prev_cursor=cursor,  # Текущий cursor становится prev для следующей страницы
+            prev_cursor=cursor,  # current cursor becomes prev for next page
         )
 
         if callback.message:
@@ -278,17 +278,17 @@ async def handle_files_callback(callback: CallbackQuery) -> None:
         await callback.answer()
 
     elif cmd == "open":
-        # Открыть файл
+        # Open file
         file_id = cached.get("file_id")
         if not file_id:
             await callback.answer(await get_message("files.missing_file_id"), show_alert=True)
             return
 
-        # Убеждаемся, что id в hex с префиксом 0x
+        # Ensure id is hex with 0x prefix
         if not file_id.startswith("0x"):
             file_id = f"0x{file_id}"
 
-        # Запрашиваем одноразовую ссылку на скачивание
+        # Request one-time download link
         try:
             from ..services.dfsp_api import prepare_download
 
@@ -298,7 +298,7 @@ async def handle_files_callback(callback: CallbackQuery) -> None:
             file_name = resp.get("fileName") or file_id
         except Exception:
             logger.exception("Failed to prepare download link")
-            # Fallback: если нет гранта или эндпоинт недоступен, даём обычную ссылку
+            # Fallback: if no grant or endpoint unavailable, provide regular link
             origin = str(settings.PUBLIC_WEB_ORIGIN).rstrip("/")
             file_url = f"{origin}/files/{file_id}"
             await callback.answer(await get_message("files.download_prepare_failed"), show_alert=False)
@@ -345,20 +345,20 @@ async def handle_files_callback(callback: CallbackQuery) -> None:
             )
 
     elif cmd == "verify":
-        # Verify файла
+        # Verify file
         file_id = cached.get("file_id")
         if not file_id:
             await callback.answer(await get_message("files.missing_file_id"), show_alert=True)
             return
 
-        # API ожидает формат 0x + 64 hex символа
+        # API expects 0x + 64 hex chars format
         if not file_id.startswith("0x"):
             file_id = f"0x{file_id}"
-        # Дополняем до 64 hex символов (32 байта)
-        if len(file_id) < 66:  # 0x + 64 символа
+        # Pad to 64 hex chars (32 bytes)
+        if len(file_id) < 66:  # 0x + 64 chars
             file_id = f"0x{file_id[2:].zfill(64)}"
 
-        # Вызываем API для верификации
+        # Call API for verification
         try:
             api_url = str(settings.DFSP_API_URL).rstrip("/")
             url = f"{api_url}/bot/verify/{file_id}"

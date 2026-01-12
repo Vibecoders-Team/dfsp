@@ -22,13 +22,13 @@ router = Router(name="lang")
 logger = logging.getLogger(__name__)
 
 LANG_OPTIONS = {
-    "ru": "Русский",
+    "ru": "Russian",
     "en": "English",
 }
 
 CALLBACK_SECRET = settings.CALLBACK_HMAC_SECRET or settings.WEBHOOK_SECRET
-CALLBACK_TTL = 300  # 5 минут достаточно для выбора языка
-CALLBACK_SIG_BYTES = 5  # короткая подпись для 64-байтного лимита
+CALLBACK_TTL = 300  # 5 minutes is enough to choose a language
+CALLBACK_SIG_BYTES = 5  # short signature for the 64-byte limit
 
 _redis = None
 
@@ -121,7 +121,7 @@ def _lang_label(lang: str) -> str:
 def _lang_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Русский", callback_data=_make_callback(chat_id, "ru"))],
+            [InlineKeyboardButton(text="Russian", callback_data=_make_callback(chat_id, "ru"))],
             [InlineKeyboardButton(text="English", callback_data=_make_callback(chat_id, "en"))],
         ]
     )

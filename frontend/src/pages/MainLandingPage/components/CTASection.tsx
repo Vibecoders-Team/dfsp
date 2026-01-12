@@ -9,7 +9,7 @@ export function CTASection() {
   const navigate = useNavigate();
 
   const handleLaunchClick = () => {
-    // Новая логика: три ветки
+    // New logic: three branches
     if (isAuthenticated) {
       navigate("/files");
       return;

@@ -96,7 +96,7 @@ export async function miniPost<T>(url: string, body?: unknown, init?: Parameters
 
 function ensureSession() {
   if (!getMiniSession()) {
-    throw new MiniApiError("Нет webapp сессии", { status: 401 });
+    throw new MiniApiError("No webapp session", { status: 401 });
   }
 }
 
@@ -156,7 +156,7 @@ export async function miniTonLogin(payload: {
   domain: string;
   timestamp: number;
   payload: MiniTonSignPayload;
-  address: string; // добавлено поле адреса TON
+  address: string; // added TON address field
 }): Promise<MiniTonLoginOut> {
   const { data } = await miniApi.post<MiniTonLoginOut>("/auth/ton/login", payload);
   return data;

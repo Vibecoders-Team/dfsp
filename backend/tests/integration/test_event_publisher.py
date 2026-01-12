@@ -8,7 +8,7 @@ from app.services.event_publisher import EventPublisher
 
 def _clear_events():
     rds.delete("events:queue")
-    rds.delete("events:seen")  # Удаляем set для идемпотентности
+    rds.delete("events:seen")  # delete set for idempotency
     for key in list(rds.scan_iter("events:seen:*")):
         rds.delete(key)
 
@@ -23,7 +23,7 @@ def test_event_publisher_idempotent():
 
     event_id = "test-idempotent-123"
 
-    # Публикуем одно и то же событие дважды с тем же event_id
+    # Publish the same event twice with the same event_id
     for _ in range(2):
         publisher.publish(
             "download_denied",
@@ -37,7 +37,7 @@ def test_event_publisher_idempotent():
 
     matching = [e for e in docs if e["event_id"] == event_id]
 
-    # Должна быть ровно одна запись
+    # There should be exactly one record
     if not matching:
         pytest.skip("event queue empty (maybe disabled)")
     assert len(matching) == 1

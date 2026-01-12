@@ -28,14 +28,14 @@ export function MiniAuthGate({ children }: { children: ReactNode }) {
           color: "var(--mini-text)",
           marginBottom: "8px"
         }}>
-          Проверка авторизации
+          Authorization check
         </p>
         <p style={{
           fontSize: "14px",
           color: "var(--mini-text-muted)",
           marginBottom: "24px"
         }}>
-          Валидируем initData из Telegram...
+          Validating initData from Telegram...
         </p>
         <button
           onClick={() => loginWithTon()}
@@ -57,7 +57,7 @@ export function MiniAuthGate({ children }: { children: ReactNode }) {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
           </svg>
-          Войти через TON Connect
+          Sign in with TON Connect
         </button>
       </div>
     );
@@ -103,7 +103,7 @@ export function MiniAuthGate({ children }: { children: ReactNode }) {
               color: "var(--mini-danger-text)",
               margin: 0
             }}>
-              Авторизация не прошла
+              Authorization failed
             </p>
           </div>
 
@@ -115,7 +115,7 @@ export function MiniAuthGate({ children }: { children: ReactNode }) {
               marginBottom: "20px",
               lineHeight: 1.5
             }}>
-              {error ?? "Неизвестная ошибка при проверке initData"}
+              {error ?? "Unknown error while validating initData"}
             </p>
 
             <div style={{
@@ -138,7 +138,7 @@ export function MiniAuthGate({ children }: { children: ReactNode }) {
                   transition: "var(--mini-transition)"
                 }}
               >
-                🔄 Повторить авторизацию
+                🔄 Retry authorization
               </button>
               <button
                 onClick={() => loginWithTon()}
@@ -155,7 +155,7 @@ export function MiniAuthGate({ children }: { children: ReactNode }) {
                   transition: "var(--mini-transition)"
                 }}
               >
-                💎 Войти через TON Connect
+                💎 Sign in with TON Connect
               </button>
             </div>
           </div>

@@ -46,7 +46,7 @@ export default function UnlockPortal() {
     }
   };
 
-  // Если уже разблокирован, диалог держим закрытым
+  // If already unlocked, keep the dialog closed
   useEffect(() => {
     if (isEOAUnlocked() && open) setOpen(false);
   }, [open]);

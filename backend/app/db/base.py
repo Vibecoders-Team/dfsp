@@ -6,12 +6,12 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, mapped_column
 
 
-# Базовый класс
+# Base class
 class Base(DeclarativeBase):
     pass
 
 
-# Общие типы
+# Common types
 UUID_PK = Annotated[uuid.UUID, mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)]
 BYTES32 = Annotated[bytes, mapped_column(LargeBinary(32))]
 TS_NOW = Annotated[str, mapped_column(server_default=text("now()"))]

@@ -1,4 +1,4 @@
-"""Обработчик callback после успешной привязки кошелька через веб."""
+"""Callback handler after successful wallet linking via web."""
 
 from __future__ import annotations
 
@@ -17,14 +17,14 @@ logger = logging.getLogger(__name__)
 
 @router.callback_query(F.data.startswith("link:success"))
 async def cb_link_success(callback: CallbackQuery) -> None:
-    """Обработчик callback после успешной привязки."""
+    """Callback handler after successful linking."""
     if not callback.message:
         await callback.answer(await get_message("common.missing_message"), show_alert=True)
         return
 
     await callback.answer(await get_message("link.success_alert"), show_alert=True)
 
-    # Показываем профиль автоматически
+    # Show profile automatically
     fake_message = Message(
         message_id=callback.message.message_id,
         date=callback.message.date,
@@ -33,10 +33,10 @@ async def cb_link_success(callback: CallbackQuery) -> None:
         text="/me",
     )
 
-    # Показываем профиль автоматически после привязки
+    # Show profile automatically after linking
     await me_handlers.cmd_me(fake_message)
 
-    # Показываем главное меню с доступными функциями
+    # Show the main menu with available functions
     keyboard = await start_handlers.get_main_keyboard(is_linked=True)
     await callback.message.answer(
         await get_message("link.success_menu_prompt"),
