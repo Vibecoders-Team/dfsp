@@ -237,7 +237,6 @@ def submit_forward(self: Task, request_id: str, typed_data: dict[str, Any], sign
         log.debug("submit_forward: idempotency check failed: %s", e, exc_info=True)
         pass
 
-
     # Standard EVM signature processing
     chain = get_chain()
     fwd = chain.get_forwarder()
