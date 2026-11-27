@@ -68,7 +68,6 @@ def submit(req: MetaTxSubmitIn, response: Response, db: Annotated[Session, Depen
         db.rollback()
         # non-critical for enqueueing the task
 
-
     # Enqueue task in Celery (de-duplication and serialization happen in the task itself)
     task_id = enqueue_forward_request(req.request_id, req.typed_data, req.signature)
 

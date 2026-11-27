@@ -32,7 +32,7 @@ def get_current_user(
         "JWT auth attempt, token_len=%d, token_prefix=%s, secret_prefix=%s",
         len(token) if token else 0,
         token[:20] + "..." if token and len(token) > 20 else token,
-        settings.jwt_secret[:8] + "..." if settings.jwt_secret else "(none)"
+        settings.jwt_secret[:8] + "..." if settings.jwt_secret else "(none)",
     )
 
     try:
@@ -55,22 +55,20 @@ def get_current_user(
 
         # Check if token is expired (with leeway)
         if exp and now > exp + leeway_seconds:
-            logger.warning(
-                "JWT expired: now=%d exp=%d leeway=%d diff=%d",
-                now, exp, leeway_seconds, now - exp
-            )
+            logger.warning("JWT expired: now=%d exp=%d leeway=%d diff=%d", now, exp, leeway_seconds, now - exp)
             raise HTTPException(status_code=401, detail="token_expired")
 
         # Check if token is from the future (iat check with leeway)
         if iat and iat > now + leeway_seconds:
-            logger.warning(
-                "JWT iat in future: now=%d iat=%d leeway=%d diff=%d",
-                now, iat, leeway_seconds, iat - now
-            )
+            logger.warning("JWT iat in future: now=%d iat=%d leeway=%d diff=%d", now, iat, leeway_seconds, iat - now)
             raise HTTPException(status_code=401, detail="token_not_yet_valid")
 
-        logger.info("JWT decode SUCCESS, payload keys: %s, exp_ok=%s, iat_ok=%s",
-                    list(payload.keys()), now <= exp + leeway_seconds, iat <= now + leeway_seconds)
+        logger.info(
+            "JWT decode SUCCESS, payload keys: %s, exp_ok=%s, iat_ok=%s",
+            list(payload.keys()),
+            now <= exp + leeway_seconds,
+            iat <= now + leeway_seconds,
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -80,21 +78,34 @@ def get_current_user(
                 token,
                 settings.jwt_secret,
                 algorithms=[settings.jwt_algorithm],
-                options={"verify_exp": False, "verify_iat": False, "verify_aud": False}
+                options={"verify_exp": False, "verify_iat": False, "verify_aud": False},
             )
             now_ts = int(datetime.now(UTC).timestamp())
             iat = unverified.get("iat", 0)
             exp = unverified.get("exp", 0)
             logger.warning(
                 "JWT decode FAILED: %s | server_time=%d iat=%d exp=%d iat_diff=%d exp_diff=%d leeway=%d sub=%s",
-                str(e), now_ts, iat, exp, now_ts - iat, exp - now_ts, leeway_seconds, unverified.get("sub", "(none)")
+                str(e),
+                now_ts,
+                iat,
+                exp,
+                now_ts - iat,
+                exp - now_ts,
+                leeway_seconds,
+                unverified.get("sub", "(none)"),
             )
         except Exception as parse_err:
             logger.warning("JWT decode FAILED (cannot parse): %s, parse_error: %s", str(e), str(parse_err))
         raise HTTPException(status_code=401, detail="invalid_token") from e
 
     uid = payload.get("sub") or payload.get("uid") or payload.get("id")
-    logger.info("JWT uid extracted: %s (from payload: sub=%s uid=%s id=%s)", uid, payload.get("sub"), payload.get("uid"), payload.get("id"))
+    logger.info(
+        "JWT uid extracted: %s (from payload: sub=%s uid=%s id=%s)",
+        uid,
+        payload.get("sub"),
+        payload.get("uid"),
+        payload.get("id"),
+    )
 
     if not uid:
         logger.warning("JWT invalid: uid is empty, payload=%s", payload)
@@ -119,9 +130,12 @@ def make_token(sub: str | dict, ttl_min: int) -> str:
     # DEBUG: log token creation
     logger.info(
         "make_token: sub=%s iat=%d exp=%d ttl_min=%d secret_prefix=%s token_len=%d",
-        payload.get("sub", "(dict)"), payload["iat"], payload["exp"], ttl_min,
+        payload.get("sub", "(dict)"),
+        payload["iat"],
+        payload["exp"],
+        ttl_min,
         settings.jwt_secret[:8] + "..." if settings.jwt_secret else "(none)",
-        len(token)
+        len(token),
     )
     return token
 
